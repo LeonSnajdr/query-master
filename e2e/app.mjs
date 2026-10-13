@@ -160,6 +160,22 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.match(text, /2024-05-01T00:00:00\.000Z/);
     });
 
+    await step("a collection unfolds to its indexes; one is created and dropped", async () => {
+        const row = page.locator("[data-testid=collection-row]", { hasText: COLLECTION });
+        await row.locator("[data-testid=collection-toggle]").click();
+        await page.locator("[data-testid=index-row]", { hasText: "_id_" }).waitFor();
+        await row.click({ button: "right" });
+        await chooseMenu("Create index");
+        await id("prompt-input").fill("{ name: 1 }");
+        await id("prompt-submit").click();
+        const index = page.locator("[data-testid=index-row]", { hasText: "name_1" });
+        await index.waitFor();
+        await index.click({ button: "right" });
+        await chooseMenu("Drop index");
+        await id("confirm-action").click();
+        await index.waitFor({ state: "detached" });
+    });
+
     await step("filter and sort narrow and order the result", async () => {
         const rows = panel.locator("[data-testid=stage-row]");
         await write(rows.nth(0), "{ n: { $gte: 2 } }");

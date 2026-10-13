@@ -6,7 +6,7 @@ import type { Profile } from "@/api";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import type { Doc } from "@/shell/ejson";
-import { isDoc } from "@/shell/ejson";
+import { isDoc, toShell } from "@/shell/ejson";
 import { parseValue } from "@/shell/parse";
 import { replyError } from "@/shell/plan";
 import { useConnectionsStore } from "@/stores/connections";
@@ -143,6 +143,25 @@ export function useActions() {
         }
     }
 
+    function indexInfo(at = target.value) {
+        if (at?.database === undefined || at.collection === undefined || at.index === undefined) return;
+        const database = connections.sessions[at.connectionId]?.databases.find(item => item.name === at.database);
+        const index = database?.details[at.collection]?.indexes?.find(item => item.name === at.index);
+        if (index) dialogs.showText({ title: t("index.info", { name: at.index }), text: toShell(index) });
+    }
+
+    async function dropIndex(at = target.value) {
+        if (at?.database === undefined || at.collection === undefined || at.index === undefined) return;
+        const confirmed = await dialogs.confirm({
+            title: t("index.drop.title"),
+            text: t("index.drop.text", { name: at.index, collection: at.collection }),
+            action: t("action.drop")
+        });
+        if (confirmed && await command(at.connectionId, at.database, { dropIndexes: at.collection, index: at.index })) {
+            connections.selected = { connectionId: at.connectionId, database: at.database, collection: at.collection };
+        }
+    }
+
     async function refresh(at = target.value) {
         if (at) await connections.loadDatabases(at.connectionId).catch(report);
     }
@@ -188,7 +207,7 @@ export function useActions() {
     return {
         target, hasConnection, hasDatabase, hasCollection,
         openShell, browse, aggregation, collectionStats, databaseStats, serverStatus, indexes,
-        createCollection, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex,
+        createCollection, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, dropIndex, indexInfo,
         refresh, connect, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };

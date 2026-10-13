@@ -5,10 +5,20 @@ import type { Profile, ProfileInput } from "@/api";
 import { isDoc, scalar } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 
+/** What the tree knows about a collection once it was unfolded. */
+export interface CollectionDetail {
+    open: boolean;
+    loading: boolean;
+    /** As `listIndexes` gives them. */
+    indexes?: Doc[];
+}
+
 export interface DatabaseNode {
     name: string;
     /** Absent until the database was opened in the tree. */
     collections?: string[];
+    /** Per collection that was unfolded: its indexes. */
+    details: Record<string, CollectionDetail>;
     open: boolean;
     loading: boolean;
 }
@@ -26,6 +36,8 @@ export interface TreeSelection {
     connectionId: string;
     database?: string;
     collection?: string;
+    /** Name of an index of the collection. */
+    index?: string;
 }
 
 /** Documents looked at to learn the fields of a collection. */
@@ -87,7 +99,7 @@ export const useConnectionsStore = defineStore("connections", () => {
             if (!named) throw error;
             names = [decodeURIComponent(named)];
         }
-        session.databases = names.map(name => session.databases.find(database => database.name === name) ?? { name, open: false, loading: false });
+        session.databases = names.map(name => session.databases.find(database => database.name === name) ?? { name, open: false, loading: false, details: {} });
         await Promise.all(session.databases.filter(database => database.open).map(database => loadCollections(id, database.name)));
     }
 
@@ -98,8 +110,22 @@ export const useConnectionsStore = defineStore("connections", () => {
         try {
             const page = await backend.runCursorCommand(id, name, { listCollections: 1, nameOnly: true }, 10_000);
             database.collections = page.documents.map(collection => String(collection.name)).sort((a, b) => a.localeCompare(b));
+            await Promise.all(Object.entries(database.details).filter(([, detail]) => detail.open).map(([collection]) => loadIndexes(id, name, collection)));
         } finally {
             database.loading = false;
+        }
+    }
+
+    /** Reads the indexes of a collection for the tree. */
+    async function loadIndexes(id: string, name: string, collection: string): Promise<void> {
+        const database = sessions[id]?.databases.find(item => item.name === name);
+        if (!database) return;
+        const detail = database.details[collection] ??= { open: false, loading: false };
+        detail.loading = true;
+        try {
+            detail.indexes = (await backend.runCursorCommand(id, name, { listIndexes: collection }, 1000)).documents;
+        } finally {
+            detail.loading = false;
         }
     }
 
@@ -147,5 +173,5 @@ export const useConnectionsStore = defineStore("connections", () => {
         return fields.get(key) ?? [];
     }
 
-    return { profiles, sessions, connecting, selected, load, save, remove, connect, disconnect, loadDatabases, loadCollections, collectionsOf, fieldsOf };
+    return { profiles, sessions, connecting, selected, load, save, remove, connect, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf };
 });

@@ -42,7 +42,7 @@ function shownCollections(database: DatabaseNode): string[] {
 
 function isSelected(at: TreeSelection): boolean {
     const selected = connections.selected;
-    return selected?.connectionId === at.connectionId && selected.database === at.database && selected.collection === at.collection;
+    return selected?.connectionId === at.connectionId && selected.database === at.database && selected.collection === at.collection && selected.index === at.index;
 }
 
 function select(at: TreeSelection) {
@@ -57,6 +57,12 @@ function toggleConnection(profile: Profile) {
 async function toggleDatabase(profile: Profile, database: DatabaseNode) {
     database.open = !database.open;
     if (database.open && !database.collections) await connections.loadCollections(profile.id, database.name).catch(report);
+}
+
+async function toggleCollection(profile: Profile, database: DatabaseNode, collection: string) {
+    const detail = database.details[collection] ??= { open: false, loading: false };
+    detail.open = !detail.open;
+    if (detail.open && !detail.indexes) await connections.loadIndexes(profile.id, database.name, collection).catch(report);
 }
 
 async function choose(profile: Profile) {
@@ -85,7 +91,17 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
         { label: t("connection.disconnect"), hotkey: "Ctrl + Alt + D", action: () => void actions.disconnect(at) }
     ];
     let entries: MenuEntry[];
-    if (at.collection !== undefined) {
+    if (at.index !== undefined) {
+        entries = [
+            { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
+            "separator",
+            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => void actions.createIndex(at) },
+            // The index on _id belongs to the collection and can not be dropped.
+            { label: t("index.drop"), hotkey: "Del", danger: true, action: () => void actions.dropIndex(at), disabled: at.index === "_id_" },
+            { label: t("index.info.show"), action: () => actions.indexInfo(at) },
+            ...tail
+        ];
+    } else if (at.collection !== undefined) {
         entries = [
             { label: t("tab.browse"), icon: "i-lucide-file-text", hotkey: "Ctrl + Q", action: () => actions.browse(at) },
             "separator",
@@ -350,22 +366,54 @@ defineExpose({
                         </div>
 
                         <template v-if="database.open">
-                            <div
+                            <template
                                 v-for="collection in shownCollections(database)"
                                 :key="collection"
-                                @click="select({ connectionId: profile.id, database: database.name, collection })"
-                                @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection })"
-                                @dblclick="actions.browse({ connectionId: profile.id, database: database.name, collection })"
-                                @keydown.enter="actions.browse({ connectionId: profile.id, database: database.name, collection })"
-                                :class="isSelected({ connectionId: profile.id, database: database.name, collection }) ? 'tree-row-on' : ''"
-                                class="tree-row pl-16"
-                                data-testid="collection-row"
-                                role="treeitem"
-                                tabindex="0"
                             >
-                                <span class="i-lucide-file-text size-4 shrink-0 text-on-surface" />
-                                <span class="truncate text-on-surface-strong">{{ collection }}</span>
-                            </div>
+                                <div
+                                    @click="select({ connectionId: profile.id, database: database.name, collection })"
+                                    @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection })"
+                                    @dblclick="actions.browse({ connectionId: profile.id, database: database.name, collection })"
+                                    @keydown.enter="actions.browse({ connectionId: profile.id, database: database.name, collection })"
+                                    :class="isSelected({ connectionId: profile.id, database: database.name, collection }) ? 'tree-row-on' : ''"
+                                    class="tree-row pl-11.5"
+                                    data-testid="collection-row"
+                                    role="treeitem"
+                                    tabindex="0"
+                                >
+                                    <span
+                                        @click.stop="toggleCollection(profile, database, collection)"
+                                        @dblclick.stop
+                                        :class="[
+                                            database.details[collection]?.loading ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-chevron-right',
+                                            database.details[collection]?.open ? 'rotate-90' : ''
+                                        ]"
+                                        class="size-3.5 shrink-0 text-on-surface-variant"
+                                        data-testid="collection-toggle"
+                                    />
+                                    <span class="i-lucide-file-text size-4 shrink-0 text-on-surface" />
+                                    <span class="truncate text-on-surface-strong">{{ collection }}</span>
+                                </div>
+
+                                <!-- Unfolded, a collection shows its indexes. -->
+                                <template v-if="database.details[collection]?.open">
+                                    <div
+                                        v-for="index in database.details[collection]?.indexes"
+                                        :key="String(index.name)"
+                                        @click="select({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                        @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                        @dblclick="actions.indexInfo({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                        :class="isSelected({ connectionId: profile.id, database: database.name, collection, index: String(index.name) }) ? 'tree-row-on' : ''"
+                                        class="tree-row pl-20"
+                                        data-testid="index-row"
+                                        role="treeitem"
+                                        tabindex="0"
+                                    >
+                                        <span class="i-lucide-key-round size-3.5 shrink-0 text-on-surface" />
+                                        <span class="truncate text-on-surface-strong">{{ index.name }}</span>
+                                    </div>
+                                </template>
+                            </template>
                         </template>
                     </template>
                 </template>

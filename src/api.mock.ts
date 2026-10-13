@@ -84,7 +84,10 @@ export const mockBackend: Backend = {
     runCursorCommand: async (_id, database, command, limit) => {
         let documents: Doc[] = ORDERS;
         if ("listCollections" in command) documents = (COLLECTIONS[database] ?? []).map(name => ({ name, type: "collection" }));
-        else if ("listIndexes" in command) documents = [{ v: { $numberInt: "2" }, key: { _id: { $numberInt: "1" } }, name: "_id_" }];
+        else if ("listIndexes" in command) documents = [
+            { v: { $numberInt: "2" }, key: { _id: { $numberInt: "1" } }, name: "_id_" },
+            { v: { $numberInt: "2" }, key: { status: { $numberInt: "1" }, createdAt: { $numberInt: "-1" } }, name: "status_1_createdAt_-1" }
+        ];
         else if ("find" in command) {
             const skip = toNumber(command.skip) ?? 0;
             const max = toNumber(command.limit) ?? 0;
