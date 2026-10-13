@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            delete from history\n            where connection_id = $1\n              and id not in (\n                  select id from history where connection_id = $1 order by id desc limit $2\n              )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "5dd51d8f64fe3278f2422bdaeaf27bd612df7d3bef9d528e8f09ac75af3f7b0d"
+}

@@ -68,7 +68,8 @@ sqlx migrate run
 cargo sqlx prepare -- --tests
 ```
 
-`sqlx` is `cargo install sqlx-cli`. Rules for new tables: `docs/roadmap/11-ablage.md`.
+`tools/check-rust.ps1` does both and then formats, lints and tests, each step with a time limit.
+`sqlx` is `cargo install sqlx-cli`. Texts of the interface are added with `bun tools/locale.ts`. Rules for new tables: `docs/roadmap/11-ablage.md`.
 
 ## Against a real server
 

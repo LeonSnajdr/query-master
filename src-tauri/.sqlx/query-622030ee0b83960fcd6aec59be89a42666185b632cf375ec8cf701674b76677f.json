@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "insert into connection (id, name, address, date_created) values ($1, 'c', 'a', $2)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "622030ee0b83960fcd6aec59be89a42666185b632cf375ec8cf701674b76677f"
+}

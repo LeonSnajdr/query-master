@@ -119,7 +119,10 @@ async function saveScript() {
                 icon="i-lucide-save"
             />
             <span class="toolbar-rule" />
-            <QueryHistory @choose="tab.text = $event" />
+            <QueryHistory
+                @choose="tab.text = $event"
+                :connectionId="tab.connectionId"
+            />
             <span class="toolbar-rule" />
             <!-- eslint-disable-next-line vue/no-mutating-props -- `tab` is the store's own object, not a prop -->
             <IconButton

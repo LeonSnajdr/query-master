@@ -511,6 +511,7 @@
   "error.shell.uuid": "„{text}“ ist keine UUID.",
   "error.shell.uuidArgument": "UUID erwartet eine Zeichenfolge.",
   "field.remove": "Feld entfernen",
+  "history.clear": "Verlauf leeren",
   "history.empty": "Noch nichts ausgeführt",
   "history.title": "Verlauf",
   "index.create": "Index anlegen",

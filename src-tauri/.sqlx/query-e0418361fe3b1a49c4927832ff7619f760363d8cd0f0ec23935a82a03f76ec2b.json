@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "select language, theme from setting where id = 1",
+  "describe": {
+    "columns": [
+      {
+        "name": "language",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "theme",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "e0418361fe3b1a49c4927832ff7619f760363d8cd0f0ec23935a82a03f76ec2b"
+}

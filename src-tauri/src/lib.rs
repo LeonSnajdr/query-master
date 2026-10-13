@@ -2,7 +2,9 @@ mod connection;
 mod db;
 mod error;
 mod files;
+mod history;
 mod mongo;
+mod setting;
 
 use sqlx::SqlitePool;
 use tauri::{Manager, RunEvent};
@@ -22,6 +24,11 @@ pub fn run() {
             connection::commands::connection_uri,
             connection::commands::connection_save,
             connection::commands::connection_delete,
+            setting::commands::setting_get,
+            setting::commands::setting_save,
+            history::commands::history_list,
+            history::commands::history_add,
+            history::commands::history_clear,
             mongo::test_connection,
             mongo::connect,
             mongo::disconnect,

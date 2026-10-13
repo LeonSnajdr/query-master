@@ -172,7 +172,10 @@ function openInShell() {
                     tint="text-error"
                 />
                 <span class="toolbar-rule" />
-                <QueryHistory @choose="applyStatement" />
+                <QueryHistory
+                    @choose="applyStatement"
+                    :connectionId="tab.connectionId"
+                />
                 <span class="toolbar-rule" />
                 <!-- eslint-disable-next-line vue/no-mutating-props -- `tab` is the store's own object, not a prop -->
                 <IconButton

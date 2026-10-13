@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "select statement from history where connection_id = $1 order by id desc limit $2",
+  "describe": {
+    "columns": [
+      {
+        "name": "statement",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0138589fbbc4b395ed9030b363cc96d4e57ff9bc897d0c84b5e931b0b95b2eaa"
+}

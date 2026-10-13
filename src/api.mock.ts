@@ -1,4 +1,4 @@
-import type { Backend, Profile } from "./api";
+import type { Backend, Profile, Setting } from "./api";
 import { toNumber } from "./shell/ejson";
 import type { Doc, Json } from "./shell/ejson";
 
@@ -12,6 +12,9 @@ const COLLECTIONS: Record<string, string[]> = {
     shop: ["orders", "customers", "order-items"],
     logs: ["events"]
 };
+
+const history = new Map<string, string[]>();
+let setting: Setting = { language: null, theme: null };
 
 const STATUS = ["open", "paid", "shipped", "cancelled"];
 
@@ -64,6 +67,17 @@ export const mockBackend: Backend = {
     },
     readTextFile: async () => "",
     writeTextFile: async () => undefined,
+    getSetting: async () => setting,
+    saveSetting: async (value) => {
+        setting = value;
+    },
+    listHistory: async connectionId => history.get(connectionId) ?? [],
+    addHistory: async (connectionId, _database, statement) => {
+        history.set(connectionId, [statement, ...(history.get(connectionId) ?? []).filter(item => item !== statement)]);
+    },
+    clearHistory: async (connectionId) => {
+        history.delete(connectionId);
+    },
     runCursorCommand: async (_id, database, command, limit) => {
         let documents: Doc[] = ORDERS;
         if ("listCollections" in command) documents = (COLLECTIONS[database] ?? []).map(name => ({ name, type: "collection" }));

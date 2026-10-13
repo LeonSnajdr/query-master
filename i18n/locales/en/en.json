@@ -511,6 +511,7 @@
   "error.shell.uuid": "“{text}” is not a UUID.",
   "error.shell.uuidArgument": "UUID takes a string.",
   "field.remove": "Remove field",
+  "history.clear": "Clear history",
   "history.empty": "Nothing has run yet",
   "history.title": "History",
   "index.create": "Create index",

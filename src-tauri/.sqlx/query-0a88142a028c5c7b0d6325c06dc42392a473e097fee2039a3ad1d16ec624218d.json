@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "delete from history where connection_id = $1 and statement = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "0a88142a028c5c7b0d6325c06dc42392a473e097fee2039a3ad1d16ec624218d"
+}

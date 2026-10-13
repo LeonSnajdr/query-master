@@ -19,6 +19,12 @@ export interface ProfileInput {
     uri: string;
 }
 
+export interface Setting {
+    /** `null`: not chosen, the language of the system is used. */
+    language: string | null;
+    theme: string | null;
+}
+
 export interface ServerInfo {
     version: string;
 }
@@ -43,6 +49,12 @@ export interface Backend {
     /** Files the user picked in a file dialog. */
     readTextFile: (path: string) => Promise<string>;
     writeTextFile: (path: string, text: string) => Promise<void>;
+    getSetting: () => Promise<Setting>;
+    saveSetting: (setting: Setting) => Promise<void>;
+    /** The statements that ran on a connection, newest first. */
+    listHistory: (connectionId: string) => Promise<string[]>;
+    addHistory: (connectionId: string, database: string, statement: string) => Promise<void>;
+    clearHistory: (connectionId: string) => Promise<void>;
 }
 
 const tauriBackend: Backend = {
@@ -56,7 +68,12 @@ const tauriBackend: Backend = {
     runCommand: (id, database, command) => invoke("run_command", { id, database, command }),
     runCursorCommand: (id, database, command, limit) => invoke("run_cursor_command", { id, database, command, limit }),
     readTextFile: path => invoke("read_text_file", { path }),
-    writeTextFile: (path, text) => invoke("write_text_file", { path, text })
+    writeTextFile: (path, text) => invoke("write_text_file", { path, text }),
+    getSetting: () => invoke("setting_get"),
+    saveSetting: setting => invoke("setting_save", { setting }),
+    listHistory: connectionId => invoke("history_list", { connectionId }),
+    addHistory: (connectionId, database, statement) => invoke("history_add", { connectionId, database, statement }),
+    clearHistory: connectionId => invoke("history_clear", { connectionId })
 };
 
 /** The app runs in its window (and not, for work on the interface, in a browser). */

@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { computed, markRaw, ref } from "vue";
+import { computed, markRaw, reactive, ref } from "vue";
 import type { Ref } from "vue";
 import { backend, errorMessage } from "@/api";
 import { isDoc, toNumber, toShell } from "@/shell/ejson";
@@ -18,8 +18,6 @@ const DEFAULT_PAGE_SIZE = 20;
 const UNPAGED_LIMIT = 10_000;
 /** Commands after which the tree of databases and collections may have changed. */
 const STRUCTURE_COMMANDS = ["create", "drop", "dropDatabase", "renameCollection"];
-const HISTORY_KEY = "querymaster:history";
-const HISTORY_SIZE = 50;
 
 export type ResultView = "tree" | "table" | "json";
 /** The start page, a collection with its query fields, or a shell. */
@@ -80,15 +78,6 @@ class ReplyError extends Error {
     }
 }
 
-function loadHistory(): string[] {
-    try {
-        const saved: unknown = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
-        return Array.isArray(saved) ? saved.filter(item => typeof item === "string") : [];
-    } catch {
-        return [];
-    }
-}
-
 function isEmptyStage(text: string): boolean {
     return text.replace(/\s/g, "") === "" || text.replace(/\s/g, "") === "{}";
 }
@@ -114,8 +103,9 @@ export const useTabsStore = defineStore("tabs", () => {
     const tabs = ref([]) as Ref<WorkTab[]>;
     const activeId = ref<string>();
     const active = computed(() => tabs.value.find(tab => tab.id === activeId.value));
-    /** Statements that ran, newest first. */
-    const history = ref(loadHistory());
+    /** Statements that ran, newest first, per connection; read from the app's database on first use. */
+    const history = reactive(new Map<string, string[]>());
+    const historyRequests = new Set<string>();
     let counter = 0;
 
     function create(kind: TabKind, options: Partial<WorkTab>): WorkTab {
@@ -204,13 +194,27 @@ export const useTabsStore = defineStore("tabs", () => {
         if (count > 0) activeId.value = tabs.value[(index + direction + count) % count]!.id;
     }
 
-    function remember(statement: string): void {
-        history.value = [statement, ...history.value.filter(item => item !== statement)].slice(0, HISTORY_SIZE);
-        try {
-            localStorage.setItem(HISTORY_KEY, JSON.stringify(history.value));
-        } catch {
-            // Without storage the history lasts until the app closes.
+    /** The history of a connection as far as loaded; the first call fetches it. */
+    function historyOf(connectionId: string): string[] {
+        if (!history.has(connectionId) && !historyRequests.has(connectionId)) {
+            historyRequests.add(connectionId);
+            backend.listHistory(connectionId)
+                .then(statements => history.set(connectionId, statements))
+                .catch(() => history.set(connectionId, []))
+                .finally(() => historyRequests.delete(connectionId));
         }
+        return history.get(connectionId) ?? [];
+    }
+
+    function remember(tab: WorkTab, statement: string): void {
+        history.set(tab.connectionId, [statement, ...historyOf(tab.connectionId).filter(item => item !== statement)]);
+        // The result is there either way; a history that could not be written is not worth an error on top.
+        void backend.addHistory(tab.connectionId, tab.database, statement).catch(error => console.warn("History was not saved", error));
+    }
+
+    async function clearHistory(connectionId: string): Promise<void> {
+        await backend.clearHistory(connectionId);
+        history.set(connectionId, []);
     }
 
     function guardWrite(tab: WorkTab, write: boolean): void {
@@ -278,7 +282,7 @@ export const useTabsStore = defineStore("tabs", () => {
             const plan = planStatement(statement, tab.database);
             const text = source.slice(statement.start, statement.end);
             await fetch(tab, plan, 0, text);
-            remember(text);
+            remember(tab, text);
         });
     }
 
@@ -295,7 +299,7 @@ export const useTabsStore = defineStore("tabs", () => {
             }
             if (!statement) throw new ShellError("error.plan.nothing");
             await fetch(tab, planStatement(statement, tab.database), 0, text);
-            remember(text);
+            remember(tab, text);
         });
     }
 
@@ -380,7 +384,7 @@ export const useTabsStore = defineStore("tabs", () => {
     }
 
     return {
-        tabs, activeId, active, history,
+        tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, duplicate, close, closeOthers, closeAll, closeConnection, step,
         run, runBrowse, runTab, showPage, refresh, count, sourceCollection, editable, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField
