@@ -1245,6 +1245,78 @@ var QueryMasterRuntime = (function(exports) {
 			end: 0
 		}, database));
 	}
+	/** Options of a bulk operation that belong to the single write. */
+	var WRITE_OPTIONS = [
+		"upsert",
+		"arrayFilters",
+		"collation",
+		"hint"
+	];
+	/**
+	* `bulkWrite`: the operations one after the other, counted together as drivers report them.
+	* With `ordered: false` a failing operation is noted and the rest still runs.
+	*/
+	function bulkWrite(database, collection, operations, options = {}) {
+		if (!Array.isArray(operations)) fail("bulkWrite takes an array of operations");
+		const result = {
+			acknowledged: true,
+			insertedCount: 0,
+			matchedCount: 0,
+			modifiedCount: 0,
+			deletedCount: 0,
+			upsertedCount: 0,
+			insertedIds: {},
+			upsertedIds: {}
+		};
+		const errors = [];
+		operations.forEach((operation, index) => {
+			const [kind] = Object.keys(operation);
+			const detail = kind === void 0 ? void 0 : operation[kind];
+			if (kind === void 0 || detail === void 0) fail(`Operation ${index} of bulkWrite is empty`);
+			const pick = Object.fromEntries(WRITE_OPTIONS.filter((name) => detail[name] !== void 0).map((name) => [name, detail[name]]));
+			try {
+				switch (kind) {
+					case "insertOne": {
+						const done = call(database, collection, "insertOne", [detail.document]);
+						result.insertedCount++;
+						result.insertedIds[index] = done.insertedId;
+						break;
+					}
+					case "updateOne":
+					case "updateMany":
+					case "replaceOne": {
+						const done = call(database, collection, kind, [
+							detail.filter,
+							kind === "replaceOne" ? detail.replacement : detail.update,
+							pick
+						]);
+						result.matchedCount += Number(done.matchedCount);
+						result.modifiedCount += Number(done.modifiedCount);
+						if (done.upsertedCount) {
+							result.upsertedCount++;
+							result.upsertedIds[index] = done.upsertedId;
+						}
+						break;
+					}
+					case "deleteOne":
+					case "deleteMany":
+						result.deletedCount += Number(call(database, collection, kind, [detail.filter, pick]).deletedCount);
+						break;
+					default: fail(`bulkWrite does not know the operation ${kind}`);
+				}
+			} catch (error) {
+				if (options.ordered !== false) throw error;
+				errors.push({
+					index,
+					errmsg: String(error.message)
+				});
+			}
+		});
+		return errors.length > 0 ? {
+			...result,
+			writeErrors: errors
+		} : result;
+	}
 	function collectionOf(database, name) {
 		return new Proxy({}, { get(_, property) {
 			if (typeof property !== "string") return void 0;
@@ -1254,7 +1326,8 @@ var QueryMasterRuntime = (function(exports) {
 				name: "explain",
 				args: verbosity === void 0 ? [] : [verbosity]
 			}]) : void 0 });
-			if (collectionMethodNames.includes(property) || property === "bulkWrite") return (...values) => call(database, name, property, values);
+			if (property === "bulkWrite") return (operations, options) => bulkWrite(database, name, operations, options);
+			if (collectionMethodNames.includes(property)) return (...values) => call(database, name, property, values);
 			return collectionOf(database, `${name}.${property}`);
 		} });
 	}

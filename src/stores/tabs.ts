@@ -297,9 +297,10 @@ export const useTabsStore = defineStore("tabs", () => {
 
     /**
      * Shell tabs: runs the statement at `position`; of a selection, the first statement in it.
-     * Text that is more than `db.…` statements with fixed values runs as a script, as a whole.
+     * Text that is more than `db.…` statements with fixed values runs as a script, as a whole,
+     * and so do several statements when `whole` is set (the Run button).
      */
-    function run(tab: WorkTab, position: number, selection?: string): Promise<boolean> {
+    function run(tab: WorkTab, position: number, selection?: string, whole = false): Promise<boolean> {
         return guarded(tab, async () => {
             const selected = selection?.trim() ? selection : undefined;
             const source = selected ?? tab.text;
@@ -309,6 +310,13 @@ export const useTabsStore = defineStore("tabs", () => {
             } catch (error) {
                 if (!(error instanceof ShellError)) throw error;
                 // Not a plain statement (or not valid at all): the engine runs it, or says what is wrong.
+                await runScript(tab, source);
+                remember(tab, source);
+                return;
+            }
+            // "Run" on several statements runs them all, in order, as the shell would; so does anything
+            // only the engine can do. One statement keeps the way that can be paged and edited.
+            if ((whole && !selected && statements.length > 1) || statements.some(item => item.method === "bulkWrite")) {
                 await runScript(tab, source);
                 remember(tab, source);
                 return;
@@ -341,7 +349,7 @@ export const useTabsStore = defineStore("tabs", () => {
     }
 
     function runTab(tab: WorkTab): Promise<boolean> {
-        return tab.kind === "browse" ? runBrowse(tab) : run(tab, 0);
+        return tab.kind === "browse" ? runBrowse(tab) : run(tab, 0, undefined, true);
     }
 
     /** Shows the page that starts at `offset`. */

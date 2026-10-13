@@ -55,6 +55,7 @@ export const COLLECTION_METHODS: Entry[] = [
         ["findOneAndUpdate", "findOneAndUpdate({ ${} }, { $set: { ${} } }, { returnDocument: \"after\" })"],
         ["findOneAndReplace", "findOneAndReplace({ ${} }, { ${} })"],
         ["findOneAndDelete", "findOneAndDelete({ ${} })"],
+        ["bulkWrite", "bulkWrite([\n\t{ insertOne: { document: { ${} } } }\n])"],
         ["createIndex", "createIndex({ ${field}: 1 })"],
         ["createIndexes", "createIndexes([{ ${field}: 1 }])"],
         ["getIndexes", "getIndexes()"],

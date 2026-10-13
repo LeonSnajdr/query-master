@@ -171,6 +171,57 @@ function call(database: string, collection: string | undefined, method: string, 
     return execute(planStatement({ collection, method, args, modifiers, start: 0, end: 0 }, database));
 }
 
+/** Options of a bulk operation that belong to the single write. */
+const WRITE_OPTIONS = ["upsert", "arrayFilters", "collation", "hint"] as const;
+
+/**
+ * `bulkWrite`: the operations one after the other, counted together as drivers report them.
+ * With `ordered: false` a failing operation is noted and the rest still runs.
+ */
+function bulkWrite(database: string, collection: string, operations: unknown, options: { ordered?: boolean } = {}): unknown {
+    if (!Array.isArray(operations)) fail("bulkWrite takes an array of operations");
+    const result = { acknowledged: true, insertedCount: 0, matchedCount: 0, modifiedCount: 0, deletedCount: 0, upsertedCount: 0, insertedIds: {} as Record<number, unknown>, upsertedIds: {} as Record<number, unknown> };
+    const errors: { index: number; errmsg: string }[] = [];
+    (operations as Record<string, Record<string, unknown>>[]).forEach((operation, index) => {
+        const [kind] = Object.keys(operation);
+        const detail = kind === undefined ? undefined : operation[kind];
+        if (kind === undefined || detail === undefined) fail(`Operation ${index} of bulkWrite is empty`);
+        const pick = Object.fromEntries(WRITE_OPTIONS.filter(name => detail[name] !== undefined).map(name => [name, detail[name]]));
+        try {
+            switch (kind) {
+                case "insertOne": {
+                    const done = call(database, collection, "insertOne", [detail.document]) as { insertedId: unknown };
+                    result.insertedCount++;
+                    result.insertedIds[index] = done.insertedId;
+                    break;
+                }
+                case "updateOne":
+                case "updateMany":
+                case "replaceOne": {
+                    const done = call(database, collection, kind, [detail.filter, kind === "replaceOne" ? detail.replacement : detail.update, pick]) as { matchedCount: number; modifiedCount: number; upsertedCount: number; upsertedId: unknown };
+                    result.matchedCount += Number(done.matchedCount);
+                    result.modifiedCount += Number(done.modifiedCount);
+                    if (done.upsertedCount) {
+                        result.upsertedCount++;
+                        result.upsertedIds[index] = done.upsertedId;
+                    }
+                    break;
+                }
+                case "deleteOne":
+                case "deleteMany":
+                    result.deletedCount += Number((call(database, collection, kind, [detail.filter, pick]) as { deletedCount: number }).deletedCount);
+                    break;
+                default:
+                    fail(`bulkWrite does not know the operation ${kind}`);
+            }
+        } catch (error) {
+            if (options.ordered !== false) throw error;
+            errors.push({ index, errmsg: String((error as Error).message) });
+        }
+    });
+    return errors.length > 0 ? { ...result, writeErrors: errors } : result;
+}
+
 function collectionOf(database: string, name: string): object {
     return new Proxy({}, {
         get(_, property) {
@@ -185,7 +236,8 @@ function collectionOf(database: string, name: string): object {
                         : undefined)
                 });
             }
-            if (collectionMethodNames.includes(property) || property === "bulkWrite") return (...values: unknown[]) => call(database, name, property, values);
+            if (property === "bulkWrite") return (operations: unknown, options?: { ordered?: boolean }) => bulkWrite(database, name, operations, options);
+            if (collectionMethodNames.includes(property)) return (...values: unknown[]) => call(database, name, property, values);
             // `db.system.profile`: a name with dots.
             return collectionOf(database, `${name}.${property}`);
         }

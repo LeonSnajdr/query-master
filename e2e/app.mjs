@@ -45,8 +45,11 @@ async function runShell(text) {
     const panel = page.locator("[data-testid=tab-panel]:visible");
     await write(panel, text);
     await panel.locator("[data-testid=query-run]").click();
-    await panel.locator("[data-testid=result-range]").waitFor();
+    // The button is disabled (or gives way to Stop) while the run lasts; an older result may still show.
+    await page.waitForTimeout(150);
+    await panel.locator("[data-testid=query-run]:not([disabled])").waitFor();
     assert.equal(await panel.locator("[data-testid=query-error]").count(), 0, "the statement failed");
+    await panel.locator("[data-testid=result-range]").waitFor();
     return panel;
 }
 
@@ -110,6 +113,22 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.match(await panel.locator("[data-testid=script-output]").innerText(), /total 6, big 9007199254740993/);
         assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 2");
         assert.match(await panel.locator("[data-testid=tree-row]").first().innerText(), /5 elements|4 elements|3 elements/);
+    });
+
+    await step("bulkWrite and several statements run in order", async () => {
+        const target = `db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}")`;
+        const panel = await runShell(`${target}.bulkWrite([
+            { insertOne: { document: { n: 10, name: "bulk" } } },
+            { updateOne: { filter: { n: 10 }, update: { $set: { name: "changed" } } } },
+            { deleteOne: { filter: { n: 10 } } }
+        ])`);
+        // Rows put key, colon and value on lines of their own: compared without the white space.
+        const counts = (await panel.locator("[data-testid=query-result]").innerText()).replace(/\s+/g, "");
+        for (const expected of ["insertedCount:1", "modifiedCount:1", "deletedCount:1"]) assert.ok(counts.includes(expected), `${expected} not in ${counts.slice(0, 300)}`);
+        // Two statements: both run, the last one is the result.
+        await runShell(`print(${target}.countDocuments({}));\n${target}.find({ n: 1 })`);
+        assert.equal((await panel.locator("[data-testid=script-output]").innerText()).trim(), "3");
+        assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 1");
     });
 
     await step("an endless script can be stopped", async () => {

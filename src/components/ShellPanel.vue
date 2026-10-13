@@ -46,10 +46,10 @@ const environment = computed<Environment>(() => ({
     fields: collection => connections.fieldsOf(tab.value.connectionId, tab.value.database, collection)
 }));
 
-/** Runs the statement at the cursor; with `selection`, the selected text. */
+/** "Run": the selected text if there is one, else the whole script. */
 function run(position?: number, selection?: string) {
     const cursor = editor.value?.cursor();
-    void tabs.run(tab.value, position ?? cursor?.position ?? 0, selection ?? cursor?.selection);
+    void tabs.run(tab.value, position ?? cursor?.position ?? 0, selection ?? cursor?.selection, true);
 }
 
 function runSelection() {
