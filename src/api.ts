@@ -46,10 +46,10 @@ export interface Backend {
 }
 
 const tauriBackend: Backend = {
-    listConnections: () => invoke("list_connections"),
+    listConnections: () => invoke("connection_list"),
     connectionUri: id => invoke("connection_uri", { id }),
-    saveConnection: input => invoke("save_connection", { input }),
-    deleteConnection: id => invoke("delete_connection", { id }),
+    saveConnection: input => invoke("connection_save", { input }),
+    deleteConnection: id => invoke("connection_delete", { id }),
     testConnection: uri => invoke("test_connection", { uri }),
     connect: id => invoke("connect", { id }),
     disconnect: id => invoke("disconnect", { id }),

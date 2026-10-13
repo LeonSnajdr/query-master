@@ -12,6 +12,8 @@
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "test": "vitest run",
+        "rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
+        "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
         "tauri": "tauri",
         "app:dev": "tauri dev",
         "app:build": "tauri build"

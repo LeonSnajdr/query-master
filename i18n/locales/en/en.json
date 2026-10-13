@@ -462,6 +462,7 @@
   "document.remove.title": "Remove document?",
   "document.view": "View document",
   "error.backend.commandDocument": "A command is a document.",
+  "error.backend.database": "The local database of the app reported an error: {detail}",
   "error.backend.extendedJson": "Invalid extended JSON: {detail}",
   "error.backend.keychain": "The keychain could not be used: {detail}",
   "error.backend.keychainRead": "The connection string could not be read from the keychain: {detail}",

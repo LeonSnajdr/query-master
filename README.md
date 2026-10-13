@@ -30,6 +30,14 @@ bun run test
 ```
 
 ```bash
+bun run rust:check
+```
+
+```bash
+bun run rust:test
+```
+
+```bash
 bun run app:build
 ```
 
@@ -39,11 +47,28 @@ bun run app:build
   code), `plan.ts` turns them into database commands, `context.ts` and `complete.ts` find what to
   suggest at the cursor, `catalog.ts` lists methods, stages and operators with the server version
   that brought them.
-- `src-tauri/src` – saved connections (`store.rs`; connection strings live in the keychain of the
-  operating system) and the two commands that run a database command (`mongo.rs`).
+- `src-tauri/src` – the two commands that run a database command (`mongo.rs`), the local SQLite
+  database (`db`, tables in `src-tauri/migrations`) and the saved connections in it (`connection`;
+  their connection strings live in the keychain of the operating system).
 - `i18n/locales` – every text of the interface, English and German, as flat keys. Descriptions of
   completion entries are `doc.<group>.<name>`; errors of the Rust side arrive as keys too
   (`error.backend.*`). `i18n/locales.test.ts` keeps both languages and the catalog in step.
+
+## Local database
+
+What the app stores lies in SQLite through sqlx. Queries are checked at compile time against
+`src-tauri/dev.db` (`DATABASE_URL` in `src-tauri/.env`) or, without it, against the cache in
+`src-tauri/.sqlx`. After adding a migration or changing a query, in `src-tauri`:
+
+```bash
+sqlx migrate run
+```
+
+```bash
+cargo sqlx prepare -- --tests
+```
+
+`sqlx` is `cargo install sqlx-cli`. Rules for new tables: `docs/roadmap/11-ablage.md`.
 
 ## Against a real server
 
@@ -51,7 +76,8 @@ bun run app:build
 cargo test --manifest-path src-tauri/Cargo.toml -- --include-ignored
 ```
 
-The ignored test reads from the server in `QUERYMASTER_TEST_URI` (default `mongodb://localhost:27017`).
+The ignored tests use the server in `QUERYMASTER_TEST_URI` (default `mongodb://localhost:27017`);
+they write only into a collection of their own in the database `querymaster_test` and drop it.
 
 ## Not there yet
 

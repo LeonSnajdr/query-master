@@ -35,6 +35,9 @@ coverage
 # Tauri / Rust
 src-tauri/target
 src-tauri/gen
+# The development database; `src-tauri/.env` only names it and is versioned
+src-tauri/dev.db*
+!src-tauri/.env
 *.pdb
 
 # Claude Code: skills are shared, everything else is per machine

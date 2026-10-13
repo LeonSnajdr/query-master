@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "update connection set date_last_used = $2 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "0f16f68ee9b18849285a2af03795ad7e0cc311963ec2a24d4871f12d7d8b7240"
+}

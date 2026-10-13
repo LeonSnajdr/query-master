@@ -1,47 +1,98 @@
-//! Errors as the frontend shows them: a message key of `i18n/locales` for what this app says
-//! itself, and the text of the driver or the operating system for what they report.
+//! One error type for all commands. What this app says itself reaches the frontend as a message
+//! key of `i18n/locales`; what the driver, SQLite or the operating system report, as their text.
 
-use serde::Serialize;
+use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
 
-#[derive(Debug, Serialize)]
-pub struct AppError {
-    /// Key of the message; absent when `detail` is the whole message.
-    key: Option<&'static str>,
-    /// Goes into the `{detail}` placeholder of the message.
-    detail: Option<String>,
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("this connection is not open")]
+    NotConnected,
+    #[error("a connection string starts with mongodb:// or mongodb+srv://")]
+    UriScheme,
+    #[error("a command is a document")]
+    CommandDocument,
+    #[error("invalid extended JSON: {0}")]
+    ExtendedJson(String),
+    #[error("the keychain could not be used: {0}")]
+    Keychain(#[source] keyring::Error),
+    #[error("the connection string could not be read from the keychain: {0}")]
+    KeychainRead(#[source] keyring::Error),
+    #[error("the connection string could not be stored in the keychain: {0}")]
+    KeychainWrite(#[source] keyring::Error),
+    #[error("the local database reported an error: {0}")]
+    Database(#[from] sqlx::Error),
+    #[error(transparent)]
+    Mongo(#[from] mongodb::error::Error),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
 }
 
-impl AppError {
-    pub fn key(key: &'static str) -> Self {
-        Self { key: Some(key), detail: None }
+pub type Result<T> = std::result::Result<T, Error>;
+
+impl Error {
+    /// Key of the message the frontend shows; `None` when the text of the cause is the message.
+    fn key(&self) -> Option<&'static str> {
+        match self {
+            Self::NotConnected => Some("error.backend.notConnected"),
+            Self::UriScheme => Some("error.backend.uriScheme"),
+            Self::CommandDocument => Some("error.backend.commandDocument"),
+            Self::ExtendedJson(_) => Some("error.backend.extendedJson"),
+            Self::Keychain(_) => Some("error.backend.keychain"),
+            Self::KeychainRead(_) => Some("error.backend.keychainRead"),
+            Self::KeychainWrite(_) => Some("error.backend.keychainWrite"),
+            Self::Database(_) => Some("error.backend.database"),
+            Self::Mongo(_) | Self::Io(_) => None,
+        }
     }
 
-    pub fn with_detail(key: &'static str, detail: impl ToString) -> Self {
-        Self { key: Some(key), detail: Some(detail.to_string()) }
-    }
-
-    /// An error of the driver or the system, shown as it is.
-    pub fn raw(detail: impl ToString) -> Self {
-        Self { key: None, detail: Some(detail.to_string()) }
+    /// What goes into the `{detail}` placeholder of the message: the cause, without this app's words.
+    fn detail(&self) -> Option<String> {
+        match self {
+            Self::NotConnected | Self::UriScheme | Self::CommandDocument => None,
+            Self::ExtendedJson(cause) => Some(cause.clone()),
+            Self::Keychain(cause) | Self::KeychainRead(cause) | Self::KeychainWrite(cause) => {
+                Some(cause.to_string())
+            }
+            Self::Database(cause) => Some(cause.to_string()),
+            Self::Mongo(cause) => Some(cause.to_string()),
+            Self::Io(cause) => Some(cause.to_string()),
+        }
     }
 }
 
-impl From<mongodb::error::Error> for AppError {
-    fn from(error: mongodb::error::Error) -> Self {
-        Self::raw(error)
+/// Tauri sends a command's error to the frontend as JSON: `{ key, detail }`.
+impl Serialize for Error {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("Error", 2)?;
+        state.serialize_field("key", &self.key())?;
+        state.serialize_field("detail", &self.detail())?;
+        state.end()
     }
 }
 
-impl From<std::io::Error> for AppError {
-    fn from(error: std::io::Error) -> Self {
-        Self::raw(error)
+#[cfg(test)]
+mod tests {
+    use super::Error;
+    use serde_json::json;
+
+    #[test]
+    fn serializes_as_key_and_detail() {
+        assert_eq!(
+            serde_json::to_value(Error::NotConnected).unwrap(),
+            json!({ "key": "error.backend.notConnected", "detail": null })
+        );
+        assert_eq!(
+            serde_json::to_value(Error::ExtendedJson("bad".into())).unwrap(),
+            json!({ "key": "error.backend.extendedJson", "detail": "bad" })
+        );
+        let io = Error::from(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no such file",
+        ));
+        assert_eq!(
+            serde_json::to_value(io).unwrap(),
+            json!({ "key": null, "detail": "no such file" })
+        );
     }
 }
-
-impl From<tauri::Error> for AppError {
-    fn from(error: tauri::Error) -> Self {
-        Self::raw(error)
-    }
-}
-
-pub type Result<T> = std::result::Result<T, AppError>;

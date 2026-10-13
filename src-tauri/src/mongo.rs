@@ -15,8 +15,8 @@ use serde_json::Value;
 use tauri::State;
 
 use crate::{
-    error::{AppError, Result},
-    store,
+    connection,
+    error::{Error, Result},
 };
 
 /// Without a timeout in the connection string a wrong address would block for 30 seconds.
@@ -27,11 +27,14 @@ pub struct Clients(Mutex<HashMap<String, Client>>);
 
 impl Clients {
     fn get(&self, id: &str) -> Result<Client> {
-        self.lock()?.get(id).cloned().ok_or_else(|| AppError::key("error.backend.notConnected"))
+        self.lock().get(id).cloned().ok_or(Error::NotConnected)
     }
 
-    fn lock(&self) -> Result<std::sync::MutexGuard<'_, HashMap<String, Client>>> {
-        self.0.lock().map_err(AppError::raw)
+    // The map stays usable after a panic elsewhere: an entry is inserted or removed whole.
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Client>> {
+        self.0
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -53,8 +56,12 @@ pub struct CursorPage {
 
 async fn open(uri: &str) -> Result<(Client, ServerInfo)> {
     let mut options = ClientOptions::parse(uri).await?;
-    options.app_name.get_or_insert_with(|| "QueryMaster".to_string());
-    options.server_selection_timeout.get_or_insert(SERVER_SELECTION_TIMEOUT);
+    options
+        .app_name
+        .get_or_insert_with(|| "QueryMaster".to_string());
+    options
+        .server_selection_timeout
+        .get_or_insert(SERVER_SELECTION_TIMEOUT);
     let client = Client::with_options(options)?;
     let info = client
         .database("admin")
@@ -65,9 +72,9 @@ async fn open(uri: &str) -> Result<(Client, ServerInfo)> {
 }
 
 fn to_document(command: Value) -> Result<Document> {
-    match Bson::try_from(command).map_err(|e| AppError::with_detail("error.backend.extendedJson", e))? {
+    match Bson::try_from(command).map_err(|e| Error::ExtendedJson(e.to_string()))? {
         Bson::Document(document) => Ok(document),
-        _ => Err(AppError::key("error.backend.commandDocument")),
+        _ => Err(Error::CommandDocument),
     }
 }
 
@@ -83,20 +90,28 @@ pub async fn test_connection(uri: String) -> Result<ServerInfo> {
 }
 
 #[tauri::command]
-pub async fn connect(clients: State<'_, Clients>, id: String) -> Result<ServerInfo> {
-    let (client, info) = open(&store::stored_uri(&id)?).await?;
-    let previous = clients.lock()?.insert(id, client);
+pub async fn connect(
+    clients: State<'_, Clients>,
+    pool: State<'_, sqlx::SqlitePool>,
+    id: uuid::Uuid,
+) -> Result<ServerInfo> {
+    let (client, info) = open(&connection::uri(id)?).await?;
+    connection::mark_used(&pool, id).await?;
+    let id = id.to_string();
+    let previous = clients.lock().insert(id, client);
     if let Some(previous) = previous {
-        previous.shutdown().await;
+        // Immediate: without it the call would wait for queries still running on the old client.
+        previous.shutdown().immediate(true).await;
     }
     Ok(info)
 }
 
 #[tauri::command]
 pub async fn disconnect(clients: State<'_, Clients>, id: String) -> Result<()> {
-    let client = clients.lock()?.remove(&id);
+    let client = clients.lock().remove(&id);
     if let Some(client) = client {
-        client.shutdown().await;
+        // Immediate: disconnecting must not wait for a query that is still running.
+        client.shutdown().immediate(true).await;
     }
     Ok(())
 }
@@ -141,7 +156,10 @@ pub async fn run_cursor_command(
         }
         documents.push(to_json(document));
     }
-    Ok(CursorPage { documents, has_more })
+    Ok(CursorPage {
+        documents,
+        has_more,
+    })
 }
 
 #[cfg(test)]
@@ -158,7 +176,12 @@ mod tests {
         });
         let document = to_document(command).unwrap();
         assert_eq!(document.keys().next().map(String::as_str), Some("find"));
-        let sort: Vec<_> = document.get_document("sort").unwrap().keys().cloned().collect();
+        let sort: Vec<_> = document
+            .get_document("sort")
+            .unwrap()
+            .keys()
+            .cloned()
+            .collect();
         assert_eq!(sort, ["z", "a"]);
         let filter = document.get_document("filter").unwrap();
         assert!(filter.get_object_id("_id").is_ok());
@@ -170,7 +193,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn talks_to_a_server() {
-        let uri = std::env::var("QUERYMASTER_TEST_URI").unwrap_or_else(|_| "mongodb://localhost:27017".into());
+        let uri = std::env::var("QUERYMASTER_TEST_URI")
+            .unwrap_or_else(|_| "mongodb://localhost:27017".into());
         let (client, info) = open(&uri).await.unwrap();
         assert!(!info.version.is_empty());
         println!("MongoDB {}", info.version);
@@ -191,7 +215,8 @@ mod tests {
         assert!(!databases.get_array("databases").unwrap().is_empty());
 
         // The way a `find` of the shell arrives: with a filter, a sort and a batch size.
-        let command = json!({ "find": "startup_log", "filter": {}, "sort": { "_id": -1 }, "batchSize": 2 });
+        let command =
+            json!({ "find": "startup_log", "filter": {}, "sort": { "_id": -1 }, "batchSize": 2 });
         let mut cursor = client
             .database("local")
             .run_cursor_command(to_document(command).unwrap())
@@ -200,12 +225,119 @@ mod tests {
         if let Some(document) = cursor.try_next().await.unwrap() {
             assert!(to_json(document).get("_id").is_some());
         }
+        // `shutdown` waits for every cursor to be gone: an open one would make it wait forever.
+        drop(cursor);
+        client.shutdown().await;
+    }
+
+    /// Writes, as the frontend sends them: into a collection of its own in `querymaster_test`,
+    /// which is dropped again. Needs `QUERYMASTER_TEST_URI` with the right to write there.
+    #[tokio::test]
+    #[ignore]
+    async fn writes_and_reads_back_every_type() {
+        let Ok(uri) = std::env::var("QUERYMASTER_TEST_URI") else {
+            println!("QUERYMASTER_TEST_URI is not set: skipped");
+            return;
+        };
+        let (client, _) = open(&uri).await.unwrap();
+        let database = client.database("querymaster_test");
+        let collection = format!("roundtrip_{}", std::process::id());
+        let run = |command: Value| {
+            let database = database.clone();
+            async move {
+                to_json(
+                    database
+                        .run_command(to_document(command).unwrap())
+                        .await
+                        .unwrap(),
+                )
+            }
+        };
+
+        let id = json!({ "$oid": "64b7f0c2a1b2c3d4e5f60718" });
+        let document = json!({
+            "_id": id,
+            "text": "open",
+            "int": 5,
+            "long": { "$numberLong": "9007199254740993" },
+            "double": { "$numberDouble": "2.5" },
+            "decimal": { "$numberDecimal": "9.99" },
+            "flag": true,
+            "nothing": null,
+            "at": { "$date": { "$numberLong": "1714521600000" } },
+            "uuid": { "$binary": { "base64": "ABEiM0RVZneImaq7zN3u/w==", "subType": "04" } },
+            "pattern": { "$regularExpression": { "pattern": "^a", "options": "i" } },
+            "stamp": { "$timestamp": { "t": 7, "i": 1 } },
+            "nested": { "list": [1, { "deep": "x" }] }
+        });
+
+        let inserted = run(json!({ "insert": collection, "documents": [document] })).await;
+        assert_eq!(inserted["n"], json!({ "$numberInt": "1" }));
+
+        // What comes back is canonical: a plain 5 was stored as Int32.
+        let find = json!({ "find": collection, "filter": { "_id": id }, "batchSize": 2 });
+        let mut cursor = database
+            .run_cursor_command(to_document(find.clone()).unwrap())
+            .await
+            .unwrap();
+        let read = to_json(cursor.try_next().await.unwrap().unwrap());
+        drop(cursor);
+        assert_eq!(read["int"], json!({ "$numberInt": "5" }));
+        assert_eq!(read["nested"]["list"][0], json!({ "$numberInt": "1" }));
+        for key in [
+            "_id", "text", "long", "double", "decimal", "flag", "nothing", "at", "uuid", "pattern",
+            "stamp",
+        ] {
+            assert_eq!(read[key], document[key], "{key}");
+        }
+
+        // Editing a value in place, replacing the document, removing a field.
+        let set = json!({ "update": collection, "updates": [{ "q": { "_id": id }, "u": { "$set": { "nested.list.1.deep": "y" } }, "multi": false }] });
+        assert_eq!(run(set).await["nModified"], json!({ "$numberInt": "1" }));
+        let replace = json!({ "update": collection, "updates": [{ "q": { "_id": id }, "u": { "_id": id, "text": "paid", "extra": 1 }, "multi": false }] });
+        assert_eq!(
+            run(replace).await["nModified"],
+            json!({ "$numberInt": "1" })
+        );
+        let unset = json!({ "update": collection, "updates": [{ "q": { "_id": id }, "u": { "$unset": { "extra": "" } }, "multi": false }] });
+        assert_eq!(run(unset).await["nModified"], json!({ "$numberInt": "1" }));
+        let mut cursor = database
+            .run_cursor_command(to_document(find).unwrap())
+            .await
+            .unwrap();
+        let replaced = to_json(cursor.try_next().await.unwrap().unwrap());
+        drop(cursor);
+        assert_eq!(replaced, json!({ "_id": id, "text": "paid" }));
+
+        // A second insert of the same _id is refused inside a reply that is otherwise fine.
+        let duplicate = run(json!({ "insert": collection, "documents": [{ "_id": id }] })).await;
+        assert!(duplicate["writeErrors"][0]["errmsg"]
+            .as_str()
+            .unwrap()
+            .contains("E11000"));
+
+        // The structure commands of the tree.
+        let index = json!({ "createIndexes": collection, "indexes": [{ "key": { "text": 1 }, "name": "text_1" }] });
+        assert_eq!(run(index).await["ok"], json!({ "$numberDouble": "1.0" }));
+        let renamed = format!("{collection}_renamed");
+        let rename = json!({ "renameCollection": format!("querymaster_test.{collection}"), "to": format!("querymaster_test.{renamed}") });
+        client
+            .database("admin")
+            .run_command(to_document(rename).unwrap())
+            .await
+            .unwrap();
+        let removed = run(json!({ "delete": renamed, "deletes": [{ "q": { "_id": { "$in": [id] } }, "limit": 0 }] })).await;
+        assert_eq!(removed["n"], json!({ "$numberInt": "1" }));
+        run(json!({ "drop": renamed })).await;
         client.shutdown().await;
     }
 
     #[test]
     fn replies_are_canonical() {
         let json = to_json(doc! { "n": 3_i32, "big": 5_i64 });
-        assert_eq!(json, json!({ "n": { "$numberInt": "3" }, "big": { "$numberLong": "5" } }));
+        assert_eq!(
+            json,
+            json!({ "n": { "$numberInt": "3" }, "big": { "$numberLong": "5" } })
+        );
     }
 }
