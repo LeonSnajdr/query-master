@@ -1,0 +1,46 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+node_modules
+.DS_Store
+Thumbs.db
+dist
+dist-ssr
+coverage
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+*.tsbuildinfo
+
+# Environment (connection strings for the tests against a real server)
+.env
+.env.*
+!.env.example
+
+# Tauri / Rust
+src-tauri/target
+src-tauri/gen
+*.pdb
+
+# Claude Code: skills are shared, everything else is per machine
+.claude/*
+!.claude/skills
+
+# Captures taken with tools/observe: they show real data
+tools/observe/out
+*.capture.png

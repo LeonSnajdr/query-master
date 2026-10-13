@@ -1,0 +1,86 @@
+import { reactive } from "vue";
+import type { Profile } from "@/api";
+
+/** A question for one line of text. */
+export interface PromptRequest {
+    title: string;
+    label: string;
+    value?: string;
+    /** Label of the confirming button. */
+    action: string;
+    /** The value is code (index keys …) and shown in the code font. */
+    code?: boolean;
+}
+
+export interface ConfirmRequest {
+    title: string;
+    text: string;
+    action: string;
+}
+
+/** Text to read or to edit in a code editor. */
+export interface TextRequest {
+    title: string;
+    text: string;
+    /** With an action the text can be changed and is handed back. */
+    action?: string;
+    /** Checks the edited text; a string is shown as the error and the dialog stays open. */
+    submit?: (text: string) => Promise<string | undefined> | string | undefined;
+}
+
+// One dialog of each kind for the whole app (`AppDialogs.vue` renders them).
+const state = reactive({
+    prompt: undefined as PromptRequest | undefined,
+    confirm: undefined as ConfirmRequest | undefined,
+    text: undefined as TextRequest | undefined,
+    connectionOpen: false,
+    connection: undefined as Profile | undefined
+});
+
+let answerPrompt: ((value: string | undefined) => void) | undefined;
+let answerConfirm: ((value: boolean) => void) | undefined;
+
+/** Dialogs any part of the app can open, each answering with a promise. */
+export function useDialogs() {
+    /** Asks for a line of text; `undefined` when the dialog is dismissed. */
+    function ask(request: PromptRequest): Promise<string | undefined> {
+        answerPrompt?.(undefined);
+        state.prompt = request;
+        return new Promise(resolve => (answerPrompt = resolve));
+    }
+
+    function confirm(request: ConfirmRequest): Promise<boolean> {
+        answerConfirm?.(false);
+        state.confirm = request;
+        return new Promise(resolve => (answerConfirm = resolve));
+    }
+
+    function showText(request: TextRequest): void {
+        state.text = request;
+    }
+
+    /** Opens the connection dialog for a new connection, or for the one given. */
+    function editConnection(profile?: Profile): void {
+        state.connection = profile;
+        state.connectionOpen = true;
+    }
+
+    return { ask, confirm, showText, editConnection };
+}
+
+/** For `AppDialogs.vue` only. */
+export function useDialogState() {
+    return {
+        state,
+        resolvePrompt(value: string | undefined) {
+            state.prompt = undefined;
+            answerPrompt?.(value);
+            answerPrompt = undefined;
+        },
+        resolveConfirm(value: boolean) {
+            state.confirm = undefined;
+            answerConfirm?.(value);
+            answerConfirm = undefined;
+        }
+    };
+}

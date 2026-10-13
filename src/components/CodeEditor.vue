@@ -1,0 +1,194 @@
+<script setup lang="ts">
+import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, snippet } from "@codemirror/autocomplete";
+import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { javascript } from "@codemirror/lang-javascript";
+import { HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
+import { EditorState } from "@codemirror/state";
+import type { Extension } from "@codemirror/state";
+import { EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
+import { useMessages } from "@/composables/messages";
+import { suggest } from "@/shell/complete";
+import type { Environment, Suggestion, SuggestionType } from "@/shell/complete";
+
+const emit = defineEmits<{
+    /** Ctrl+Enter or F5 (in a single line also Enter): run, with the cursor and the selected text. */
+    run: [position: number, selection: string];
+}>();
+/** An editor for shell code: a script, one field of a query, or a result to read. */
+const props = defineProps<{
+    label: string;
+    /** What to complete with; without it nothing is suggested. */
+    environment?: Environment;
+    /** Code the text continues, for suggestions: a query field is the argument of a `find(`. */
+    prefix?: string;
+    /** One line without line numbers. */
+    singleLine?: boolean;
+    readonly?: boolean;
+    /** Place of an error to show the cursor at. */
+    errorPosition?: number;
+}>();
+const text = defineModel<string>({ required: true });
+
+const { say } = useMessages();
+const host = useTemplateRef<HTMLDivElement>("host");
+let view: EditorView | undefined;
+
+/** The icons CodeMirror draws for its completion types. */
+const ICONS: Record<SuggestionType, string> = {
+    method: "method",
+    collection: "class",
+    database: "namespace",
+    field: "property",
+    operator: "keyword",
+    stage: "function",
+    option: "property",
+    value: "constant",
+    variable: "variable"
+};
+
+function completion(item: Suggestion): Completion {
+    return {
+        label: item.label,
+        type: ICONS[item.type],
+        detail: item.detail === undefined ? undefined : say(item.detail),
+        // Translated when the list is built: it is built anew on every request.
+        info: item.info?.map(say).join(" "),
+        boost: item.boost,
+        apply: item.snippet ? snippet(item.snippet) : item.apply
+    };
+}
+
+function complete(context: CompletionContext): CompletionResult | null {
+    if (!props.environment) return null;
+    const prefix = props.prefix ?? "";
+    // The environment is read on every call: fields arrive after the first request for them.
+    const found = suggest(prefix + context.state.sliceDoc(0, context.pos), props.environment);
+    if (!found || found.from < prefix.length || (!found.auto && !context.explicit)) return null;
+    return { from: found.from - prefix.length, options: found.options.map(completion), validFor: /^[\w$.-]*$/ };
+}
+
+function selected(state: EditorState): string {
+    const range = state.selection.main;
+    return state.sliceDoc(range.from, range.to);
+}
+
+function run(target: EditorView): boolean {
+    emit("run", target.state.selection.main.head, selected(target.state));
+    return true;
+}
+
+const highlight = HighlightStyle.define([
+    { tag: [tags.string, tags.special(tags.string)], color: "var(--v0-code-string)" },
+    { tag: tags.regexp, color: "var(--v0-code-type)" },
+    { tag: [tags.number, tags.bool, tags.null], color: "var(--v0-code-number)" },
+    { tag: [tags.keyword, tags.operatorKeyword], color: "var(--v0-code-keyword)" },
+    { tag: [tags.propertyName, tags.definition(tags.propertyName)], color: "var(--v0-code-key)" },
+    { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], color: "var(--v0-code-call)", fontWeight: "600" },
+    { tag: tags.comment, color: "var(--v0-code-comment)", fontStyle: "italic" }
+]);
+
+const theme = EditorView.theme({
+    "&": { height: "100%", fontSize: "13px", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
+    "&.cm-focused": { outline: "none" },
+    ".cm-content": { caretColor: "var(--v0-primary)", padding: props.singleLine ? "5px 0" : "8px 0" },
+    ".cm-line": { padding: props.singleLine ? "0 2px" : "0 6px" },
+    ".cm-cursor": { borderLeftColor: "var(--v0-primary)" },
+    ".cm-gutters": { backgroundColor: "transparent", color: "var(--v0-on-surface-variant)", border: "none", paddingLeft: "8px" },
+    ".cm-activeLine": { backgroundColor: props.readonly || props.singleLine ? "transparent" : "color-mix(in srgb, var(--v0-on-surface) 5%, transparent)" },
+    ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--v0-on-surface-strong)" },
+    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground": {
+        backgroundColor: "color-mix(in srgb, var(--v0-primary) 30%, transparent)"
+    },
+    "&.cm-focused .cm-matchingBracket": { backgroundColor: "color-mix(in srgb, var(--v0-primary) 30%, transparent)", outline: "none" },
+    ".cm-tooltip": {
+        backgroundColor: "var(--v0-dock)",
+        color: "var(--v0-on-surface-strong)",
+        border: "1px solid var(--v0-divider)",
+        borderRadius: "4px",
+        boxShadow: "0 8px 24px rgb(0 0 0 / 0.35)",
+        overflow: "hidden"
+    },
+    ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: "inherit", maxHeight: "18em" },
+    ".cm-tooltip-autocomplete ul li": { padding: "2px 8px 2px 4px" },
+    ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "var(--v0-primary)", color: "var(--v0-on-primary)" },
+    ".cm-completionDetail": { marginLeft: "1em", opacity: "0.7", fontStyle: "normal", fontSize: "0.85em" },
+    ".cm-completionInfo": { padding: "6px 10px", maxWidth: "22rem", fontFamily: "\"Open Sans\", system-ui, sans-serif" },
+    ".cm-snippetField": { backgroundColor: "color-mix(in srgb, var(--v0-primary) 18%, transparent)" }
+});
+
+function extensions(): Extension[] {
+    const base: Extension[] = [
+        drawSelection(),
+        bracketMatching(),
+        indentUnit.of("    "),
+        javascript(),
+        syntaxHighlighting(highlight),
+        EditorView.contentAttributes.of({ "aria-label": props.label }),
+        theme
+    ];
+    if (!props.singleLine) base.push(lineNumbers(), highlightActiveLine());
+    if (props.readonly) return [...base, EditorState.readOnly.of(true), EditorView.editable.of(false)];
+    return [
+        ...base,
+        history(),
+        indentOnInput(),
+        closeBrackets(),
+        autocompletion({ override: [complete], icons: true }),
+        // Before the default keys, so Ctrl+Enter is not taken as "new line below".
+        keymap.of([
+            { key: "Mod-Enter", run },
+            { key: "F5", run },
+            ...(props.singleLine ? [{ key: "Enter", run }] : []),
+            ...closeBracketsKeymap,
+            ...completionKeymap,
+            ...historyKeymap,
+            ...(props.singleLine ? [] : [indentWithTab]),
+            ...defaultKeymap
+        ]),
+        // A single line stays one: pasted line breaks become spaces.
+        ...(props.singleLine
+            ? [EditorState.transactionFilter.of(transaction => (transaction.newDoc.lines > 1
+                    ? [{ changes: { from: 0, to: transaction.startState.doc.length, insert: transaction.newDoc.toString().replace(/\s*\n\s*/g, " ") } }]
+                    : transaction))]
+            : []),
+        EditorView.updateListener.of((update) => {
+            if (update.docChanged) text.value = update.state.doc.toString();
+        })
+    ];
+}
+
+onMounted(() => {
+    view = new EditorView({ parent: host.value!, state: EditorState.create({ doc: text.value, extensions: extensions() }) });
+});
+
+onBeforeUnmount(() => view?.destroy());
+
+// The text changed from outside (not by typing).
+watch(text, (value) => {
+    if (!view || value === view.state.doc.toString()) return;
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
+});
+
+watch(() => props.errorPosition, (position) => {
+    if (!view || position === undefined) return;
+    view.dispatch({ selection: { anchor: Math.min(position, view.state.doc.length) }, scrollIntoView: true });
+    view.focus();
+});
+
+defineExpose({
+    /** The cursor and the selected text, for buttons that run. */
+    cursor: () => ({ position: view?.state.selection.main.head ?? 0, selection: view ? selected(view.state) : "" }),
+    focus: () => view?.focus()
+});
+</script>
+
+<template>
+    <div
+        ref="host"
+        class="h-full min-h-0 min-w-0 overflow-hidden"
+        data-testid="code-editor"
+    />
+</template>

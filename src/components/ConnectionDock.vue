@@ -1,0 +1,377 @@
+<script setup lang="ts">
+import { ButtonContent, ButtonRoot, PopoverActivator, PopoverContent, PopoverRoot } from "@vuetify/v0";
+import { computed, shallowRef, useTemplateRef } from "vue";
+import { useI18n } from "vue-i18n";
+import type { Profile } from "@/api";
+import ContextMenu from "@/components/ContextMenu.vue";
+import DropMenu from "@/components/DropMenu.vue";
+import IconButton from "@/components/IconButton.vue";
+import { useActions } from "@/composables/actions";
+import { useDialogs } from "@/composables/dialogs";
+import { useMessages } from "@/composables/messages";
+import type { MenuEntry } from "@/menu";
+import { useConnectionsStore } from "@/stores/connections";
+import type { DatabaseNode, TreeSelection } from "@/stores/connections";
+
+/** The dock at the left: saved connections, the toolbar, and the tree of what is connected. */
+const { t } = useI18n();
+const { report } = useMessages();
+const dialogs = useDialogs();
+const actions = useActions();
+const connections = useConnectionsStore();
+const menu = useTemplateRef("menu");
+
+const listOpen = shallowRef(false);
+const searching = shallowRef(false);
+const search = shallowRef("");
+const connected = computed(() => connections.profiles.filter(profile => connections.sessions[profile.id]));
+
+function matches(name: string): boolean {
+    return !search.value.trim() || name.toLowerCase().includes(search.value.trim().toLowerCase());
+}
+
+/** Databases that match the search, or have a collection that does. */
+function shownDatabases(profile: Profile): DatabaseNode[] {
+    return (connections.sessions[profile.id]?.databases ?? []).filter(database => matches(database.name) || (database.collections ?? []).some(matches));
+}
+
+function shownCollections(database: DatabaseNode): string[] {
+    const all = database.collections ?? [];
+    return matches(database.name) ? all : all.filter(matches);
+}
+
+function isSelected(at: TreeSelection): boolean {
+    const selected = connections.selected;
+    return selected?.connectionId === at.connectionId && selected.database === at.database && selected.collection === at.collection;
+}
+
+function select(at: TreeSelection) {
+    connections.selected = at;
+}
+
+function toggleConnection(profile: Profile) {
+    const session = connections.sessions[profile.id];
+    if (session) session.open = !session.open;
+}
+
+async function toggleDatabase(profile: Profile, database: DatabaseNode) {
+    database.open = !database.open;
+    if (database.open && !database.collections) await connections.loadCollections(profile.id, database.name).catch(report);
+}
+
+async function choose(profile: Profile) {
+    listOpen.value = false;
+    await actions.connect(profile);
+}
+
+const createEntries = computed<MenuEntry[]>(() => [
+    { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(), disabled: !actions.hasConnection.value },
+    { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(), disabled: !actions.hasDatabase.value },
+    { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => void actions.createIndex(), disabled: !actions.hasCollection.value }
+]);
+
+const manageEntries = computed<MenuEntry[]>(() => [
+    { label: t("index.list"), icon: "i-lucide-key-round", action: () => actions.indexes(), disabled: !actions.hasCollection.value },
+    { label: t("collection.stats"), action: () => actions.collectionStats(), disabled: !actions.hasCollection.value },
+    { label: t("database.stats"), action: () => actions.databaseStats(), disabled: !actions.hasDatabase.value },
+    { label: t("connection.status"), action: () => actions.serverStatus(), disabled: !actions.hasConnection.value }
+]);
+
+function openMenu(event: MouseEvent, at: TreeSelection) {
+    select(at);
+    const tail: MenuEntry[] = [
+        "separator",
+        { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void actions.refresh(at) },
+        { label: t("connection.disconnect"), hotkey: "Ctrl + Alt + D", action: () => void actions.disconnect(at) }
+    ];
+    let entries: MenuEntry[];
+    if (at.collection !== undefined) {
+        entries = [
+            { label: t("tab.browse"), icon: "i-lucide-file-text", hotkey: "Ctrl + Q", action: () => actions.browse(at) },
+            "separator",
+            { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
+            { label: t("tab.aggregation"), icon: "i-lucide-network", hotkey: "Ctrl + Shift + Q", action: () => actions.aggregation(at) },
+            "separator",
+            { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(at) },
+            "separator",
+            { label: t("collection.rename"), action: () => void actions.renameCollection(at) },
+            { label: t("collection.drop"), icon: "i-lucide-file-x-2", hotkey: "Del", danger: true, action: () => void actions.dropCollection(at) },
+            "separator",
+            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => void actions.createIndex(at) },
+            { label: t("index.list"), action: () => actions.indexes(at) },
+            "separator",
+            { label: t("collection.stats"), action: () => actions.collectionStats(at) },
+            ...tail
+        ];
+    } else if (at.database !== undefined) {
+        entries = [
+            { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
+            "separator",
+            { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(at) },
+            { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(at) },
+            "separator",
+            { label: t("database.drop"), hotkey: "Del", danger: true, action: () => void actions.dropDatabase(at) },
+            "separator",
+            { label: t("database.stats"), action: () => actions.databaseStats(at) },
+            ...tail
+        ];
+    } else {
+        entries = [
+            { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
+            "separator",
+            { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(at) },
+            "separator",
+            { label: t("connection.status"), action: () => actions.serverStatus(at) },
+            "separator",
+            { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void actions.refresh(at) },
+            "separator",
+            { label: t("connection.settings"), action: () => actions.connectionSettings(at) },
+            { label: t("connection.uri"), hotkey: "Ctrl + Alt + F2", action: () => void actions.viewUri(at) },
+            "separator",
+            { label: t("connection.disconnect"), hotkey: "Ctrl + Alt + D", action: () => void actions.disconnect(at) }
+        ];
+    }
+    void menu.value?.open(event, entries);
+}
+
+defineExpose({
+    /** Opens the list of saved connections (F2). */
+    openList: () => (listOpen.value = true)
+});
+</script>
+
+<template>
+    <aside class="h-full min-w-0 flex flex-col bg-dock select-none">
+        <header class="h-13 shrink-0 flex items-end justify-between pl-5.5 pr-4 pb-2.5">
+            <PopoverRoot v-model="listOpen">
+                <PopoverActivator
+                    :title="$t('connection.list.hint')"
+                    class="inline-flex items-center gap-1 text-[13px] font-bold tracking-wide uppercase text-primary hover:brightness-125"
+                    data-testid="connection-list"
+                >
+                    {{ $t("connection.connect") }}
+                    <span class="i-lucide-chevron-down size-3.5" />
+                </PopoverActivator>
+                <PopoverContent
+                    class="menu-panel w-80"
+                    positionArea="bottom span-right"
+                >
+                    <p
+                        v-if="connections.profiles.length === 0"
+                        class="m-0 px-3 py-3 text-[13px] text-on-surface-variant"
+                    >
+                        {{ $t("connection.empty") }}
+                    </p>
+                    <div
+                        v-for="profile in connections.profiles"
+                        :key="profile.id"
+                        class="group flex items-center hover:bg-primary/25"
+                        data-testid="connection-item"
+                    >
+                        <ButtonRoot
+                            @click="choose(profile)"
+                            class="grow min-w-0 h-8 pl-2.5 flex items-center gap-2 text-left text-[13px]"
+                        >
+                            <span
+                                :class="connections.sessions[profile.id] ? 'text-success' : 'text-on-surface'"
+                                class="i-lucide-server size-4 shrink-0"
+                            />
+                            <ButtonContent class="truncate text-on-surface-strong">
+                                {{ profile.name }}
+                            </ButtonContent>
+                            <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>
+                        </ButtonRoot>
+                        <IconButton
+                            @click="listOpen = false; dialogs.editConnection(profile)"
+                            :label="$t('connection.edit')"
+                            icon="i-lucide-pencil"
+                        />
+                        <IconButton
+                            @click="listOpen = false; actions.deleteConnection(profile)"
+                            :label="$t('action.delete')"
+                            class="mr-1"
+                            icon="i-lucide-trash-2"
+                        />
+                    </div>
+                    <div class="my-1 mx-2 border-t border-divider" />
+                    <ButtonRoot
+                        @click="listOpen = false; actions.newConnection()"
+                        class="w-full h-8 px-2.5 mb-1 flex items-center gap-2 text-left text-[13px] text-on-surface-strong hover:bg-primary/25"
+                    >
+                        <span class="i-lucide-plus size-4 text-success" />
+                        <ButtonContent>{{ $t("connection.add") }}</ButtonContent>
+                    </ButtonRoot>
+                </PopoverContent>
+            </PopoverRoot>
+            <IconButton
+                @click="actions.newConnection()"
+                :label="`${$t('connection.add')} (Ctrl + F2)`"
+                data-testid="connection-add"
+                icon="i-lucide-plus"
+                tint="text-success"
+            />
+        </header>
+
+        <div class="h-8 shrink-0 flex items-center gap-0.5 px-4">
+            <IconButton
+                @click="actions.openShell()"
+                :disabled="!actions.hasConnection.value"
+                :label="`${$t('tab.shell')} (Ctrl + T)`"
+                data-testid="dock-shell"
+                icon="i-lucide-square-terminal"
+            >
+                {{ $t("tab.shell.short") }}
+            </IconButton>
+            <span class="toolbar-rule" />
+            <IconButton
+                @click="actions.browse()"
+                :disabled="!actions.hasCollection.value"
+                :label="`${$t('tab.browse')} (Ctrl + Q)`"
+                data-testid="dock-browse"
+                icon="i-lucide-file-text"
+            />
+            <IconButton
+                @click="actions.aggregation()"
+                :disabled="!actions.hasCollection.value"
+                :label="`${$t('tab.aggregation')} (Ctrl + Shift + Q)`"
+                icon="i-lucide-network"
+            />
+            <span class="toolbar-rule" />
+            <DropMenu
+                :entries="createEntries"
+                :label="$t('action.create')"
+            >
+                <span class="h-6.5 px-1 inline-flex items-center gap-0.5 rounded-sm text-on-surface hover:bg-on-surface/10">
+                    <span class="i-lucide-file-plus-2 size-4" />
+                    <span class="i-lucide-chevron-down size-3" />
+                </span>
+            </DropMenu>
+            <DropMenu
+                :entries="manageEntries"
+                :label="$t('action.manage')"
+            >
+                <span class="h-6.5 px-1 inline-flex items-center gap-0.5 rounded-sm text-on-surface hover:bg-on-surface/10">
+                    <span class="i-lucide-chart-column size-4" />
+                    <span class="i-lucide-chevron-down size-3" />
+                </span>
+            </DropMenu>
+            <span class="toolbar-rule" />
+            <IconButton
+                @click="searching = !searching; search = ''"
+                :active="searching"
+                :disabled="connected.length === 0"
+                :label="$t('tree.search')"
+                icon="i-lucide-search"
+            />
+        </div>
+
+        <input
+            v-if="searching"
+            v-model="search"
+            :aria-label="$t('tree.search')"
+            :placeholder="$t('tree.search')"
+            class="mx-4 mt-1 h-7 px-2 rounded-sm bg-surface-variant border border-divider outline-none focus:border-primary text-[13px] text-on-surface-strong"
+            data-testid="tree-search"
+            type="search"
+        />
+
+        <div
+            class="grow min-h-0 overflow-y-auto pt-2 pb-2 text-[13px]"
+            role="tree"
+        >
+            <div
+                v-if="connected.length === 0"
+                class="pt-14 flex flex-col items-center gap-1 text-center"
+            >
+                <span class="text-lg text-on-surface-variant">{{ $t("connection.none") }}</span>
+                <span class="text-on-surface-variant/70">{{ $t("connection.none.hint") }}</span>
+            </div>
+
+            <div
+                v-for="profile in connected"
+                :key="profile.id"
+                data-testid="connection"
+            >
+                <div
+                    @click="select({ connectionId: profile.id })"
+                    @contextmenu="openMenu($event, { connectionId: profile.id })"
+                    @dblclick="toggleConnection(profile)"
+                    @keydown.enter.self="toggleConnection(profile)"
+                    :class="isSelected({ connectionId: profile.id }) ? 'tree-row-on' : ''"
+                    class="tree-row pl-3.5"
+                    data-testid="connection-row"
+                    role="treeitem"
+                    tabindex="0"
+                >
+                    <span
+                        @click.stop="toggleConnection(profile)"
+                        :class="connections.sessions[profile.id]?.open ? 'rotate-90' : ''"
+                        class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
+                    />
+                    <span class="i-lucide-server size-4 shrink-0 text-on-surface" />
+                    <span class="truncate text-on-surface-strong">{{ profile.name }}</span>
+                    <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>
+                    <span class="grow" />
+                    <span
+                        class="shrink-0 text-[11px] text-on-surface-variant"
+                        data-testid="connection-version"
+                    >{{ connections.sessions[profile.id]?.version }}</span>
+                </div>
+
+                <template v-if="connections.sessions[profile.id]?.open">
+                    <template
+                        v-for="database in shownDatabases(profile)"
+                        :key="database.name"
+                    >
+                        <div
+                            @click="select({ connectionId: profile.id, database: database.name })"
+                            @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name })"
+                            @dblclick="toggleDatabase(profile, database)"
+                            @keydown.enter.self="toggleDatabase(profile, database)"
+                            :class="isSelected({ connectionId: profile.id, database: database.name }) ? 'tree-row-on' : ''"
+                            class="tree-row pl-7.5"
+                            data-testid="database-row"
+                            role="treeitem"
+                            tabindex="0"
+                        >
+                            <span
+                                @click.stop="toggleDatabase(profile, database)"
+                                :class="[database.loading ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-chevron-right', database.open ? 'rotate-90' : '']"
+                                class="size-3.5 shrink-0 text-on-surface-variant"
+                                data-testid="database-toggle"
+                            />
+                            <span class="i-lucide-database size-4 shrink-0 text-on-surface" />
+                            <span class="truncate text-on-surface-strong">{{ database.name }}</span>
+                            <span class="grow" />
+                            <span
+                                v-if="database.collections"
+                                class="shrink-0 text-[11px] text-on-surface-variant"
+                            >{{ database.collections.length }}</span>
+                        </div>
+
+                        <template v-if="database.open">
+                            <div
+                                v-for="collection in shownCollections(database)"
+                                :key="collection"
+                                @click="select({ connectionId: profile.id, database: database.name, collection })"
+                                @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection })"
+                                @dblclick="actions.browse({ connectionId: profile.id, database: database.name, collection })"
+                                @keydown.enter="actions.browse({ connectionId: profile.id, database: database.name, collection })"
+                                :class="isSelected({ connectionId: profile.id, database: database.name, collection }) ? 'tree-row-on' : ''"
+                                class="tree-row pl-16"
+                                data-testid="collection-row"
+                                role="treeitem"
+                                tabindex="0"
+                            >
+                                <span class="i-lucide-file-text size-4 shrink-0 text-on-surface" />
+                                <span class="truncate text-on-surface-strong">{{ collection }}</span>
+                            </div>
+                        </template>
+                    </template>
+                </template>
+            </div>
+        </div>
+
+        <ContextMenu ref="menu" />
+    </aside>
+</template>

@@ -1,0 +1,188 @@
+<script setup lang="ts">
+import { ButtonRoot } from "@vuetify/v0";
+import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
+import { useI18n } from "vue-i18n";
+import { isDoc, scalar, typeOf } from "@/shell/ejson";
+import type { Json, ValueType } from "@/shell/ejson";
+import { displayText, useResultContext } from "./result-context";
+
+/** A line of the result tree: a document, or a field with what lies below it. */
+const props = withDefaults(defineProps<{
+    /** Field name; absent for the line of the document itself. */
+    name?: string;
+    value: Json;
+    /** Index of the document on the page, and its number in the whole result. */
+    index: number;
+    number: number;
+    /** Dotted path of the field in its document. */
+    path?: string;
+    depth?: number;
+    /** Starts unfolded. */
+    expanded?: boolean;
+}>(), {
+    name: undefined,
+    path: "",
+    depth: 0
+});
+
+/** Children shown at first; documents and arrays can be far larger. */
+const CHUNK = 200;
+
+const COLORS: Partial<Record<ValueType, string>> = {
+    string: "text-code-string",
+    int: "text-code-number",
+    long: "text-code-number",
+    double: "text-code-number",
+    decimal: "text-code-number",
+    bool: "text-code-keyword",
+    null: "text-code-comment",
+    undefined: "text-code-comment",
+    objectId: "text-code-type",
+    date: "text-code-call",
+    uuid: "text-code-type",
+    binary: "text-code-type",
+    regex: "text-code-type",
+    timestamp: "text-code-call"
+};
+
+const { t, te } = useI18n();
+const context = useResultContext();
+const open = shallowRef(props.expanded);
+const shown = shallowRef(CHUNK);
+const root = computed(() => props.name === undefined);
+const leaf = computed(() => scalar(props.value));
+const type = computed(() => typeOf(props.value));
+const children = computed<[string, Json][]>(() => {
+    if (leaf.value) return [];
+    if (Array.isArray(props.value)) return props.value.map((item, index) => [String(index), item]);
+    return Object.entries(props.value as Record<string, Json>);
+});
+const count = computed(() => {
+    const size = children.value.length;
+    return Array.isArray(props.value) ? `[${t("result.count.elements", { count: size }, size)}]` : `{${t("result.count.elements", { count: size }, size)}}`;
+});
+const typeName = computed(() => (te(`result.type.${type.value}`) ? t(`result.type.${type.value}`) : ""));
+/** The document's line shows its id in place of a field name. */
+const title = computed(() => {
+    if (!root.value) return props.name ?? "";
+    return isDoc(props.value) && "_id" in props.value ? displayText(props.value._id!) : "";
+});
+const target = computed(() => ({ index: props.index, path: props.path, value: props.value }));
+const selected = computed(() => context.selected.value === props.index);
+
+watch(context.fold, (fold) => {
+    if (fold.index === undefined || fold.index === props.index) open.value = fold.open;
+});
+
+// Editing in place: scalar fields of documents that can be written back.
+const editing = shallowRef(false);
+const draft = shallowRef("");
+const input = useTemplateRef<HTMLInputElement>("input");
+const canEdit = computed(() => context.editable.value && leaf.value !== undefined && props.path !== "" && props.path !== "_id");
+
+async function startEdit() {
+    if (!canEdit.value) {
+        if (root.value) context.open(props.index);
+        return;
+    }
+    draft.value = leaf.value?.text ?? "";
+    editing.value = true;
+    await nextTick();
+    input.value?.select();
+}
+
+function commit() {
+    if (!editing.value) return;
+    editing.value = false;
+    if (draft.value !== leaf.value?.text) context.commit(target.value, draft.value);
+}
+</script>
+
+<template>
+    <div role="treeitem">
+        <div
+            @click="context.selected.value = index"
+            @contextmenu="context.menu($event, target)"
+            @dblclick="startEdit"
+            :class="root && selected ? 'outline outline-1 -outline-offset-1 outline-primary/70 bg-on-surface/4' : 'hover:bg-on-surface/4'"
+            class="flex items-center h-[19px] pr-3 whitespace-nowrap"
+            data-testid="tree-row"
+        >
+            <span
+                :class="root ? 'text-on-surface-strong' : 'text-on-surface-variant/45'"
+                class="w-9 shrink-0 pr-3 text-right tabular-nums select-none"
+            >{{ number }}</span>
+            <span
+                :style="{ width: `${depth * 15}px` }"
+                class="shrink-0"
+            />
+            <ButtonRoot
+                @click.stop="open = !open"
+                :ariaLabel="title"
+                :class="leaf ? 'invisible' : ''"
+                class="size-4 shrink-0 inline-flex items-center justify-center text-on-surface-variant hover:text-on-surface-strong"
+                tabindex="-1"
+            >
+                <span
+                    :class="open ? 'rotate-90' : ''"
+                    class="i-lucide-chevron-right size-3.5 block"
+                />
+            </ButtonRoot>
+            <span class="ml-1 font-semibold text-on-surface-strong">{{ title }}</span>
+            <span
+                v-if="!root"
+                class="mx-1.5 text-on-surface-variant"
+            >:</span>
+            <input
+                v-if="editing"
+                ref="input"
+                v-model="draft"
+                @blur="editing = false"
+                @click.stop
+                @keydown.enter.prevent="commit"
+                @keydown.esc.stop="editing = false"
+                :aria-label="title"
+                class="grow min-w-40 h-[19px] px-1 bg-surface-variant border border-primary outline-none text-on-surface-strong"
+                data-testid="tree-edit"
+                spellcheck="false"
+            />
+            <template v-else>
+                <span
+                    v-if="leaf"
+                    :class="COLORS[type]"
+                    class="truncate"
+                    data-testid="tree-value"
+                >{{ displayText(value) }}</span>
+                <span
+                    v-else
+                    :class="root ? 'ml-1.5' : ''"
+                    class="text-on-surface"
+                >{{ count }}</span>
+                <span class="ml-1.5 shrink-0 text-[11px] text-on-surface-variant/70 font-sans">{{ typeName }}</span>
+            </template>
+        </div>
+        <div
+            v-if="open && !leaf"
+            role="group"
+        >
+            <TreeRow
+                v-for="[key, item] in children.slice(0, shown)"
+                :key="key"
+                :depth="depth + 1"
+                :index
+                :name="key"
+                :number
+                :path="path ? `${path}.${key}` : key"
+                :value="item"
+            />
+            <ButtonRoot
+                v-if="children.length > shown"
+                @click="shown += CHUNK"
+                :style="{ marginLeft: `${36 + (depth + 1) * 15 + 20}px` }"
+                class="h-[19px] text-primary hover:underline"
+            >
+                {{ $t("result.more", { count: children.length - shown }) }}
+            </ButtonRoot>
+        </div>
+    </div>
+</template>

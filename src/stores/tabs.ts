@@ -1,0 +1,388 @@
+import { defineStore } from "pinia";
+import { computed, markRaw, ref } from "vue";
+import type { Ref } from "vue";
+import { backend, errorMessage } from "@/api";
+import { isDoc, toNumber, toShell } from "@/shell/ejson";
+import type { Doc, Json } from "@/shell/ejson";
+import { ShellError } from "@/shell/message";
+import type { Message } from "@/shell/message";
+import { parseStatements, statementAt } from "@/shell/parse";
+import { isWrite, pageCommand, planStatement, replyError } from "@/shell/plan";
+import type { Plan } from "@/shell/plan";
+import { useConnectionsStore } from "./connections";
+
+/** Sizes offered for a page of results. */
+export const PAGE_SIZES = [10, 20, 50, 100, 200, 500];
+const DEFAULT_PAGE_SIZE = 20;
+/** Read at most from a cursor whose result is not paged (index lists, counts …). */
+const UNPAGED_LIMIT = 10_000;
+/** Commands after which the tree of databases and collections may have changed. */
+const STRUCTURE_COMMANDS = ["create", "drop", "dropDatabase", "renameCollection"];
+const HISTORY_KEY = "querymaster:history";
+const HISTORY_SIZE = 50;
+
+export type ResultView = "tree" | "table" | "json";
+/** The start page, a collection with its query fields, or a shell. */
+export type TabKind = "start" | "browse" | "shell";
+export type StageName = "filter" | "projection" | "sort" | "skip" | "limit";
+/** The stages a browse tab can show, in the order they apply. */
+export const STAGE_NAMES: StageName[] = ["filter", "projection", "sort", "skip", "limit"];
+
+/** One line of the query of a browse tab. */
+export interface Stage {
+    name: StageName;
+    text: string;
+    enabled: boolean;
+}
+
+export interface QueryResult {
+    /** Documents of a cursor, the elements of an array, or one value. */
+    items: Json[];
+    /** Index of the first item in the whole result. */
+    offset: number;
+    hasMore: boolean;
+    /** The statement that was run. */
+    statement: string;
+    milliseconds: number;
+}
+
+export interface WorkTab {
+    id: string;
+    kind: TabKind;
+    connectionId: string;
+    database: string;
+    /** Browse tabs: the collection shown. */
+    collection?: string;
+    /** Shell tabs: the script. */
+    text: string;
+    /** Browse tabs: the query. */
+    stages: Stage[];
+    view: ResultView;
+    pageSize: number;
+    /** Writes are refused. */
+    readonly: boolean;
+    /** Shown rows are narrowed to those that hold this text. */
+    search: string;
+    running: boolean;
+    /** A message of the app, or the text of the server. */
+    error?: string | Message;
+    /** Where in `text` the error lies. */
+    errorPosition?: number;
+    result?: QueryResult;
+    /** The plan behind `result`, to fetch its other pages. */
+    plan?: Plan;
+}
+
+/** A failed write the server reports in a reply that is otherwise fine. */
+class ReplyError extends Error {
+    constructor(readonly reason: string | Message) {
+        super(typeof reason === "string" ? reason : reason.key);
+    }
+}
+
+function loadHistory(): string[] {
+    try {
+        const saved: unknown = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? "[]");
+        return Array.isArray(saved) ? saved.filter(item => typeof item === "string") : [];
+    } catch {
+        return [];
+    }
+}
+
+function isEmptyStage(text: string): boolean {
+    return text.replace(/\s/g, "") === "" || text.replace(/\s/g, "") === "{}";
+}
+
+/** The shell statement a browse tab stands for. */
+export function browseStatement(tab: WorkTab): string {
+    const stage = (name: StageName) => {
+        const found = tab.stages.find(item => item.name === name && item.enabled);
+        return found && !isEmptyStage(found.text) ? found.text.trim() : undefined;
+    };
+    const projection = stage("projection");
+    let statement = `db.getCollection(${JSON.stringify(tab.collection ?? "")}).find(${stage("filter") ?? "{}"}${projection ? `, ${projection}` : ""})`;
+    for (const name of ["sort", "skip", "limit"] as const) {
+        const text = stage(name);
+        if (text) statement += `.${name}(${text})`;
+    }
+    return statement;
+}
+
+export const useTabsStore = defineStore("tabs", () => {
+    const connections = useConnectionsStore();
+    // Results hold arbitrarily deep JSON: the list is typed by hand instead of unwrapped by Vue.
+    const tabs = ref([]) as Ref<WorkTab[]>;
+    const activeId = ref<string>();
+    const active = computed(() => tabs.value.find(tab => tab.id === activeId.value));
+    /** Statements that ran, newest first. */
+    const history = ref(loadHistory());
+    let counter = 0;
+
+    function create(kind: TabKind, options: Partial<WorkTab>): WorkTab {
+        const id = `tab-${++counter}`;
+        tabs.value.push({
+            id,
+            kind,
+            connectionId: "",
+            database: "",
+            text: "",
+            stages: [
+                { name: "filter", text: "{ }", enabled: true },
+                { name: "projection", text: "{ }", enabled: true },
+                { name: "sort", text: "{ }", enabled: true }
+            ],
+            view: "tree",
+            pageSize: DEFAULT_PAGE_SIZE,
+            readonly: false,
+            search: "",
+            running: false,
+            ...options
+        });
+        activeId.value = id;
+        // The object in the list is the reactive one.
+        return tabs.value.at(-1)!;
+    }
+
+    function openStart(): void {
+        const existing = tabs.value.find(tab => tab.kind === "start");
+        if (existing) activeId.value = existing.id;
+        else create("start", {});
+    }
+
+    /** Shows a collection with its query fields and runs the query. */
+    function openBrowse(target: { connectionId: string; database: string; collection: string }): WorkTab {
+        const tab = create("browse", target);
+        void runBrowse(tab);
+        return tab;
+    }
+
+    function openShell(target: { connectionId: string; database: string; collection?: string; text?: string }): WorkTab {
+        const text = target.text ?? (target.collection ? `db.getCollection(${JSON.stringify(target.collection)}).find({})` : "db.");
+        return create("shell", { connectionId: target.connectionId, database: target.database, text });
+    }
+
+    function duplicate(tab: WorkTab): void {
+        if (tab.kind === "start") return;
+        const copy = create(tab.kind, {
+            connectionId: tab.connectionId,
+            database: tab.database,
+            collection: tab.collection,
+            text: tab.text,
+            stages: tab.stages.map(stage => ({ ...stage })),
+            view: tab.view,
+            pageSize: tab.pageSize,
+            readonly: tab.readonly
+        });
+        if (copy.kind === "browse") void runBrowse(copy);
+    }
+
+    function close(id: string): void {
+        const index = tabs.value.findIndex(tab => tab.id === id);
+        if (index === -1) return;
+        tabs.value.splice(index, 1);
+        if (activeId.value === id) activeId.value = (tabs.value[index] ?? tabs.value[index - 1])?.id;
+    }
+
+    function closeOthers(id: string): void {
+        tabs.value = tabs.value.filter(tab => tab.id === id);
+        activeId.value = id;
+    }
+
+    function closeAll(): void {
+        tabs.value = [];
+        activeId.value = undefined;
+    }
+
+    function closeConnection(connectionId: string): void {
+        for (const tab of tabs.value.filter(item => item.connectionId === connectionId)) close(tab.id);
+    }
+
+    /** Makes the tab after (1) or before (-1) the active one the active one. */
+    function step(direction: -1 | 1): void {
+        const index = tabs.value.findIndex(tab => tab.id === activeId.value);
+        const count = tabs.value.length;
+        if (count > 0) activeId.value = tabs.value[(index + direction + count) % count]!.id;
+    }
+
+    function remember(statement: string): void {
+        history.value = [statement, ...history.value.filter(item => item !== statement)].slice(0, HISTORY_SIZE);
+        try {
+            localStorage.setItem(HISTORY_KEY, JSON.stringify(history.value));
+        } catch {
+            // Without storage the history lasts until the app closes.
+        }
+    }
+
+    function guardWrite(tab: WorkTab, write: boolean): void {
+        if (write && tab.readonly) throw new ShellError("error.plan.readonly");
+    }
+
+    async function fetch(tab: WorkTab, plan: Plan, offset: number, statement: string): Promise<void> {
+        guardWrite(tab, isWrite(plan));
+        const started = performance.now();
+        let items: Json[];
+        let hasMore = false;
+        if (plan.cursor) {
+            const command = pageCommand(plan, offset, tab.pageSize);
+            const paged = plan.paging !== undefined && !plan.shape;
+            const page = command
+                ? await backend.runCursorCommand(tab.connectionId, plan.database, command, paged ? tab.pageSize : UNPAGED_LIMIT)
+                : { documents: [], hasMore: false };
+            const shaped = plan.shape ? plan.shape(page.documents) : page.documents;
+            items = Array.isArray(shaped) ? shaped : [shaped];
+            hasMore = paged && page.hasMore;
+        } else {
+            const reply = await backend.runCommand(tab.connectionId, plan.database, plan.command);
+            const failure = replyError(reply);
+            if (failure) throw new ReplyError(failure);
+            const shaped = plan.shape ? plan.shape(reply) : reply;
+            items = Array.isArray(shaped) ? shaped : [shaped];
+            const name = Object.keys(plan.command)[0] ?? "";
+            if (STRUCTURE_COMMANDS.includes(name)) void connections.loadDatabases(tab.connectionId).catch(() => undefined);
+        }
+        tab.plan = markRaw(plan);
+        tab.result = markRaw({ items, offset, hasMore, statement, milliseconds: Math.round(performance.now() - started) });
+    }
+
+    async function guarded(tab: WorkTab, work: () => Promise<void>): Promise<boolean> {
+        if (tab.running) return false;
+        tab.running = true;
+        tab.error = undefined;
+        tab.errorPosition = undefined;
+        try {
+            await work();
+            return true;
+        } catch (error) {
+            tab.error = error instanceof ReplyError ? error.reason : errorMessage(error);
+            tab.errorPosition = error instanceof ShellError ? error.position : undefined;
+            return false;
+        } finally {
+            tab.running = false;
+        }
+    }
+
+    /** Shell tabs: runs the statement at `position`; of a selection, the first statement in it. */
+    function run(tab: WorkTab, position: number, selection?: string): Promise<boolean> {
+        return guarded(tab, async () => {
+            const selected = selection?.trim() ? selection : undefined;
+            const source = selected ?? tab.text;
+            let statement;
+            try {
+                statement = statementAt(parseStatements(source), selected ? 0 : position);
+            } catch (error) {
+                // A place in the selection is not a place in the editor.
+                if (selected && error instanceof ShellError) throw new ShellError(error.key, error.params);
+                throw error;
+            }
+            if (!statement) throw new ShellError("error.plan.nothing");
+            const plan = planStatement(statement, tab.database);
+            const text = source.slice(statement.start, statement.end);
+            await fetch(tab, plan, 0, text);
+            remember(text);
+        });
+    }
+
+    /** Browse tabs: runs the query its fields describe. */
+    function runBrowse(tab: WorkTab): Promise<boolean> {
+        return guarded(tab, async () => {
+            const text = browseStatement(tab);
+            let statement;
+            try {
+                [statement] = parseStatements(text);
+            } catch (error) {
+                // The place is one in the composed statement, not in a field.
+                throw error instanceof ShellError ? new ShellError(error.key, error.params) : error;
+            }
+            if (!statement) throw new ShellError("error.plan.nothing");
+            await fetch(tab, planStatement(statement, tab.database), 0, text);
+            remember(text);
+        });
+    }
+
+    function runTab(tab: WorkTab): Promise<boolean> {
+        return tab.kind === "browse" ? runBrowse(tab) : run(tab, 0);
+    }
+
+    /** Shows the page that starts at `offset`. */
+    function showPage(tab: WorkTab, offset: number): Promise<boolean> {
+        const { plan, result } = tab;
+        if (!plan || !result) return Promise.resolve(false);
+        return guarded(tab, () => fetch(tab, plan, Math.max(0, offset), result.statement));
+    }
+
+    /** Runs the last query again, staying on the page shown. */
+    function refresh(tab: WorkTab): Promise<boolean> {
+        return tab.result ? showPage(tab, tab.result.offset) : runTab(tab);
+    }
+
+    /** The collection the shown documents come from, when the result is one of documents of a collection. */
+    function sourceCollection(tab: WorkTab): string | undefined {
+        if (tab.kind === "browse") return tab.collection;
+        const command = tab.plan?.command;
+        if (!command || tab.plan?.shape) return undefined;
+        const name = command.find ?? command.aggregate;
+        return typeof name === "string" ? name : undefined;
+    }
+
+    /** How many documents the query matches in all; `undefined` when that can not be told. */
+    async function count(tab: WorkTab): Promise<number | undefined> {
+        const plan = tab.plan;
+        const collection = sourceCollection(tab);
+        if (!plan || collection === undefined || plan.command.find === undefined) return undefined;
+        const pipeline: Json[] = [{ $match: plan.command.filter ?? {} }, { $group: { _id: 1, n: { $sum: 1 } } }];
+        const page = await backend.runCursorCommand(tab.connectionId, plan.database, { aggregate: collection, pipeline, cursor: {} }, 1);
+        return toNumber(page.documents[0]?.n) ?? 0;
+    }
+
+    /** Sends a write for the collection of the tab and shows the documents anew. */
+    async function write(tab: WorkTab, command: (collection: string) => Doc): Promise<boolean> {
+        const collection = sourceCollection(tab);
+        const database = tab.plan?.database ?? tab.database;
+        if (collection === undefined) return false;
+        const done = await guarded(tab, async () => {
+            guardWrite(tab, true);
+            const failure = replyError(await backend.runCommand(tab.connectionId, database, command(collection)));
+            if (failure) throw new ReplyError(failure);
+        });
+        if (done) await refresh(tab);
+        return done;
+    }
+
+    function insertDocuments(tab: WorkTab, documents: Doc[]): Promise<boolean> {
+        return write(tab, collection => ({ insert: collection, documents }));
+    }
+
+    function replaceDocument(tab: WorkTab, id: Json, document: Doc): Promise<boolean> {
+        return write(tab, collection => ({ update: collection, updates: [{ q: { _id: id }, u: document, multi: false }] }));
+    }
+
+    function removeDocuments(tab: WorkTab, ids: Json[]): Promise<boolean> {
+        return write(tab, collection => ({ delete: collection, deletes: [{ q: { _id: { $in: ids } }, limit: 0 }] }));
+    }
+
+    /** Sets one field of a document; `path` is the dotted path from its root. */
+    function setField(tab: WorkTab, id: Json, path: string, value: Json): Promise<boolean> {
+        return write(tab, collection => ({ update: collection, updates: [{ q: { _id: id }, u: { $set: { [path]: value } }, multi: false }] }));
+    }
+
+    function removeField(tab: WorkTab, id: Json, path: string): Promise<boolean> {
+        return write(tab, collection => ({ update: collection, updates: [{ q: { _id: id }, u: { $unset: { [path]: "" } }, multi: false }] }));
+    }
+
+    /** The shown result as text, one document after the other. */
+    function resultText(tab: WorkTab): string {
+        return (tab.result?.items ?? []).map(item => toShell(item, "", true)).join("\n");
+    }
+
+    /** Whether the documents shown can be changed: they have an `_id` and a collection they come from. */
+    function editable(tab: WorkTab): boolean {
+        return !tab.readonly && sourceCollection(tab) !== undefined && (tab.result?.items ?? []).every(item => isDoc(item) && "_id" in item);
+    }
+
+    return {
+        tabs, activeId, active, history,
+        openStart, openBrowse, openShell, duplicate, close, closeOthers, closeAll, closeConnection, step,
+        run, runBrowse, runTab, showPage, refresh, count, sourceCollection, editable, resultText,
+        insertDocuments, replaceDocument, removeDocuments, setField, removeField
+    };
+});
