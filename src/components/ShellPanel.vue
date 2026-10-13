@@ -91,6 +91,17 @@ async function saveScript() {
 
         <div class="h-8 shrink-0 flex items-center gap-0.5 px-5">
             <IconButton
+                v-if="tab.runId"
+                @click="tabs.stop(tab)"
+                :label="$t('query.stop')"
+                data-testid="query-stop"
+                icon="i-lucide-square"
+                tint="text-error"
+            >
+                {{ $t("query.stop") }}
+            </IconButton>
+            <IconButton
+                v-else
                 @click="run()"
                 :disabled="tab.running"
                 :icon="tab.running ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-play'"
@@ -169,9 +180,14 @@ async function saveScript() {
                 <div class="shrink-0 px-5.5 pt-2">
                     <span class="inline-block px-3 pb-1.5 border-b border-primary text-[13px] text-primary">{{ $t("query.output") }}</span>
                 </div>
+                <pre
+                    v-if="tab.output"
+                    class="shrink-0 max-h-[40%] overflow-auto m-0 mx-5.5 mt-2 px-3 py-2 rounded-sm bg-on-surface/5 font-mono text-[13px] leading-[19px] text-on-surface-strong select-text"
+                    data-testid="script-output"
+                >{{ tab.output }}</pre>
                 <ResultsPanel
                     :tabId
-                    class="grow"
+                    class="grow min-h-0"
                 />
             </SplitterPanel>
         </SplitterRoot>

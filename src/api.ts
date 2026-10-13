@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { mockBackend } from "./api.mock";
-import type { Doc } from "./shell/ejson";
+import type { Doc, Json } from "./shell/ejson";
 import { ShellError } from "./shell/message";
 import type { Message } from "./shell/message";
 
@@ -23,6 +23,14 @@ export interface Setting {
     /** `null`: not chosen, the language of the system is used. */
     language: string | null;
     theme: string | null;
+}
+
+/** What a script left behind: its last value and what it printed. */
+export interface ScriptResult {
+    items: Json[];
+    /** The last value had more items than were handed over. */
+    truncated: boolean;
+    output: string;
 }
 
 export interface ServerInfo {
@@ -49,6 +57,9 @@ export interface Backend {
     /** Files the user picked in a file dialog. */
     readTextFile: (path: string) => Promise<string>;
     writeTextFile: (path: string, text: string) => Promise<void>;
+    /** Runs a script in the engine of the Rust side; `runId` names the run for `stopScript`. */
+    runScript: (id: string, runId: string, database: string, source: string, readonly: boolean) => Promise<ScriptResult>;
+    stopScript: (runId: string) => Promise<void>;
     getSetting: () => Promise<Setting>;
     saveSetting: (setting: Setting) => Promise<void>;
     /** The statements that ran on a connection, newest first. */
@@ -69,6 +80,8 @@ const tauriBackend: Backend = {
     runCursorCommand: (id, database, command, limit) => invoke("run_cursor_command", { id, database, command, limit }),
     readTextFile: path => invoke("read_text_file", { path }),
     writeTextFile: (path, text) => invoke("write_text_file", { path, text }),
+    runScript: (id, runId, database, source, readonly) => invoke("script_run", { id, runId, database, source, readonly }),
+    stopScript: runId => invoke("script_stop", { runId }),
     getSetting: () => invoke("setting_get"),
     saveSetting: setting => invoke("setting_save", { setting }),
     listHistory: connectionId => invoke("history_list", { connectionId }),

@@ -100,6 +100,27 @@ try {
         assert.match(await panel.locator("[data-testid=query-result]").innerText(), /insertedCount/);
     });
 
+    await step("a script with a loop and print runs against the server", async () => {
+        const source = `var docs = db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}");
+var total = 0;
+docs.find({}).forEach(function (document) { total += document.n; });
+print("total " + total + ", big " + docs.findOne({ n: 1 }).big);
+docs.find({}).sort({ n: -1 }).limit(2)`;
+        const panel = await runShell(source);
+        assert.match(await panel.locator("[data-testid=script-output]").innerText(), /total 6, big 9007199254740993/);
+        assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 2");
+        assert.match(await panel.locator("[data-testid=tree-row]").first().innerText(), /5 elements|4 elements|3 elements/);
+    });
+
+    await step("an endless script can be stopped", async () => {
+        const panel = page.locator("[data-testid=tab-panel]:visible");
+        await write(panel, "for (;;) {}");
+        await panel.locator("[data-testid=query-run]").click();
+        await panel.locator("[data-testid=query-stop]").click();
+        await panel.locator("[data-testid=query-error]", { hasText: "stopped" }).waitFor();
+        await panel.locator("[data-testid=query-run]").waitFor();
+    });
+
     await step("the tree shows the new collection after a refresh", async () => {
         await id("connection-row").first().click({ button: "right" });
         await chooseMenu("Refresh");

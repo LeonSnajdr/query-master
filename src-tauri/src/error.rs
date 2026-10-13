@@ -20,6 +20,12 @@ pub enum Error {
     KeychainRead(#[source] keyring::Error),
     #[error("the connection string could not be stored in the keychain: {0}")]
     KeychainWrite(#[source] keyring::Error),
+    #[error("this tab is read-only")]
+    ReadOnly,
+    #[error("the script was stopped")]
+    ScriptStopped,
+    #[error("{0}")]
+    Script(String),
     #[error("the local database reported an error: {0}")]
     Database(#[from] sqlx::Error),
     #[error(transparent)]
@@ -42,14 +48,21 @@ impl Error {
             Self::KeychainRead(_) => Some("error.backend.keychainRead"),
             Self::KeychainWrite(_) => Some("error.backend.keychainWrite"),
             Self::Database(_) => Some("error.backend.database"),
-            Self::Mongo(_) | Self::Io(_) => None,
+            Self::ReadOnly => Some("error.plan.readonly"),
+            Self::ScriptStopped => Some("error.script.stopped"),
+            Self::Mongo(_) | Self::Io(_) | Self::Script(_) => None,
         }
     }
 
     /// What goes into the `{detail}` placeholder of the message: the cause, without this app's words.
     fn detail(&self) -> Option<String> {
         match self {
-            Self::NotConnected | Self::UriScheme | Self::CommandDocument => None,
+            Self::NotConnected
+            | Self::UriScheme
+            | Self::CommandDocument
+            | Self::ReadOnly
+            | Self::ScriptStopped => None,
+            Self::Script(message) => Some(message.clone()),
             Self::ExtendedJson(cause) => Some(cause.clone()),
             Self::Keychain(cause) | Self::KeychainRead(cause) | Self::KeychainWrite(cause) => {
                 Some(cause.to_string())

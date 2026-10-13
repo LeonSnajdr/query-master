@@ -5,7 +5,8 @@
     "version": "0.1.0",
     "scripts": {
         "dev": "vite",
-        "build": "vue-tsc --build --force && vite build",
+        "build": "vue-tsc --build --force && bun run build:runtime && vite build",
+        "build:runtime": "vite build --config vite.runtime.config.ts",
         "build-only": "vite build",
         "preview": "vite preview",
         "type-check": "vue-tsc --build --force",

@@ -69,6 +69,10 @@ export interface WorkTab {
     result?: QueryResult;
     /** The plan behind `result`, to fetch its other pages. */
     plan?: Plan;
+    /** What the last script printed. */
+    output?: string;
+    /** The script that is running, to stop it. */
+    runId?: string;
 }
 
 /** A failed write the server reports in a reply that is otherwise fine. */
@@ -265,22 +269,55 @@ export const useTabsStore = defineStore("tabs", () => {
         }
     }
 
-    /** Shell tabs: runs the statement at `position`; of a selection, the first statement in it. */
+    /** Runs the text as a script in the engine of the Rust side: variables, loops, `print`. */
+    async function runScript(tab: WorkTab, source: string): Promise<void> {
+        const started = performance.now();
+        tab.runId = `${tab.id}-${Date.now()}`;
+        tab.output = undefined;
+        try {
+            const outcome = await backend.runScript(tab.connectionId, tab.runId, tab.database, source, tab.readonly);
+            tab.output = outcome.output;
+            tab.plan = undefined;
+            tab.result = markRaw({
+                items: outcome.items,
+                offset: 0,
+                hasMore: outcome.truncated,
+                statement: source,
+                milliseconds: Math.round(performance.now() - started)
+            });
+        } finally {
+            tab.runId = undefined;
+        }
+    }
+
+    /** Asks a running script to stop; it ends with an error saying so. */
+    function stop(tab: WorkTab): void {
+        if (tab.runId) void backend.stopScript(tab.runId);
+    }
+
+    /**
+     * Shell tabs: runs the statement at `position`; of a selection, the first statement in it.
+     * Text that is more than `db.…` statements with fixed values runs as a script, as a whole.
+     */
     function run(tab: WorkTab, position: number, selection?: string): Promise<boolean> {
         return guarded(tab, async () => {
             const selected = selection?.trim() ? selection : undefined;
             const source = selected ?? tab.text;
-            let statement;
+            let statements;
             try {
-                statement = statementAt(parseStatements(source), selected ? 0 : position);
+                statements = parseStatements(source);
             } catch (error) {
-                // A place in the selection is not a place in the editor.
-                if (selected && error instanceof ShellError) throw new ShellError(error.key, error.params);
-                throw error;
+                if (!(error instanceof ShellError)) throw error;
+                // Not a plain statement (or not valid at all): the engine runs it, or says what is wrong.
+                await runScript(tab, source);
+                remember(tab, source);
+                return;
             }
+            const statement = statementAt(statements, selected ? 0 : position);
             if (!statement) throw new ShellError("error.plan.nothing");
             const plan = planStatement(statement, tab.database);
             const text = source.slice(statement.start, statement.end);
+            tab.output = undefined;
             await fetch(tab, plan, 0, text);
             remember(tab, text);
         });
@@ -386,7 +423,7 @@ export const useTabsStore = defineStore("tabs", () => {
     return {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, duplicate, close, closeOthers, closeAll, closeConnection, step,
-        run, runBrowse, runTab, showPage, refresh, count, sourceCollection, editable, resultText,
+        run, stop, runBrowse, runTab, showPage, refresh, count, sourceCollection, editable, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField
     };
 });

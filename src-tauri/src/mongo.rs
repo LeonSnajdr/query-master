@@ -26,7 +26,7 @@ const SERVER_SELECTION_TIMEOUT: Duration = Duration::from_secs(10);
 pub struct Clients(Mutex<HashMap<String, Client>>);
 
 impl Clients {
-    fn get(&self, id: &str) -> Result<Client> {
+    pub(crate) fn get(&self, id: &str) -> Result<Client> {
         self.lock().get(id).cloned().ok_or(Error::NotConnected)
     }
 
@@ -71,14 +71,14 @@ async fn open(uri: &str) -> Result<(Client, ServerInfo)> {
     Ok((client, ServerInfo { version }))
 }
 
-fn to_document(command: Value) -> Result<Document> {
+pub(crate) fn to_document(command: Value) -> Result<Document> {
     match Bson::try_from(command).map_err(|e| Error::ExtendedJson(e.to_string()))? {
         Bson::Document(document) => Ok(document),
         _ => Err(Error::CommandDocument),
     }
 }
 
-fn to_json(document: Document) -> Value {
+pub(crate) fn to_json(document: Document) -> Value {
     Bson::Document(document).into_canonical_extjson()
 }
 

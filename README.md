@@ -47,6 +47,9 @@ bun run app:build
   code), `plan.ts` turns them into database commands, `context.ts` and `complete.ts` find what to
   suggest at the cursor, `catalog.ts` lists methods, stages and operators with the server version
   that brought them.
+- `src/shell/runtime` – what a script sees (`db`, BSON helpers, `print`). `bun run build:runtime`
+  bundles it into `src-tauri/script/runtime.js`, which the Rust side embeds and runs in QuickJS
+  (`src-tauri/src/script`). Rebuild and commit the bundle after changing the runtime or `plan.ts`.
 - `src-tauri/src` – the two commands that run a database command (`mongo.rs`), the local SQLite
   database (`db`, tables in `src-tauri/migrations`) and the saved connections in it (`connection`;
   their connection strings live in the keychain of the operating system).

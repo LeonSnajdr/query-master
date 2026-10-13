@@ -67,6 +67,9 @@ export const mockBackend: Backend = {
     },
     readTextFile: async () => "",
     writeTextFile: async () => undefined,
+    // The engine is part of the app: a browser has none.
+    runScript: () => Promise.reject({ key: "error.script.browser", detail: null }),
+    stopScript: async () => undefined,
     getSetting: async () => setting,
     saveSetting: async (value) => {
         setting = value;

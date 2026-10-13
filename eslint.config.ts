@@ -13,7 +13,8 @@ export default defineConfigWithVueTs(
             ".agents/**",
             ".claude/**",
             "src-tauri/target/**",
-            "src-tauri/gen/**"
+            "src-tauri/gen/**",
+            "src-tauri/script/**"
         ]
     },
     pluginVue.configs["flat/recommended"],
