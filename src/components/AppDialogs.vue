@@ -76,11 +76,12 @@ async function copyText() {
                     <DialogClose class="btn-ghost">
                         {{ $t("action.cancel") }}
                     </DialogClose>
+                    <!-- v0 buttons are never of type "submit": Enter in the field submits the form, the click answers. -->
                     <ButtonRoot
+                        @click="resolvePrompt(answer.trim() || undefined)"
                         :disabled="!answer.trim()"
                         class="btn-primary"
                         data-testid="prompt-submit"
-                        type="submit"
                     >
                         <ButtonContent>{{ state.prompt.action }}</ButtonContent>
                     </ButtonRoot>

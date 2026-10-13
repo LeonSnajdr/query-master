@@ -122,11 +122,12 @@ async function save() {
                     <DialogClose class="btn-ghost">
                         {{ $t("action.cancel") }}
                     </DialogClose>
+                    <!-- v0 buttons are never of type "submit": Enter in a field submits the form, the click saves. -->
                     <ButtonRoot
+                        @click="save"
                         :disabled="busy || !uri.trim()"
                         class="btn-primary"
                         data-testid="connection-save"
-                        type="submit"
                     >
                         <ButtonContent>{{ $t("action.save") }}</ButtonContent>
                     </ButtonRoot>
