@@ -32,6 +32,16 @@ pub enum Error {
     TransferStopped,
     #[error("a file to import holds documents: an array of them, one, or one per line")]
     ImportShape,
+    #[error("{0} is no plain file name")]
+    OutputName(String),
+    #[error("a pipeline that writes ($out, $merge) is not run for an export")]
+    WritingPipeline,
+    #[error("the text is too large for the clipboard")]
+    ClipboardTooLarge,
+    #[error("this format can not go to the clipboard")]
+    FormatNotForClipboard,
+    #[error("a collection can not be exported into itself")]
+    SameTarget,
     #[error("{0}")]
     Script(String),
     #[error("the local database reported an error: {0}")]
@@ -62,6 +72,11 @@ impl Error {
             Self::CollectionMissing(_) => Some("error.copy.missing"),
             Self::TransferStopped => Some("error.transfer.stopped"),
             Self::ImportShape => Some("error.transfer.shape"),
+            Self::OutputName(_) => Some("error.transfer.outputName"),
+            Self::WritingPipeline => Some("error.transfer.writingPipeline"),
+            Self::ClipboardTooLarge => Some("error.transfer.clipboardTooLarge"),
+            Self::FormatNotForClipboard => Some("error.transfer.notForClipboard"),
+            Self::SameTarget => Some("error.transfer.sameTarget"),
             Self::Mongo(_) | Self::Io(_) | Self::Script(_) => None,
         }
     }
@@ -76,7 +91,12 @@ impl Error {
             | Self::ScriptStopped
             | Self::CopyStopped
             | Self::TransferStopped
-            | Self::ImportShape => None,
+            | Self::ImportShape
+            | Self::WritingPipeline
+            | Self::ClipboardTooLarge
+            | Self::FormatNotForClipboard
+            | Self::SameTarget => None,
+            Self::OutputName(name) => Some(name.clone()),
             Self::CollectionMissing(name) => Some(name.clone()),
             Self::Script(message) => Some(message.clone()),
             Self::ExtendedJson(cause) => Some(cause.clone()),

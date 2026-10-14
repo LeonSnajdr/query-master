@@ -22,7 +22,7 @@ use crate::{
 /// Documents written with one `insert`.
 const BATCH: usize = 1000;
 /// The server's answer when the collection to create is there already.
-const NAMESPACE_EXISTS: i32 = 48;
+pub(crate) const NAMESPACE_EXISTS: i32 = 48;
 
 /// A collection on a connection.
 #[derive(Debug, Clone, Deserialize)]
@@ -51,7 +51,11 @@ pub struct CopyResult {
 }
 
 /// What `listCollections` says about one collection.
-async fn describe(client: &Client, database: &str, collection: &str) -> Result<Document> {
+pub(crate) async fn describe(
+    client: &Client,
+    database: &str,
+    collection: &str,
+) -> Result<Document> {
     let mut cursor = client
         .database(database)
         .run_cursor_command(doc! { "listCollections": 1, "filter": { "name": collection } })
@@ -63,7 +67,7 @@ async fn describe(client: &Client, database: &str, collection: &str) -> Result<D
 }
 
 /// The `create` command for a collection like the one described.
-fn create_command(name: &str, info: &Document) -> Document {
+pub(crate) fn create_command(name: &str, info: &Document) -> Document {
     let mut command = doc! { "create": name };
     if let Ok(options) = info.get_document("options") {
         for (key, value) in options {
@@ -80,7 +84,7 @@ fn create_command(name: &str, info: &Document) -> Document {
 
 /// The index specifications to create on the copy: all but the one on `_id`, without what the
 /// server sets itself.
-fn index_specs(indexes: Vec<Document>) -> Vec<Document> {
+pub(crate) fn index_specs(indexes: Vec<Document>) -> Vec<Document> {
     indexes
         .into_iter()
         .filter(|index| index.get_str("name") != Ok("_id_"))

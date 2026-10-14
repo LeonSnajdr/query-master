@@ -4,6 +4,8 @@
 
 pub mod commands;
 mod csv_format;
+mod job;
+mod json_format;
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};

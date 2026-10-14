@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use serde_json::Value;
 use tauri::{ipc::Channel, State};
 
+use super::job::{Destination, ExportJob, ExportOutcome, ItemProgress};
 use super::{Format, Progress, TransferResult};
 use crate::error::Result;
 use crate::mongo::{to_document, Clients};
@@ -38,6 +39,30 @@ pub async fn export_documents(
             drop(on_progress.send(progress));
         },
     )
+    .await;
+    runs.finish(&run_id);
+    outcome
+}
+
+/// The export of the wizard: many collections to a folder, the clipboard or a database (also of
+/// another connection). Progress of each row arrives on `on_progress`; `run_id` names the run.
+#[tauri::command]
+pub async fn export_run(
+    clients: State<'_, Clients>,
+    runs: State<'_, Runs>,
+    run_id: String,
+    job: ExportJob,
+    on_progress: Channel<ItemProgress>,
+) -> Result<ExportOutcome> {
+    let source = clients.get(&job.connection_id)?;
+    let target = match &job.destination {
+        Destination::Database { connection_id, .. } => Some(clients.get(connection_id)?),
+        _ => None,
+    };
+    let stop = runs.start(&run_id);
+    let outcome = super::job::run(&source, target.as_ref(), &job, &stop, |progress| {
+        drop(on_progress.send(progress));
+    })
     .await;
     runs.finish(&run_id);
     outcome
