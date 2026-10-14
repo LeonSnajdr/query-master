@@ -1,5 +1,5 @@
-//! Notes on rows of the connection tree: a color, a comment, read-only, the folder a collection
-//! sits in; and the folders of each database. They belong to the app, not to the database, and
+//! Notes on rows of the connection tree: a color, a comment, read-only, the folder a database or
+//! collection sits in; and the folders of the connection and of each database. They belong to the app, not to the database, and
 //! go with their connection.
 
 pub mod commands;
@@ -19,7 +19,7 @@ pub struct TreeNode {
     pub color: Option<String>,
     pub comment: Option<String>,
     pub readonly: bool,
-    /// The folder of the database a collection is shown in.
+    /// The folder a database (of the connection) or a collection (of its database) is shown in.
     #[serde(default)]
     pub folder: Option<String>,
 }
@@ -30,7 +30,8 @@ impl TreeNode {
     }
 }
 
-/// A folder of a database in the tree.
+/// A folder in the tree: of a database for its collections, or with an empty `database` for the
+/// databases of the connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
 #[serde(rename_all = "camelCase")]
 pub struct TreeFolder {

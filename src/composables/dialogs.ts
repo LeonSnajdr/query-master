@@ -55,9 +55,13 @@ export interface IndexRequest {
     recreate?: boolean;
 }
 
+/** What the Help dialog shows: the keyboard shortcuts (F12) or "About QueryMaster". */
+export type HelpPage = "shortcuts" | "about";
+
 // One dialog of each kind for the whole app (`AppDialogs.vue` renders them).
 const state = reactive({
     settingsOpen: false,
+    help: undefined as HelpPage | undefined,
     indexOpen: false,
     index: undefined as IndexRequest | undefined,
     prompt: undefined as PromptRequest | undefined,
@@ -112,7 +116,11 @@ export function useDialogs() {
         state.settingsOpen = true;
     }
 
-    return { ask, confirm, showText, editConnection, editCollection, editIndex, openSettings };
+    function openHelp(page: HelpPage): void {
+        state.help = page;
+    }
+
+    return { ask, confirm, showText, editConnection, editCollection, editIndex, openSettings, openHelp };
 }
 
 /** For `AppDialogs.vue` only. */

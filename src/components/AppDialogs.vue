@@ -6,6 +6,7 @@ import ChoiceField from "@/components/ChoiceField.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
 import CollectionDialog from "@/components/CollectionDialog.vue";
 import ConnectionDialog from "@/components/ConnectionDialog.vue";
+import HelpDialog from "@/components/HelpDialog.vue";
 import TaskProgress from "@/components/TaskProgress.vue";
 import ExportWizard from "@/components/transfer/ExportWizard.vue";
 import ImportWizard from "@/components/transfer/ImportWizard.vue";
@@ -235,4 +236,5 @@ async function copyText() {
     <ExportWizard />
     <ImportWizard />
     <SettingsDialog v-model="state.settingsOpen" />
+    <HelpDialog v-model="state.help" />
 </template>

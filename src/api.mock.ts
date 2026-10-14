@@ -1,4 +1,4 @@
-import type { Backend, Profile, Setting, TreeNote } from "./api";
+import type { Backend, Profile, Setting, TreeFolder, TreeNote } from "./api";
 import { toNumber } from "./shell/ejson";
 import type { Doc, Json } from "./shell/ejson";
 
@@ -15,6 +15,12 @@ const COLLECTIONS: Record<string, string[]> = {
 
 const history = new Map<string, string[]>();
 const notes = new Map<string, Map<string, TreeNote>>();
+const folders = new Map<string, TreeFolder[]>();
+
+/** A row lies in the folders of `database`; the folders of the connection (`""`) hold databases. */
+function inFolderOf(path: string, database: string): boolean {
+    return database === "" ? path !== "" && !path.includes("/") : path.startsWith(`${database}/`);
+}
 let setting: Setting = { language: null, theme: null, pageSize: null, resultView: null, editorFontSize: null };
 
 const STATUS = ["open", "paid", "shipped", "cancelled"];
@@ -102,10 +108,24 @@ export const mockBackend: Backend = {
     },
     renameTreeNotes: async () => undefined,
     removeTreeNotes: async () => undefined,
-    listTreeFolders: async () => [],
-    addTreeFolder: async () => undefined,
-    renameTreeFolder: async () => undefined,
-    deleteTreeFolder: async () => undefined,
+    // Folders too; renaming or deleting one moves what lay in it, as the Rust side does.
+    listTreeFolders: async connectionId => folders.get(connectionId) ?? [],
+    addTreeFolder: async (connectionId, folder) => {
+        const own = folders.get(connectionId) ?? [];
+        if (!own.some(item => item.database === folder.database && item.name === folder.name)) folders.set(connectionId, [...own, folder]);
+    },
+    renameTreeFolder: async (connectionId, folder, name) => {
+        folders.set(connectionId, (folders.get(connectionId) ?? []).map(item => (item.database === folder.database && item.name === folder.name ? { ...item, name } : item)));
+        for (const note of notes.get(connectionId)?.values() ?? []) {
+            if (note.folder === folder.name && inFolderOf(note.path, folder.database)) note.folder = name;
+        }
+    },
+    deleteTreeFolder: async (connectionId, folder) => {
+        folders.set(connectionId, (folders.get(connectionId) ?? []).filter(item => item.database !== folder.database || item.name !== folder.name));
+        for (const note of notes.get(connectionId)?.values() ?? []) {
+            if (note.folder === folder.name && inFolderOf(note.path, folder.database)) note.folder = null;
+        }
+    },
     runCursorCommand: async (_id, database, command, limit) => {
         let documents: Doc[] = ORDERS;
         if ("listCollections" in command) documents = (COLLECTIONS[database] ?? []).map(name => ({ name, type: "collection" }));

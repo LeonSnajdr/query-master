@@ -15,7 +15,7 @@ import type { MenuEntry } from "@/menu";
 import { useConnectionsStore } from "@/stores/connections";
 import type { DatabaseNode, TreeSelection } from "@/stores/connections";
 import { bucketOf, treeCollections } from "@/shell/gridfs";
-import { collectionRows, NOTE_COLORS, useNotesStore } from "@/stores/notes";
+import { collectionRows, databaseRows, NOTE_COLORS, useNotesStore } from "@/stores/notes";
 import type { CollectionRow, NotePlace } from "@/stores/notes";
 
 /** The dock at the left: saved connections, the toolbar, and the tree of what is connected. */
@@ -76,6 +76,26 @@ function shownDatabases(profile: Profile): DatabaseNode[] {
     return (connections.sessions[profile.id]?.databases ?? []).filter(database => matches(database.name) || (database.collections ?? []).some(matches));
 }
 
+/** Folders of the connection and its databases; while searching every folder shows its matches. */
+function databaseRowsOf(profile: Profile): ({ kind: "folder"; name: string; count: number } | { kind: "database"; node: DatabaseNode; folder?: string })[] {
+    const shown = shownDatabases(profile);
+    const searchingNow = search.value.trim() !== "";
+    return databaseRows(
+        shown.map(database => database.name),
+        notes.notes[profile.id],
+        notes.foldersOf(profile.id, ""),
+        folder => searchingNow || notes.isOpen(profile.id, "", folder)
+    ).map(row => (row.kind === "folder" ? row : { kind: "database" as const, node: shown.find(database => database.name === row.name)!, folder: row.folder }));
+}
+
+/**
+ * Left padding of a row below a connection; a database in a folder moves in, and everything
+ * below it with it (`--shift` is set on the database's own block).
+ */
+function indent(rem: number): Record<string, string> {
+    return { paddingLeft: `calc(${rem}rem + var(--shift, 0rem))` };
+}
+
 function shownCollections(database: DatabaseNode): string[] {
     // A GridFS bucket shows once, as its `.files`.
     const all = treeCollections(database.collections ?? []);
@@ -94,8 +114,9 @@ function rowsOf(profile: Profile, database: DatabaseNode): CollectionRow[] {
     );
 }
 
-function openFolderMenu(event: MouseEvent, profile: Profile, database: DatabaseNode, folder: string) {
-    const at = { connectionId: profile.id, database: database.name };
+/** A folder of a database (of collections), or of the connection (of databases) without `database`. */
+function openFolderMenu(event: MouseEvent, profile: Profile, database: DatabaseNode | undefined, folder: string) {
+    const at = { connectionId: profile.id, database: database?.name };
     void menu.value?.open(event, [
         { label: t("folder.add"), icon: "i-lucide-folder-plus", hotkey: "Ctrl + G", action: () => void actions.addFolder(at) },
         { label: t("folder.rename"), icon: "i-lucide-pencil", action: () => void actions.renameFolder(at, folder) },
@@ -103,11 +124,14 @@ function openFolderMenu(event: MouseEvent, profile: Profile, database: DatabaseN
     ]);
 }
 
-/** "Move to folder" for a collection: each other folder of its database, and out of its folder. */
+/**
+ * "Move to folder" for a collection (the folders of its database) or a database (those of the
+ * connection): each other folder, and out of its own.
+ */
 function folderEntries(at: TreeSelection): MenuEntry[] {
-    if (at.database === undefined || at.collection === undefined) return [];
+    if (at.database === undefined) return [];
     const current = notes.noteOf(at)?.folder ?? null;
-    const entries: MenuEntry[] = notes.foldersOf(at.connectionId, at.database)
+    const entries: MenuEntry[] = notes.foldersOf(at.connectionId, at.collection === undefined ? "" : at.database)
         .filter(folder => folder !== current)
         .map(folder => ({ label: t("folder.moveTo", { name: folder }), icon: "i-lucide-folder-input", action: () => void actions.moveToFolder(at, folder) }));
     if (current) entries.push({ label: t("folder.moveOut", { name: current }), icon: "i-lucide-folder-output", action: () => void actions.moveToFolder(at, null) });
@@ -203,15 +227,22 @@ function onTreeKey(event: KeyboardEvent) {
     event.preventDefault();
 }
 
+/** "Paste collection orders", or how many collections "Copy collections" picked. */
+function pasteLabel(): string {
+    const picked = copying.copied.value ?? [];
+    if (picked.length > 1) return t("collection.pasteMany", { count: picked.length });
+    return picked[0] ? t("collection.pasteNamed", { name: picked[0].collection }) : t("collection.paste");
+}
+
 function openMenu(event: MouseEvent, at: TreeSelection) {
     select(at);
     // Pasting goes into the database of the row; the copy may come from another connection.
     const paste = (database: string): MenuEntry => ({
-        label: copying.copied.value ? t("collection.pasteNamed", { name: copying.copied.value.collection }) : t("collection.paste"),
+        label: pasteLabel(),
         icon: "i-lucide-clipboard-paste",
         hotkey: "Ctrl + V",
         action: () => void copying.paste(at.connectionId, database),
-        disabled: !copying.copied.value || copying.running.runId !== undefined
+        disabled: !copying.copied.value?.length || copying.running.runId !== undefined
     });
     const tail: MenuEntry[] = [
         "separator",
@@ -246,6 +277,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(at) },
             { label: t("view.create"), icon: "i-lucide-file-search", hotkey: "Ctrl + Shift + H", action: () => actions.createView(at) },
+            { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(at) },
             "separator",
             { label: t("collection.copy"), icon: "i-lucide-copy", hotkey: "Ctrl + C", action: () => copying.copy({ connectionId: at.connectionId, database: at.database!, collection: at.collection! }) },
             paste(at.database!),
@@ -274,6 +306,8 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("view.create"), icon: "i-lucide-file-search", hotkey: "Ctrl + Shift + H", action: () => actions.createView(at) },
             { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(at) },
             { label: t("folder.add"), icon: "i-lucide-folder-plus", hotkey: "Ctrl + G", action: () => void actions.addFolder(at) },
+            "separator",
+            { label: t("collection.copyAll"), icon: "i-lucide-copy", action: () => void copying.copyAll(at.connectionId, at.database!) },
             paste(at.database),
             "separator",
             { label: t("database.drop"), hotkey: "Del", danger: true, action: () => void actions.dropDatabase(at) },
@@ -285,6 +319,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("users.manage"), icon: "i-lucide-users", hotkey: "Ctrl + Alt + U", action: () => actions.manageUsers(at) },
             { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(at) },
+            ...folderEntries(at),
             ...noteEntries(at),
             ...tail
         ];
@@ -293,6 +328,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
             "separator",
             { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(at) },
+            { label: t("folder.add"), icon: "i-lucide-folder-plus", hotkey: "Ctrl + G", action: () => void actions.addFolder(at) },
             "separator",
             { label: t("connection.status"), icon: "i-lucide-activity", action: () => actions.serverStatus(at) },
             { label: t("connection.log"), icon: "i-lucide-scroll-text", action: () => actions.serverLog(at) },
@@ -398,7 +434,7 @@ defineExpose({
             />
         </header>
 
-        <div class="h-8 shrink-0 flex items-center gap-0.5 px-4">
+        <div class="h-8 shrink-0 min-w-0 overflow-hidden flex items-center gap-0.5 px-4">
             <IconButton
                 @click="actions.openShell()"
                 :disabled="!actions.hasConnection.value"
@@ -421,6 +457,13 @@ defineExpose({
                 :disabled="!actions.hasCollection.value"
                 :label="`${$t('tab.aggregation')} (Ctrl + Shift + Q)`"
                 icon="i-lucide-network"
+            />
+            <IconButton
+                @click="actions.openSql()"
+                :disabled="!actions.hasConnection.value"
+                :label="`${$t('tab.sql')} (Ctrl + Alt + Q)`"
+                data-testid="dock-sql"
+                icon="i-lucide-file-code-2"
             />
             <span class="toolbar-rule" />
             <DropMenu
@@ -511,140 +554,175 @@ defineExpose({
 
                 <template v-if="connections.sessions[profile.id]?.open">
                     <template
-                        v-for="database in shownDatabases(profile)"
-                        :key="database.name"
+                        v-for="databaseRow in databaseRowsOf(profile)"
+                        :key="databaseRow.kind === 'folder' ? `folder:${databaseRow.name}` : `database:${databaseRow.node.name}`"
                     >
+                        <!-- A folder of the connection, with its databases below while open. -->
                         <div
-                            @click="select({ connectionId: profile.id, database: database.name })"
-                            @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name })"
-                            @dblclick="toggleDatabase(profile, database)"
-                            @keydown.enter.self="toggleDatabase(profile, database)"
-                            :class="isSelected({ connectionId: profile.id, database: database.name }) ? 'tree-row-on' : ''"
+                            v-if="databaseRow.kind === 'folder'"
+                            @click="notes.toggleFolder(profile.id, '', databaseRow.name)"
+                            @contextmenu.prevent="openFolderMenu($event, profile, undefined, databaseRow.name)"
+                            @keydown.enter.self="notes.toggleFolder(profile.id, '', databaseRow.name)"
                             class="tree-row pl-7.5"
-                            data-testid="database-row"
+                            data-testid="database-folder-row"
                             role="treeitem"
                             tabindex="0"
                         >
                             <span
-                                @click.stop="toggleDatabase(profile, database)"
-                                :class="[database.loading ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-chevron-right', database.open ? 'rotate-90' : '']"
-                                class="size-3.5 shrink-0 text-on-surface-variant"
-                                data-testid="database-toggle"
+                                :class="notes.isOpen(profile.id, '', databaseRow.name) ? 'rotate-90' : ''"
+                                class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
                             />
                             <span
-                                :class="tint({ connectionId: profile.id, database: database.name })"
-                                class="i-lucide-database size-4 shrink-0"
+                                :class="notes.isOpen(profile.id, '', databaseRow.name) ? 'i-lucide-folder-open' : 'i-lucide-folder'"
+                                class="size-4 shrink-0 text-warning"
                             />
-                            <span class="truncate text-on-surface-strong">{{ database.name }}</span>
-                            <NoteMarks :place="{ connectionId: profile.id, database: database.name }" />
+                            <span class="truncate text-on-surface-strong">{{ databaseRow.name }}</span>
                             <span class="grow" />
-                            <span
-                                v-if="database.collections"
-                                class="shrink-0 text-[11px] text-on-surface-variant"
-                            >{{ database.collections.length }}</span>
+                            <span class="shrink-0 text-[11px] text-on-surface-variant">{{ databaseRow.count }}</span>
                         </div>
-
-                        <template v-if="database.open">
+                        <!-- A database, moved in with all below it while it lies in a folder. -->
+                        <div
+                            v-else
+                            :style="databaseRow.folder ? { '--shift': '1rem' } : undefined"
+                        >
                             <template
-                                v-for="row in rowsOf(profile, database)"
-                                :key="`${row.kind}:${row.name}`"
+                                v-for="database in [databaseRow.node]"
+                                :key="database.name"
                             >
-                                <!-- A folder of the database, with its collections below while open. -->
                                 <div
-                                    v-if="row.kind === 'folder'"
-                                    @click="notes.toggleFolder(profile.id, database.name, row.name)"
-                                    @contextmenu.prevent="openFolderMenu($event, profile, database, row.name)"
-                                    @keydown.enter.self="notes.toggleFolder(profile.id, database.name, row.name)"
-                                    class="tree-row pl-11.5"
-                                    data-testid="folder-row"
+                                    @click="select({ connectionId: profile.id, database: database.name })"
+                                    @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name })"
+                                    @dblclick="toggleDatabase(profile, database)"
+                                    @keydown.enter.self="toggleDatabase(profile, database)"
+                                    :class="isSelected({ connectionId: profile.id, database: database.name }) ? 'tree-row-on' : ''"
+                                    :style="indent(1.875)"
+                                    class="tree-row"
+                                    data-testid="database-row"
                                     role="treeitem"
                                     tabindex="0"
                                 >
                                     <span
-                                        :class="notes.isOpen(profile.id, database.name, row.name) ? 'rotate-90' : ''"
-                                        class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
+                                        @click.stop="toggleDatabase(profile, database)"
+                                        :class="[database.loading ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-chevron-right', database.open ? 'rotate-90' : '']"
+                                        class="size-3.5 shrink-0 text-on-surface-variant"
+                                        data-testid="database-toggle"
                                     />
                                     <span
-                                        :class="notes.isOpen(profile.id, database.name, row.name) ? 'i-lucide-folder-open' : 'i-lucide-folder'"
-                                        class="size-4 shrink-0 text-warning"
+                                        :class="tint({ connectionId: profile.id, database: database.name })"
+                                        class="i-lucide-database size-4 shrink-0"
                                     />
-                                    <span class="truncate text-on-surface-strong">{{ row.name }}</span>
+                                    <span class="truncate text-on-surface-strong">{{ database.name }}</span>
+                                    <NoteMarks :place="{ connectionId: profile.id, database: database.name }" />
                                     <span class="grow" />
-                                    <span class="shrink-0 text-[11px] text-on-surface-variant">{{ row.count }}</span>
+                                    <span
+                                        v-if="database.collections"
+                                        class="shrink-0 text-[11px] text-on-surface-variant"
+                                    >{{ database.collections.length }}</span>
                                 </div>
-                                <template v-else>
+
+                                <template v-if="database.open">
                                     <template
-                                        v-for="collection in [row.name]"
-                                        :key="collection"
+                                        v-for="row in rowsOf(profile, database)"
+                                        :key="`${row.kind}:${row.name}`"
                                     >
+                                        <!-- A folder of the database, with its collections below while open. -->
                                         <div
-                                            @click="select({ connectionId: profile.id, database: database.name, collection })"
-                                            @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection })"
-                                            @dblclick="openRow(profile, database, collection)"
-                                            @keydown.enter="openRow(profile, database, collection)"
-                                            :class="[isSelected({ connectionId: profile.id, database: database.name, collection }) ? 'tree-row-on' : '', row.kind === 'collection' && row.folder ? 'pl-15.5' : 'pl-11.5']"
+                                            v-if="row.kind === 'folder'"
+                                            @click="notes.toggleFolder(profile.id, database.name, row.name)"
+                                            @contextmenu.prevent="openFolderMenu($event, profile, database, row.name)"
+                                            @keydown.enter.self="notes.toggleFolder(profile.id, database.name, row.name)"
+                                            :style="indent(2.875)"
                                             class="tree-row"
-                                            data-testid="collection-row"
+                                            data-testid="folder-row"
                                             role="treeitem"
                                             tabindex="0"
                                         >
                                             <span
-                                                @click.stop="toggleCollection(profile, database, collection)"
-                                                @dblclick.stop
-                                                :class="[
-                                                    database.details[collection]?.loading ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-chevron-right',
-                                                    database.details[collection]?.open ? 'rotate-90' : '',
-                                                    // A view has no indexes to unfold.
-                                                    database.types[collection] === 'view' ? 'invisible' : ''
-                                                ]"
-                                                class="size-3.5 shrink-0 text-on-surface-variant"
-                                                data-testid="collection-toggle"
+                                                :class="notes.isOpen(profile.id, database.name, row.name) ? 'rotate-90' : ''"
+                                                class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
                                             />
                                             <span
-                                                :class="[collectionIcon(database, collection), tint({ connectionId: profile.id, database: database.name, collection })]"
-                                                :title="database.types[collection] === 'collection' ? undefined : $t(`collection.type.${database.types[collection] ?? 'collection'}`)"
-                                                class="size-4 shrink-0"
+                                                :class="notes.isOpen(profile.id, database.name, row.name) ? 'i-lucide-folder-open' : 'i-lucide-folder'"
+                                                class="size-4 shrink-0 text-warning"
                                             />
-                                            <span class="truncate text-on-surface-strong">{{ bucketAt(database, collection) ?? collection }}</span>
-                                            <span
-                                                v-if="bucketAt(database, collection) !== undefined"
-                                                class="shrink-0 text-[11px] text-on-surface-variant"
-                                            >GridFS</span>
-                                            <NoteMarks :place="{ connectionId: profile.id, database: database.name, collection }" />
+                                            <span class="truncate text-on-surface-strong">{{ row.name }}</span>
+                                            <span class="grow" />
+                                            <span class="shrink-0 text-[11px] text-on-surface-variant">{{ row.count }}</span>
                                         </div>
-
-                                        <!-- Unfolded, a collection shows its indexes. -->
-                                        <template v-if="database.details[collection]?.open">
-                                            <div
-                                                v-for="index in database.details[collection]?.indexes"
-                                                :key="String(index.name)"
-                                                @click="select({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
-                                                @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
-                                                @dblclick="actions.indexInfo({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
-                                                :class="[
-                                                    isSelected({ connectionId: profile.id, database: database.name, collection, index: String(index.name) }) ? 'tree-row-on' : '',
-                                                    row.kind === 'collection' && row.folder ? 'pl-24' : 'pl-20'
-                                                ]"
-                                                class="tree-row"
-                                                data-testid="index-row"
-                                                role="treeitem"
-                                                tabindex="0"
+                                        <template v-else>
+                                            <template
+                                                v-for="collection in [row.name]"
+                                                :key="collection"
                                             >
-                                                <span class="i-lucide-key-round size-3.5 shrink-0 text-on-surface" />
-                                                <span
-                                                    :class="index.hidden === true ? 'opacity-55' : ''"
-                                                    class="truncate text-on-surface-strong"
-                                                >{{ index.name }}</span>
-                                                <span
-                                                    v-if="index.hidden === true"
-                                                    class="shrink-0 text-[11px] italic text-on-surface-variant"
-                                                >{{ $t("index.hiddenMark") }}</span>
-                                            </div>
+                                                <div
+                                                    @click="select({ connectionId: profile.id, database: database.name, collection })"
+                                                    @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection })"
+                                                    @dblclick="openRow(profile, database, collection)"
+                                                    @keydown.enter="openRow(profile, database, collection)"
+                                                    :class="isSelected({ connectionId: profile.id, database: database.name, collection }) ? 'tree-row-on' : ''"
+                                                    :style="indent(row.kind === 'collection' && row.folder ? 3.875 : 2.875)"
+                                                    class="tree-row"
+                                                    data-testid="collection-row"
+                                                    role="treeitem"
+                                                    tabindex="0"
+                                                >
+                                                    <span
+                                                        @click.stop="toggleCollection(profile, database, collection)"
+                                                        @dblclick.stop
+                                                        :class="[
+                                                            database.details[collection]?.loading ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-chevron-right',
+                                                            database.details[collection]?.open ? 'rotate-90' : '',
+                                                            // A view has no indexes to unfold.
+                                                            database.types[collection] === 'view' ? 'invisible' : ''
+                                                        ]"
+                                                        class="size-3.5 shrink-0 text-on-surface-variant"
+                                                        data-testid="collection-toggle"
+                                                    />
+                                                    <span
+                                                        :class="[collectionIcon(database, collection), tint({ connectionId: profile.id, database: database.name, collection })]"
+                                                        :title="database.types[collection] === 'collection' ? undefined : $t(`collection.type.${database.types[collection] ?? 'collection'}`)"
+                                                        class="size-4 shrink-0"
+                                                    />
+                                                    <span class="truncate text-on-surface-strong">{{ bucketAt(database, collection) ?? collection }}</span>
+                                                    <span
+                                                        v-if="bucketAt(database, collection) !== undefined"
+                                                        class="shrink-0 text-[11px] text-on-surface-variant"
+                                                    >GridFS</span>
+                                                    <NoteMarks :place="{ connectionId: profile.id, database: database.name, collection }" />
+                                                </div>
+
+                                                <!-- Unfolded, a collection shows its indexes. -->
+                                                <template v-if="database.details[collection]?.open">
+                                                    <div
+                                                        v-for="index in database.details[collection]?.indexes"
+                                                        :key="String(index.name)"
+                                                        @click="select({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                                        @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                                        @dblclick="actions.indexInfo({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                                        :class="isSelected({ connectionId: profile.id, database: database.name, collection, index: String(index.name) }) ? 'tree-row-on' : ''"
+                                                        :style="indent(row.kind === 'collection' && row.folder ? 6 : 5)"
+                                                        class="tree-row"
+                                                        data-testid="index-row"
+                                                        role="treeitem"
+                                                        tabindex="0"
+                                                    >
+                                                        <span class="i-lucide-key-round size-3.5 shrink-0 text-on-surface" />
+                                                        <span
+                                                            :class="index.hidden === true ? 'opacity-55' : ''"
+                                                            class="truncate text-on-surface-strong"
+                                                        >{{ index.name }}</span>
+                                                        <span
+                                                            v-if="index.hidden === true"
+                                                            class="shrink-0 text-[11px] italic text-on-surface-variant"
+                                                        >{{ $t("index.hiddenMark") }}</span>
+                                                    </div>
+                                                </template>
+                                            </template>
                                         </template>
                                     </template>
                                 </template>
                             </template>
-                        </template>
+                        </div>
                     </template>
                 </template>
             </div>

@@ -18,6 +18,7 @@ import StartPage from "@/components/StartPage.vue";
 import { useActions } from "@/composables/actions";
 import { useDialogs } from "@/composables/dialogs";
 import { watchAppearance } from "@/composables/appearance";
+import { useFocusAreas } from "@/composables/focus";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
 import { appWindow } from "@/files";
@@ -36,10 +37,11 @@ const actions = useActions();
 const dialogs = useDialogs();
 const connections = useConnectionsStore();
 const tabs = useTabsStore();
+const focus = useFocusAreas();
 const dock = useTemplateRef("dock");
 const tabMenu = useTemplateRef("tabMenu");
 
-const TAB_ICONS = { start: "i-lucide-info", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", sql: "i-lucide-file-code-2", server: "i-lucide-activity" } as const;
+const TAB_ICONS = { start: "i-lucide-house", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", sql: "i-lucide-file-code-2", server: "i-lucide-activity" } as const;
 
 const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield", gridfs: "i-lucide-folder-archive" } as const;
 
@@ -67,6 +69,8 @@ const status = computed(() => {
     const session = id === undefined ? undefined : connections.sessions[id];
     return profile && session ? t("status.server", { name: profile.name, version: session.version }) : t("connection.none");
 });
+/** The field chosen in the result of the tab in front at the bottom. */
+const fieldPath = computed(() => (isQueryTab(tabs.active) ? tabs.active.fieldPath : undefined));
 const seconds = computed(() => ((tabs.active?.result?.milliseconds ?? 0) / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }));
 
 function openTabMenu(event: MouseEvent, tab: WorkTab) {
@@ -122,6 +126,10 @@ useHotkey("ctrl+shift+tab", () => tabs.step(-1), everywhere);
 useHotkey("alt+1", () => setView("tree"), everywhere);
 useHotkey("alt+2", () => setView("table"), everywhere);
 useHotkey("alt+3", () => setView("json"), everywhere);
+useHotkey("f4", () => focus.focusTree(), everywhere);
+useHotkey("f6", () => focus.focusEditor(), everywhere);
+useHotkey("f7", () => focus.focusResults(), everywhere);
+useHotkey("f12", () => dialogs.openHelp("shortcuts"), everywhere);
 // Without these the web view would reload the app.
 useHotkey("ctrl+r", () => withActive(tab => isQueryTab(tab) && void tabs.refresh(tab)), everywhere);
 useHotkey("f5", () => withActive(tab => isQueryTab(tab) && void tabs.runTab(tab)));
@@ -151,8 +159,9 @@ onMounted(async () => {
             class="grow min-h-0"
             orientation="horizontal"
         >
+            <!-- As wide (about 320 of 1280 pixels): the toolbar of the dock fits. -->
             <SplitterPanel
-                :defaultSize="20"
+                :defaultSize="25"
                 :maxSize="50"
                 :minSize="12"
                 class="min-w-0 flex flex-col bg-dock"
@@ -181,7 +190,7 @@ onMounted(async () => {
                 <span class="i-lucide-ellipsis-vertical size-3.5" />
             </SplitterHandle>
             <SplitterPanel
-                :defaultSize="80"
+                :defaultSize="75"
                 class="min-w-0 flex flex-col"
             >
                 <div
@@ -295,6 +304,15 @@ onMounted(async () => {
                 class="italic truncate"
                 data-testid="status-server"
             >{{ status }}</span>
+            <span
+                v-if="fieldPath"
+                class="min-w-0 flex items-center gap-1.5"
+                data-testid="status-path"
+            >
+                <span class="i-lucide-house size-3.5 shrink-0 text-on-surface-variant" />
+                <span class="text-on-surface-variant">»</span>
+                <span class="truncate">{{ fieldPath }}</span>
+            </span>
             <span class="grow" />
             <span
                 class="tabular-nums text-on-surface-variant"

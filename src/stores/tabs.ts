@@ -86,6 +86,8 @@ export interface WorkTab {
     pipeline?: PipelineStage[];
     /** Aggregate tabs: shell text of the options (`allowDiskUse`, `maxTimeMS` …). */
     aggregateOptions?: string;
+    /** Dotted path of the field chosen in the result; the status bar shows it. */
+    fieldPath?: string;
 }
 
 /** Tabs with a query or a script, results and a result view. */

@@ -152,7 +152,9 @@ pub async fn rename_folder(
     sqlx::query!(
         r#"
             update tree_node set folder = $4
-            where connection_id = $1 and folder = $3 and substr(path, 1, length($2) + 1) = $2 || '/'
+            where connection_id = $1 and folder = $3
+                and case when $2 = '' then path <> '' and instr(path, '/') = 0
+                    else substr(path, 1, length($2) + 1) = $2 || '/' end
         "#,
         connection_id,
         folder.database,
@@ -181,7 +183,9 @@ pub async fn delete_folder(
     sqlx::query!(
         r#"
             update tree_node set folder = null
-            where connection_id = $1 and folder = $3 and substr(path, 1, length($2) + 1) = $2 || '/'
+            where connection_id = $1 and folder = $3
+                and case when $2 = '' then path <> '' and instr(path, '/') = 0
+                    else substr(path, 1, length($2) + 1) = $2 || '/' end
         "#,
         connection_id,
         folder.database,
@@ -364,5 +368,45 @@ mod tests {
         add_folder(&pool, id, &archive).await.unwrap();
         remove(&pool, id, "shop").await.unwrap();
         assert!(folders(&pool, id).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn folders_of_the_connection_hold_databases_only() {
+        use super::super::{add_folder, delete_folder, rename_folder};
+        let pool = db::memory_pool().await;
+        let id = connection(&pool).await;
+        let top = TreeFolder {
+            database: String::new(),
+            name: "work".into(),
+        };
+        add_folder(&pool, id, &top).await.unwrap();
+        let mut shop = node("shop", None, false);
+        shop.folder = Some("work".into());
+        save(&pool, id, shop).await.unwrap();
+        // A collection in a folder of the same name inside a database is another folder.
+        let mut orders = node("shop/orders", None, false);
+        orders.folder = Some("work".into());
+        save(&pool, id, orders).await.unwrap();
+
+        rename_folder(&pool, id, &top, "jobs").await.unwrap();
+        let folder_of = |nodes: &[TreeNode], path: &str| {
+            nodes
+                .iter()
+                .find(|node| node.path == path)
+                .and_then(|node| node.folder.clone())
+        };
+        let nodes = list_nodes(&pool, id).await.unwrap();
+        assert_eq!(folder_of(&nodes, "shop").as_deref(), Some("jobs"));
+        assert_eq!(folder_of(&nodes, "shop/orders").as_deref(), Some("work"));
+
+        let renamed = TreeFolder {
+            database: String::new(),
+            name: "jobs".into(),
+        };
+        delete_folder(&pool, id, &renamed).await.unwrap();
+        assert_eq!(
+            paths(&list_nodes(&pool, id).await.unwrap()),
+            ["shop/orders"]
+        );
     }
 }

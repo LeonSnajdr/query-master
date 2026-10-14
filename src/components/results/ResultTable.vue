@@ -5,7 +5,7 @@ import { useI18n } from "vue-i18n";
 import type { MenuEntry } from "@/menu";
 import { isDoc, preview, scalar, typeOf } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
-import { displayText, useResultContext } from "./result-context";
+import { dateFormat, dateText, displayText, useResultContext } from "./result-context";
 
 /**
  * Documents as rows, their fields as columns: the type under each column name,
@@ -88,9 +88,7 @@ function label(column: string): string {
     return stack.value.length === 0 ? column : `${column} - ${fullPath(column)}`;
 }
 
-const dateFormat = computed(() => new Intl.DateTimeFormat(locale.value, {
-    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit"
-}));
+const dates = computed(() => dateFormat(locale.value));
 
 function typeLabel(column: string): string {
     const value = levels.value.map(level => cell(level.value, column)).find(item => item !== undefined);
@@ -102,11 +100,7 @@ function typeLabel(column: string): string {
 function cellText(value: Json | undefined): string {
     if (value === undefined) return t("result.notSet");
     const type = typeOf(value);
-    if (type === "date" && isDoc(value)) {
-        const milliseconds = Number((value.$date as { $numberLong?: string } | undefined)?.$numberLong ?? value.$date);
-        //: date and time side by side, without the comma some locales put between.
-        return Number.isNaN(milliseconds) ? displayText(value) : dateFormat.value.format(milliseconds).replace(", ", " ");
-    }
+    if (type === "date") return dateText(value, dates.value) ?? displayText(value);
     // Numbers as digits; the type stands in the column head.
     if ((type === "long" || type === "decimal") && isDoc(value)) return String(value.$numberLong ?? value.$numberDecimal);
     if (type === "array" || type === "object") {
@@ -231,7 +225,7 @@ function commit() {
 
 function select(index: number, column: string, event?: MouseEvent) {
     current.value = { index, column };
-    context.choose(index, event);
+    context.choose(index, event, fullPath(column));
 }
 
 const unfoldable = computed(() => columns.value.filter(name => levels.value.some(level => children(cell(level.value, name)).length > 0)));

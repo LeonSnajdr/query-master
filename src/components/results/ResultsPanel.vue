@@ -21,8 +21,8 @@ import { CODE_LANGUAGES, queryCode } from "@/shell/code";
 import { isWrite, planStatement } from "@/shell/plan";
 import { PAGE_SIZES, useTabsStore } from "@/stores/tabs";
 import type { ResultView } from "@/stores/tabs";
-import { provideResultContext } from "./result-context";
-import type { ResultTarget } from "./result-context";
+import { noFold, provideResultContext } from "./result-context";
+import type { Fold, ResultTarget } from "./result-context";
 import ResultTable from "./ResultTable.vue";
 import TreeRow from "./TreeRow.vue";
 
@@ -48,8 +48,18 @@ const collection = computed(() => tabs.sourceCollection(tab.value));
 const menu = useTemplateRef("menu");
 
 const selected = shallowRef<number>();
-const fold = ref<{ version: number; open: boolean; index?: number }>({ version: 0, open: true });
-watch(result, () => (selected.value = undefined));
+/** The field chosen in the selected document; empty for the document itself. */
+const selectedPath = shallowRef("");
+const fold = ref<Fold>({ version: 0, open: true });
+/** Fields the tree shows first in their document; kept while paging. */
+const pinned = ref<string[]>([]);
+watch(result, () => {
+    selected.value = undefined;
+    selectedPath.value = "";
+    tab.value.fieldPath = undefined;
+    // A fold of the result before must not unfold the documents now at its place.
+    fold.value = noFold(fold.value.version + 1);
+});
 
 /** The documents of the page with their index on it, narrowed to those that hold the search text. */
 const rows = computed(() => {
@@ -73,15 +83,26 @@ function documentAt(index: number | undefined): Doc | undefined {
     return isDoc(item) ? item : undefined;
 }
 
-function setFold(open: boolean, index?: number) {
-    fold.value = { version: fold.value.version + 1, open, index };
+/** All documents, one (`index`), or with `path` the node there and all below it. */
+function setFold(open: boolean, index?: number, path?: string) {
+    fold.value = { version: fold.value.version + 1, open, index, path };
 }
 
-/** Ctrl+J unfolds the chosen document, Ctrl+Shift+J folds it, as the menu says. */
-function onTreeKey(event: KeyboardEvent) {
-    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "j" || selected.value === undefined) return;
-    setFold(!event.shiftKey, selected.value);
-    // Without it the web view opens its downloads.
+function togglePin(path: string) {
+    pinned.value = pinned.value.includes(path) ? pinned.value.filter(item => item !== path) : [...pinned.value, path];
+}
+
+/**
+ * Keys of the tree, as the menu says: Ctrl+J unfolds the chosen node with all below it,
+ * Ctrl+Shift+J folds it, Ctrl+P pins the chosen field. The table has keys of its own.
+ */
+function onResultKey(event: KeyboardEvent) {
+    if (tab.value.view !== "tree" || !(event.ctrlKey || event.metaKey) || event.altKey || selected.value === undefined) return;
+    const key = event.key.toLowerCase();
+    if (key === "j") setFold(!event.shiftKey, selected.value, selectedPath.value);
+    else if (key === "p" && !event.shiftKey && selectedPath.value !== "") togglePin(selectedPath.value);
+    else return;
+    // Without it the web view opens its downloads (Ctrl+J) or prints (Ctrl+P).
     event.preventDefault();
 }
 
@@ -145,7 +166,14 @@ function editDocument(index: number | undefined) {
 const marked = shallowRef(new Set<number>());
 watch(result, () => (marked.value = new Set()));
 
-function choose(index: number, event?: MouseEvent) {
+/** The field of the selected document the status bar names. */
+function choosePath(path: string) {
+    selectedPath.value = path;
+    tab.value.fieldPath = path || undefined;
+}
+
+function choose(index: number, event?: MouseEvent, path = "") {
+    choosePath(path);
     const anchor = selected.value;
     if (event?.ctrlKey || event?.metaKey) {
         const next = new Set(marked.value);
@@ -379,12 +407,18 @@ async function lastPage() {
 
 function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = []) {
     selected.value = target.index;
+    choosePath(target.path);
     // A click outside the marked documents marks only the one clicked.
     if (!marked.value.has(target.index)) marked.value = new Set([target.index]);
     const several = markedDocuments(target.index);
     const document = documentAt(target.index);
     const field = target.path !== "";
     const locked = collection.value === undefined || tabs.locked(tab.value);
+    // The table pins its columns itself (`extra`); the tree pins fields here.
+    const isPinned = pinned.value.includes(target.path);
+    const pin: MenuEntry[] = field && tab.value.view === "tree"
+        ? [{ label: t(isPinned ? "result.unpin" : "result.pin"), icon: isPinned ? "i-lucide-pin-off" : "i-lucide-pin", hotkey: "Ctrl + P", action: () => togglePin(target.path) }]
+        : [];
     // Grouped: Documents, Fields, Copy; what the view adds; then the rest.
     const entries: MenuEntry[] = [
         { label: t("document.view"), icon: "i-lucide-file-search", action: () => viewDocument(target.index), disabled: !document },
@@ -409,8 +443,8 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
             children: [
                 { label: t("field.remove"), action: () => void removeField(target), disabled: !field || !editable.value || target.path === "_id" },
                 "separator",
-                { label: t("result.expand.document"), hotkey: "Ctrl + J", action: () => setFold(true, target.index) },
-                { label: t("result.collapse.document"), hotkey: "Ctrl + Shift + J", action: () => setFold(false, target.index) },
+                { label: t("result.expand.node"), hotkey: "Ctrl + J", action: () => setFold(true, target.index, target.path) },
+                { label: t("result.collapse.node"), hotkey: "Ctrl + Shift + J", action: () => setFold(false, target.index, target.path) },
                 { label: t("result.expand.all"), action: () => setFold(true) },
                 { label: t("result.collapse.all"), action: () => setFold(false) }
             ]
@@ -426,6 +460,7 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
                 ...(several.length > 1 ? [{ label: t("copy.documents", { count: several.length }), action: () => void copy(JSON.stringify(several, null, 2)) }] : [])
             ]
         },
+        ...pin,
         ...(extra.length > 0 ? ["separator" as const, ...extra] : []),
         "separator",
         { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void tabs.refresh(tab.value) }
@@ -433,7 +468,7 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
     void menu.value?.open(event, entries);
 }
 
-provideResultContext({ editable, selected, marked, choose, fold, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument });
+provideResultContext({ editable, selected, marked, choose, fold, pinned, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument });
 </script>
 
 <template>
@@ -569,14 +604,15 @@ provideResultContext({ editable, selected, marked, choose, fold, commit: (target
                 icon="i-lucide-sigma"
             />
             <span class="toolbar-rule" />
-            <label class="h-6.5 flex items-center gap-1.5 px-1 text-on-surface-variant">
+            <!-- The search gives way first when the pane is narrow; the view switch stays whole. -->
+            <label class="h-6.5 min-w-16 shrink flex items-center gap-1.5 px-1 text-on-surface-variant">
                 <span class="i-lucide-search size-4 shrink-0" />
                 <!-- eslint-disable-next-line vue/no-mutating-props -- `tab` is the store's own object, not a prop -->
                 <input
                     v-model="tab.search"
                     :aria-label="$t('result.search')"
                     :placeholder="$t('result.search')"
-                    class="w-40 bg-transparent outline-none text-[13px] text-on-surface-strong placeholder:italic placeholder:text-on-surface-variant"
+                    class="w-40 min-w-0 shrink bg-transparent outline-none text-[13px] text-on-surface-strong placeholder:italic placeholder:text-on-surface-variant"
                     data-testid="result-search"
                     type="search"
                 />
@@ -585,13 +621,13 @@ provideResultContext({ editable, selected, marked, choose, fold, commit: (target
             <span class="grow" />
             <span
                 v-if="result"
-                class="pr-3 text-xs text-on-surface-variant tabular-nums"
+                class="pr-3 shrink-0 whitespace-nowrap text-xs text-on-surface-variant tabular-nums"
                 data-testid="result-range"
             >{{ rows.length === 0 ? $t("result.empty") : $t("result.range", { from: result.offset + 1, to: result.offset + result.items.length }) }}</span>
             <ToggleGroup
                 v-model="tab.view"
                 :label="$t('view.label')"
-                class="flex items-center gap-2.5"
+                class="shrink-0 flex items-center gap-2.5"
                 mandatory
             >
                 <ToggleRoot
@@ -615,9 +651,12 @@ provideResultContext({ editable, selected, marked, choose, fold, commit: (target
             {{ say(tab.error) }}
         </p>
 
+        <!-- Focusable for F7 ("Set focus to results"); the keys of the tree are handled here. -->
         <div
-            class="grow min-h-0 overflow-auto pb-2 font-mono text-[13px] leading-[19px] select-text"
+            @keydown="onResultKey"
+            class="grow min-h-0 overflow-auto pb-2 font-mono text-[13px] leading-[19px] select-text outline-none"
             data-testid="query-result"
+            tabindex="-1"
         >
             <p
                 v-if="!result"
@@ -633,7 +672,6 @@ provideResultContext({ editable, selected, marked, choose, fold, commit: (target
             </p>
             <div
                 v-else-if="tab.view === 'tree'"
-                @keydown="onTreeKey"
                 class="px-2 pt-1"
                 role="tree"
             >

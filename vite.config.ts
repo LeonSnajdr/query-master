@@ -1,11 +1,18 @@
+import { readFileSync } from "node:fs";
 import { fileURLToPath, URL } from "node:url";
 import Vue from "@vitejs/plugin-vue";
 import UnoCSS from "unocss/vite";
 import Fonts from "unplugin-fonts/vite";
 import { defineConfig } from "vitest/config";
 
+const { version } = JSON.parse(readFileSync(new URL("package.json", import.meta.url), "utf8")) as { version: string };
+
 // Tauri expects a fixed port and reports Rust errors in the same terminal.
 export default defineConfig({
+    // "About QueryMaster" shows it; the same number as in `tauri.conf.json`.
+    define: {
+        __APP_VERSION__: JSON.stringify(version)
+    },
     plugins: [Vue(), Fonts({
         fontsource: {
             families: [
