@@ -45,10 +45,6 @@ export function useImportWizard() {
     const notes = useNotesStore();
     const busy = shallowRef(false);
 
-    function databasesOf(connectionId: string): string[] {
-        return connections.sessions[connectionId]?.databases.map(database => database.name) ?? [];
-    }
-
     /** Opens the wizard on the server of the selection; a database or collection there is where files go. */
     async function openImport(at?: TreeSelection) {
         if (wizard.runId) return;
@@ -79,9 +75,8 @@ export function useImportWizard() {
             const format = formatOf(fresh[0]!);
             if (format) wizard.state.format = format;
         }
-        const databases = databasesOf(wizard.state.connectionId);
         const rows = fresh.map((path) => {
-            const row = rowFor(path, databases, wizard.database);
+            const row = rowFor(path, wizard.database);
             return wizard.collection === undefined ? row : { ...row, database: wizard.database, collection: wizard.collection };
         });
         wizard.state.rows = [...wizard.state.rows, ...rows];

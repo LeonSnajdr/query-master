@@ -1,5 +1,6 @@
 import type { Doc } from "@/shell/ejson";
 import { oneOf, splitPath } from "./export";
+import type { InsertMode } from "./export";
 
 /** The two kinds of import, as the tiles of the wizard. */
 export const IMPORT_FORMATS = ["json", "csv"] as const;
@@ -36,6 +37,8 @@ export interface ImportRow {
     path: string;
     database: string;
     collection: string;
+    /** What happens to a document whose `_id` is in the collection already. */
+    mode: InsertMode;
 }
 
 export interface ImportState {
@@ -57,16 +60,16 @@ export function formatOf(path: string): ImportFormat | undefined {
 
 /**
  * Where a file goes by default. A name as the export writes it, `database.collection.json`, gives
- * both when the database exists; otherwise the given database and the name without extension.
+ * both: a database name holds no dot, so the first dot ends it, and the collection keeps the rest
+ * (`shop.orders.archive.json` → `shop`, `orders.archive`). A name without one goes into the
+ * given database, as a collection of the name without extension.
  */
-export function rowFor(path: string, databases: string[], fallbackDatabase: string): ImportRow {
+export function rowFor(path: string, fallbackDatabase: string): ImportRow {
     const name = splitPath(path).name;
     const stem = name.includes(".") ? name.slice(0, name.lastIndexOf(".")) : name;
     const dot = stem.indexOf(".");
-    if (dot > 0 && dot < stem.length - 1 && databases.includes(stem.slice(0, dot))) {
-        return { path, database: stem.slice(0, dot), collection: stem.slice(dot + 1) };
-    }
-    return { path, database: fallbackDatabase, collection: stem };
+    if (dot > 0 && dot < stem.length - 1) return { path, database: stem.slice(0, dot), collection: stem.slice(dot + 1), mode: "overwrite" };
+    return { path, database: fallbackDatabase, collection: stem, mode: "overwrite" };
 }
 
 /** Problems that keep the wizard from starting, as i18n keys with the row they belong to. */
@@ -91,6 +94,7 @@ export function importJob(state: ImportState): Doc {
             path: row.path,
             database: row.database.trim(),
             collection: row.collection.trim(),
+            mode: row.mode,
             columns: state.format === "csv" ? (state.columns[row.path] as unknown as Doc[] | undefined) ?? null : null
         }))
     };

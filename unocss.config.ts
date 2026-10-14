@@ -31,6 +31,8 @@ export default defineConfig({
         "flyout-gap": "[margin:0.125rem_0_0]!",
         // Drop-down and context menus.
         "menu-panel": "flyout-gap rounded-sm bg-dock text-on-surface border border-divider shadow-[0_6px_20px_rgb(0_0_0/0.4)]",
+        // The list of a select: right under the field, as wide, joined to its border.
+        "select-list": "[margin:0]! p-0 py-0.5 w-[anchor-size(width)] max-h-72 overflow-y-auto rounded-b-sm bg-background text-on-surface border border-primary border-t-divider shadow-[0_6px_16px_rgb(0_0_0/0.35)]",
         "toolbar-rule": "w-px h-4.5 mx-1.5 shrink-0 bg-divider",
         // Rows of the connection tree; the selected one carries a frame, as a focused one does.
         "tree-row": "h-[19px] mr-4.5 flex items-center gap-1.5 pr-2 whitespace-nowrap border border-transparent outline-none hover:bg-on-surface/5 focus-visible:border-primary/60",

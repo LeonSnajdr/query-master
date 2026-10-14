@@ -12,7 +12,7 @@ use futures_util::TryStreamExt;
 use mongodb::{
     bson::{doc, Bson, Document},
     error::ErrorKind,
-    Client, Cursor,
+    Client, Cursor, Database,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -348,6 +348,54 @@ fn is_namespace_exists(error: &mongodb::error::Error) -> bool {
     matches!(*error.kind, ErrorKind::Command(ref command) if command.code == NAMESPACE_EXISTS)
 }
 
+/// A batch into a collection: with `Overwrite` a document replaces the one with its `_id` (or is
+/// inserted, one command per batch); with `NewId` every document goes in with an `_id` of the server.
+pub(super) async fn write_batch(
+    database: &Database,
+    collection: &str,
+    batch: Vec<Document>,
+    mode: InsertMode,
+) -> Result<()> {
+    match mode {
+        InsertMode::NewId => {
+            let fresh: Vec<Document> = batch
+                .into_iter()
+                .map(|mut document| {
+                    document.remove("_id");
+                    document
+                })
+                .collect();
+            database
+                .collection::<Document>(collection)
+                .insert_many(fresh)
+                .await?;
+        }
+        InsertMode::Overwrite => {
+            let updates: Vec<Document> = batch
+                .into_iter()
+                .map(|document| {
+                    let id = document
+                        .get("_id")
+                        .cloned()
+                        .unwrap_or_else(|| Bson::ObjectId(mongodb::bson::oid::ObjectId::new()));
+                    doc! { "q": { "_id": id }, "u": document, "upsert": true }
+                })
+                .collect();
+            let reply = database
+                .run_command(doc! { "update": collection, "updates": updates, "ordered": false })
+                .await?;
+            if let Ok(errors) = reply.get_array("writeErrors") {
+                if let Some(Bson::Document(first)) = errors.first() {
+                    return Err(Error::Script(
+                        first.get_str("errmsg").unwrap_or("write error").to_owned(),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// One item into a collection of the target database.
 #[allow(clippy::too_many_arguments)]
 async fn export_database(
@@ -377,49 +425,14 @@ async fn export_database(
         }
     }
     let mut cursor = read(source, item).await?;
-    let collection = target_database.collection::<Document>(&item.output);
     let mut done = 0;
     loop {
         let batch = next_batch(&mut cursor, stop).await?;
         if batch.is_empty() {
             break;
         }
-        match insert_mode {
-            InsertMode::NewId => {
-                let fresh: Vec<Document> = batch
-                    .iter()
-                    .map(|document| {
-                        let mut document = document.clone();
-                        document.remove("_id");
-                        document
-                    })
-                    .collect();
-                collection.insert_many(fresh).await?;
-            }
-            InsertMode::Overwrite => {
-                // Replaced where the _id is there, inserted where not: one command per batch.
-                let updates: Vec<Document> = batch
-                    .iter()
-                    .map(|document| match document.get("_id") {
-                        Some(id) => doc! { "q": { "_id": id.clone() }, "u": document.clone(), "upsert": true },
-                        None => doc! { "q": { "_id": mongodb::bson::oid::ObjectId::new() }, "u": document.clone(), "upsert": true },
-                    })
-                    .collect();
-                let reply = target_database
-                    .run_command(
-                        doc! { "update": &item.output, "updates": updates, "ordered": false },
-                    )
-                    .await?;
-                if let Ok(errors) = reply.get_array("writeErrors") {
-                    if let Some(Bson::Document(first)) = errors.first() {
-                        return Err(Error::Script(
-                            first.get_str("errmsg").unwrap_or("write error").to_owned(),
-                        ));
-                    }
-                }
-            }
-        }
         done += batch.len() as u64;
+        write_batch(&target_database, &item.output, batch, insert_mode).await?;
         progress(done);
     }
     if copy_indexes {

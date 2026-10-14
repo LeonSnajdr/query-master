@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogRoot, DialogTitle, SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { computed, onBeforeUnmount, onMounted, shallowRef, useId, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { inApp } from "@/api";
-import IconButton from "@/components/IconButton.vue";
+
 import SelectField from "@/components/SelectField.vue";
 import { useImportWizard } from "@/composables/importWizard";
 import { CSV_FILES, JSON_FILES, JSON_LINES_FILES, pickOpenPaths } from "@/files";
@@ -12,14 +12,13 @@ import { useConnectionsStore } from "@/stores/connections";
 import { splitPath } from "@/transfer/export";
 import { IMPORT_FORMATS, importProblems } from "@/transfer/import";
 import type { CsvReadSettings, EmptyFields, ImportFormat } from "@/transfer/import";
+import ImportFiles from "./ImportFiles.vue";
 import ImportSchema from "./ImportSchema.vue";
 
 /** The import wizard: format tiles, files with their target, CSV pages, progress. */
 const { t } = useI18n();
 const connections = useConnectionsStore();
 const { wizard, setFormat, addFiles, chooseConnection, start, stop, close } = useImportWizard();
-const databaseList = useId();
-const collectionList = useId();
 
 const open = computed({ get: () => wizard.open, set: value => !value && close() });
 const state = computed(() => wizard.state);
@@ -34,7 +33,6 @@ const title = computed(() => {
 });
 const serverOptions = computed(() => connections.saved.map(profile => ({ value: profile.id, label: profile.name })));
 const server = computed({ get: () => state.value.connectionId, set: (value: string) => void chooseConnection(value) });
-const databases = computed(() => connections.sessions[state.value.connectionId]?.databases.map(database => database.name) ?? []);
 
 const delimiterOptions = computed(() => ([[",", "comma"], [";", "semicolon"], ["\t", "tab"], [" ", "space"]] as const).map(([value, name]) => ({ value, label: t(`export.csv.delimiter.${name}`) })));
 const quoteOptions = computed(() => ([["\"", "double"], ["'", "single"]] as const).map(([value, name]) => ({ value, label: t(`export.csv.quote.${name}`) })));
@@ -53,30 +51,6 @@ const problemText = computed(() => {
     if (!first) return "";
     return first.row === undefined ? t(first.key) : t("export.problem.inRow", { row: first.row + 1, text: t(first.key) });
 });
-
-/** The row clicked last; edit and remove act on it. */
-const selected = shallowRef<number>();
-/** Editing the target of a row (`editing` is its index). */
-const form = shallowRef<{ path: string; database: string; collection: string; editing: number }>();
-const formCollections = computed(() => (form.value?.database ? connections.collectionsOf(state.value.connectionId, form.value.database) : []));
-
-function editRow() {
-    const row = selected.value === undefined ? undefined : state.value.rows[selected.value];
-    if (row && selected.value !== undefined) form.value = { ...row, editing: selected.value };
-}
-
-function saveForm() {
-    const value = form.value;
-    if (!value) return;
-    state.value.rows = state.value.rows.map((row, index) => (index === value.editing ? { path: value.path.trim() || row.path, database: value.database.trim(), collection: value.collection.trim() } : row));
-    form.value = undefined;
-}
-
-function removeRow() {
-    if (selected.value === undefined) return;
-    state.value.rows = state.value.rows.filter((_, index) => index !== selected.value);
-    selected.value = undefined;
-}
 
 async function chooseFiles() {
     const kinds = state.value.format === "csv" ? [CSV_FILES] : [JSON_FILES, JSON_LINES_FILES];
@@ -188,158 +162,11 @@ const STATE_ICONS: Record<string, string> = {
 
                     <div class="border-t border-divider" />
 
-                    <datalist :id="databaseList">
-                        <option
-                            v-for="name in databases"
-                            :key="name"
-                            :value="name"
-                        />
-                    </datalist>
-                    <div class="flex items-center gap-0.5">
-                        <IconButton
-                            @click="chooseFiles"
-                            :label="$t('import.addFiles')"
-                            data-testid="import-add"
-                            icon="i-lucide-file-plus-2"
-                            tint="text-success"
-                        >
-                            {{ $t("import.addFiles") }}
-                        </IconButton>
-                        <span class="toolbar-rule" />
-                        <IconButton
-                            @click="editRow"
-                            :disabled="selected === undefined"
-                            :label="$t('import.editRow')"
-                            data-testid="import-edit"
-                            icon="i-lucide-file-pen-line"
-                            tint="text-warning"
-                        />
-                        <IconButton
-                            @click="removeRow"
-                            :disabled="selected === undefined"
-                            :label="$t('import.removeRow')"
-                            data-testid="import-remove"
-                            icon="i-lucide-file-x-2"
-                            tint="text-error"
-                        />
-                    </div>
-
-                    <div
-                        v-if="form"
-                        class="grid grid-cols-[1.6fr_1fr_1fr_auto] gap-2 items-center p-2 rounded-sm border border-divider"
-                        data-testid="import-form"
-                    >
-                        <datalist :id="collectionList">
-                            <option
-                                v-for="name in formCollections"
-                                :key="name"
-                                :value="name"
-                            />
-                        </datalist>
-                        <input
-                            v-model="form.path"
-                            :aria-label="$t('import.column.file')"
-                            :placeholder="$t('import.column.file')"
-                            class="field font-mono"
-                            data-testid="import-form-path"
-                            spellcheck="false"
-                        />
-                        <input
-                            v-model="form.database"
-                            :aria-label="$t('export.column.database')"
-                            :list="databaseList"
-                            :placeholder="$t('export.column.database')"
-                            class="field"
-                            spellcheck="false"
-                        />
-                        <input
-                            v-model="form.collection"
-                            :aria-label="$t('export.column.collection')"
-                            :list="collectionList"
-                            :placeholder="$t('export.column.collection')"
-                            class="field"
-                            spellcheck="false"
-                        />
-                        <div class="flex gap-1">
-                            <ButtonRoot
-                                @click="saveForm"
-                                class="btn-primary h-8!"
-                                data-testid="import-form-save"
-                            >
-                                <ButtonContent>{{ $t("action.save") }}</ButtonContent>
-                            </ButtonRoot>
-                            <IconButton
-                                @click="form = undefined"
-                                :label="$t('action.cancel')"
-                                icon="i-lucide-x"
-                            />
-                        </div>
-                    </div>
-
-                    <div
-                        :class="dragging ? 'border-primary border-dashed bg-primary/8' : 'border-divider'"
-                        class="grow min-h-0 overflow-auto rounded-sm bg-background border"
-                    >
-                        <p
-                            v-if="state.rows.length === 0"
-                            class="h-full m-0 flex items-center justify-center text-on-surface-variant"
-                            data-testid="import-empty"
-                        >
-                            {{ $t("import.empty") }}
-                        </p>
-                        <table
-                            v-else
-                            class="w-full border-collapse text-[13px]"
-                            data-testid="import-rows"
-                        >
-                            <thead>
-                                <tr class="text-left">
-                                    <th
-                                        v-for="column in ['file', 'database', 'collection']"
-                                        :key="column"
-                                        class="sticky top-0 z-1 bg-background px-2.5 pt-2 pb-1 font-semibold text-on-surface-strong"
-                                    >
-                                        {{ $t(`import.column.${column}`) }}
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr
-                                    v-for="(row, index) in state.rows"
-                                    :key="row.path"
-                                    @click="selected = index"
-                                    :class="selected === index ? 'bg-primary/15' : 'hover:bg-on-surface/4'"
-                                    data-testid="import-row"
-                                >
-                                    <td
-                                        :title="row.path"
-                                        class="px-2.5 py-1 border-t border-divider max-w-64 truncate"
-                                    >
-                                        {{ splitPath(row.path).name }}
-                                    </td>
-                                    <td class="px-1 py-0.5 border-t border-divider">
-                                        <input
-                                            v-model="row.database"
-                                            :aria-label="$t('import.column.database')"
-                                            :list="databaseList"
-                                            class="w-full h-7 px-1.5 bg-transparent border border-transparent rounded-sm focus:border-primary outline-none"
-                                            data-testid="import-database"
-                                            spellcheck="false"
-                                        />
-                                    </td>
-                                    <td class="px-1 py-0.5 border-t border-divider">
-                                        <input
-                                            v-model="row.collection"
-                                            :aria-label="$t('import.column.collection')"
-                                            class="w-full h-7 px-1.5 bg-transparent border border-transparent rounded-sm focus:border-primary outline-none"
-                                            data-testid="import-collection"
-                                            spellcheck="false"
-                                        />
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+                    <ImportFiles
+                        @addFiles="chooseFiles"
+                        :dragging
+                        :state
+                    />
                 </div>
 
                 <!-- Page 2 of CSV: how the files are read. -->

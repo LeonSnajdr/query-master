@@ -320,7 +320,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         };
         const wizardSelect = async (position, label) => {
             await page.locator("[data-testid=export-wizard] [data-testid=select-field]").nth(position).click();
-            await page.locator("[data-testid=menu-item]:visible", { hasText: label }).first().click();
+            await page.locator("[data-testid=select-option]:visible", { hasText: label }).first().click();
         };
         // A row is done a moment before the text reaches the clipboard: wait for it to change.
         const readClipboard = () => page.evaluate(() => navigator.clipboard.readText()).catch(() => "");
@@ -436,9 +436,17 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await id("import-empty").waitFor();
         await drop([file("json")]);
         await id("import-row").waitFor();
-        assert.equal(await id("import-database").inputValue(), DATABASE);
-        assert.equal(await id("import-collection").inputValue(), COLLECTION);
-        await id("import-collection").fill(`${COLLECTION}_json`);
+        assert.equal((await id("import-database").innerText()).trim(), DATABASE);
+        assert.equal((await id("import-collection").innerText()).trim(), COLLECTION);
+        // A double click edits the row in place; Enter keeps it.
+        await id("import-row").dblclick();
+        await id("import-edit-collection").fill(`${COLLECTION}_json`);
+        await id("import-edit-collection").press("Enter");
+        assert.equal((await id("import-collection").innerText()).trim(), `${COLLECTION}_json`);
+        // The mode, set through its column header for every file.
+        await id("import-header-mode").click();
+        await page.locator("[data-testid=import-bulk-mode]:visible", { hasText: "Generate new _id" }).click();
+        assert.match(await page.locator("[data-testid=import-row] [data-testid=select-field]").innerText(), /Generate new _id/);
         await shot("import-wizard");
         await id("import-next").click();
         assert.match(await progressText("import"), /3 documents/);
@@ -449,11 +457,16 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await chooseMenu("Import...");
         await drop([file("csv")]);
         assert.equal(await id("import-tile-csv").getAttribute("aria-checked"), "true");
-        await id("import-collection").fill(`${COLLECTION}_csv`);
+        // The collection, set through its column header.
+        await id("import-header-collection").click();
+        await visible("import-bulk-value").fill(`${COLLECTION}_csv`);
+        await visible("import-bulk-apply").click();
+        assert.equal((await id("import-collection").innerText()).trim(), `${COLLECTION}_csv`);
         await id("import-next").click();
         // The export kept the semicolon of the CSV step before: the wizard remembers its settings.
         await page.locator("[data-testid=import-wizard] [data-testid=select-field]").first().click();
-        await page.locator("[data-testid=menu-item]:visible", { hasText: "Semicolon" }).first().click();
+        await shot("select-open");
+        await page.locator("[data-testid=select-option]:visible", { hasText: "Semicolon" }).first().click();
         await id("import-schema-next").click();
         const names = page.locator("[data-testid=import-column-name]");
         await names.first().waitFor();
@@ -967,7 +980,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
     await step("the settings give new tabs their page size and view", async () => {
         const choose = async (field, label) => {
             await page.locator("dialog[open] [data-testid=select-field]").nth(field).click();
-            await page.locator("[data-testid=menu-item]:visible", { hasText: label }).first().click();
+            await page.locator("[data-testid=select-option]:visible", { hasText: label }).first().click();
         };
         await page.keyboard.press("Control+Alt+P");
         await visible("settings").waitFor();

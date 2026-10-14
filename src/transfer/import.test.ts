@@ -6,7 +6,7 @@ function state(change: Partial<ImportState> = {}): ImportState {
     return {
         connectionId: "c1",
         format: "json",
-        rows: [rowFor("C:\\in\\shop.orders.json", ["shop"], "test")],
+        rows: [rowFor("C:\\in\\shop.orders.json", "test")],
         csv: DEFAULT_CSV_READ,
         columns: {},
         ...change
@@ -15,11 +15,11 @@ function state(change: Partial<ImportState> = {}): ImportState {
 
 describe("rows of the import", () => {
     it("takes database and collection from a name the export wrote", () => {
-        expect(rowFor("C:\\in\\shop.orders.json", ["shop"], "test")).toEqual({ path: "C:\\in\\shop.orders.json", database: "shop", collection: "orders" });
-        expect(rowFor("/in/shop.orders.archive.csv", ["shop"], "test")).toMatchObject({ database: "shop", collection: "orders.archive" });
-        // An unknown database: the name stays the collection's.
-        expect(rowFor("/in/other.orders.json", ["shop"], "test")).toMatchObject({ database: "test", collection: "other.orders" });
-        expect(rowFor("/in/people", [], "test")).toMatchObject({ database: "test", collection: "people" });
+        expect(rowFor("C:\\in\\shop.orders.json", "test")).toEqual({ path: "C:\\in\\shop.orders.json", database: "shop", collection: "orders", mode: "overwrite" });
+        expect(rowFor("/in/shop.orders.archive.csv", "test")).toMatchObject({ database: "shop", collection: "orders.archive" });
+        // A database the server does not have yet: still only the collection name, as before the export.
+        expect(rowFor("C:\\in\\vuetrack-dev-core-api.oAuthTransaction.json", "test")).toMatchObject({ database: "vuetrack-dev-core-api", collection: "oAuthTransaction" });
+        expect(rowFor("/in/people.json", "test")).toMatchObject({ database: "test", collection: "people" });
     });
 
     it("knows the format by the extension", () => {
@@ -34,7 +34,7 @@ describe("importProblems", () => {
     it("asks for a server, files, and a database and collection each", () => {
         expect(importProblems(state())).toEqual([]);
         expect(importProblems(state({ connectionId: "", rows: [] }))).toEqual([{ key: "import.problem.noServer" }, { key: "import.problem.noRows" }]);
-        const rows = [{ path: "a.json", database: " ", collection: "system.users" }];
+        const rows = [{ path: "a.json", database: " ", collection: "system.users", mode: "overwrite" as const }];
         expect(importProblems(state({ rows }))).toEqual([{ key: "import.problem.noDatabase", row: 0 }, { key: "import.problem.badCollection", row: 0 }]);
     });
 });
@@ -53,7 +53,7 @@ describe("importJob", () => {
         expect(importJob(state())).toEqual({
             connectionId: "c1",
             format: { kind: "json" },
-            items: [{ path: "C:\\in\\shop.orders.json", database: "shop", collection: "orders", columns: null }]
+            items: [{ path: "C:\\in\\shop.orders.json", database: "shop", collection: "orders", mode: "overwrite", columns: null }]
         });
         const columns = [{ name: "n", type: "int" as const, include: true }];
         const csv = importJob(state({

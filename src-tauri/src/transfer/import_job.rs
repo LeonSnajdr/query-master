@@ -10,7 +10,7 @@ use mongodb::{bson::Document, Client};
 use serde::{Deserialize, Serialize};
 
 use super::csv_import::{CsvReadOptions, CsvSource, ImportColumn};
-use super::job::{ItemProgress, ItemState};
+use super::job::{write_batch, InsertMode, ItemProgress, ItemState};
 use super::shell_reader::{ReadPosition, ShellReader};
 use crate::error::{Error, Result};
 
@@ -24,9 +24,17 @@ pub struct ImportItem {
     pub path: PathBuf,
     pub database: String,
     pub collection: String,
+    /// What happens to a document whose `_id` is in the collection already: replaced, or the
+    /// document goes in with a new `_id`.
+    #[serde(default = "overwrite")]
+    pub mode: InsertMode,
     /// CSV: the columns of the schema page; none for the names of the first row, typed as they come.
     #[serde(default)]
     pub columns: Option<Vec<ImportColumn>>,
+}
+
+fn overwrite() -> InsertMode {
+    InsertMode::Overwrite
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -107,9 +115,7 @@ async fn import_item(
     progress: &mut impl FnMut(u64),
 ) -> Result<u64> {
     let mut source = Source::open(item, format)?;
-    let target = client
-        .database(&item.database)
-        .collection::<Document>(&item.collection);
+    let target = client.database(&item.database);
     let mut done = 0;
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -119,8 +125,8 @@ async fn import_item(
         if batch.is_empty() {
             break;
         }
-        target.insert_many(&batch).await?;
         done += batch.len() as u64;
+        write_batch(&target, &item.collection, batch, item.mode).await?;
         progress(done);
     }
     Ok(done)
@@ -227,6 +233,7 @@ mod tests {
             path: path.clone(),
             database: "querymaster_test".into(),
             collection: "import_job_target".into(),
+            mode: InsertMode::Overwrite,
             columns: None,
         };
         let good = file("good.json", &format!("\u{feff}{shell}"));
@@ -261,6 +268,27 @@ mod tests {
             target.find_one(doc! { "_id": 2499_i64 }).await.unwrap(),
             Some(doc! { "_id": 2499_i64, "n": 2499 })
         );
+
+        // The same file again: replaced by `_id`, no error and no doubles; with new ids, doubled.
+        for (mode, expected) in [(InsertMode::Overwrite, 2500), (InsertMode::NewId, 5000)] {
+            let again = ImportJob {
+                connection_id: "a".into(),
+                items: vec![ImportItem {
+                    mode,
+                    ..item(&good)
+                }],
+                format: ImportFormat::Json,
+            };
+            let outcome = run(&client, &again, &AtomicBool::new(false), |_| {})
+                .await
+                .unwrap();
+            assert_eq!(outcome.failed, 0, "{mode:?}");
+            assert_eq!(
+                target.count_documents(doc! {}).await.unwrap(),
+                expected,
+                "{mode:?}"
+            );
+        }
 
         // Stopped before the first batch.
         let outcome = run(&client, &job, &AtomicBool::new(true), |_| {})
