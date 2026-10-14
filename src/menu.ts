@@ -22,7 +22,18 @@ export interface MenuSwatches {
     choose: (color: string | null) => void;
 }
 
-export type MenuEntry = MenuItem | MenuSwatches | "separator";
+/** A line that opens a menu of its own beside it (Documents, Fields, Copy …). */
+export interface MenuGroup {
+    label: string;
+    icon?: string;
+    children: MenuEntry[];
+}
+
+export type MenuEntry = MenuItem | MenuSwatches | MenuGroup | "separator";
+
+export function isMenuGroup(entry: MenuEntry): entry is MenuGroup {
+    return entry !== "separator" && "children" in entry;
+}
 
 export function isMenuItem(entry: MenuEntry): entry is MenuItem {
     return entry !== "separator" && "action" in entry;

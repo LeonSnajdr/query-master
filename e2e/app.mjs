@@ -74,6 +74,12 @@ async function runShell(text) {
     return panel;
 }
 
+/** Opens the menu of a group (Documents, Fields, Copy) beside its line. */
+async function openGroup(label) {
+    await page.locator("[data-testid=menu-group]:visible", { hasText: label }).first().hover();
+    await page.locator("[data-testid=sub-menu]:visible").waitFor();
+}
+
 async function chooseMenu(label) {
     await page.locator("[data-testid=menu-item]:visible", { hasText: label }).first().click();
 }
@@ -719,11 +725,14 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         });
         assert.match(probe, /clip/, probe);
         await panel.locator("[data-testid=tree-row]").first().click({ button: "right" });
+        await openGroup("Documents");
+        await shot("submenu");
         await chooseMenu("Import from clipboard");
         await page.locator("dialog[open]", { hasText: "Insert 2 documents" }).waitFor();
         await id("confirm-action").click();
         await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 3"));
         await panel.locator("[data-testid=tree-row]").first().click({ button: "right" });
+        await openGroup("Documents");
         await chooseMenu("Refresh document");
         await page.waitForTimeout(300);
         assert.equal(await panel.locator("[data-testid=query-error]").count(), 0);

@@ -327,29 +327,48 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
     selected.value = target.index;
     const document = documentAt(target.index);
     const field = target.path !== "";
+    const locked = collection.value === undefined || tabs.locked(tab.value);
+    // Grouped: Documents, Fields, Copy; what the view adds; then the rest.
     const entries: MenuEntry[] = [
-        { label: t("document.add"), icon: "i-lucide-file-plus-2", action: addDocument, disabled: collection.value === undefined || tabs.locked(tab.value) },
         { label: t("document.view"), icon: "i-lucide-file-search", action: () => viewDocument(target.index), disabled: !document },
         { label: t("document.edit"), icon: "i-lucide-file-pen-line", action: () => editDocument(target.index), disabled: !document || !editable.value },
-        { label: t("document.remove"), icon: "i-lucide-file-x-2", danger: true, action: () => void removeDocument(target.index), disabled: !document || !editable.value },
         "separator",
-        { label: t("field.remove"), action: () => void removeField(target), disabled: !field || !editable.value || target.path === "_id" },
-        "separator",
-        { label: t("copy.value"), icon: "i-lucide-copy", action: () => void copy(toShell(target.value)) },
-        { label: t("copy.path"), action: () => void copy(target.path), disabled: !field },
-        { label: t("copy.document"), action: () => void copy(toShell(document ?? target.value)) },
-        { label: t("copy.json"), action: () => void copy(JSON.stringify(document ?? target.value, null, 2)) },
+        {
+            label: t("menu.documents"),
+            icon: "i-lucide-files",
+            children: [
+                { label: t("document.add"), icon: "i-lucide-file-plus-2", action: addDocument, disabled: locked },
+                { label: t("document.remove"), icon: "i-lucide-file-x-2", danger: true, action: () => void removeDocument(target.index), disabled: !document || !editable.value },
+                { label: t("document.refresh"), icon: "i-lucide-rotate-cw", action: () => void tabs.refreshDocument(tab.value, target.index).catch(report), disabled: !document || collection.value === undefined },
+                "separator",
+                { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", action: () => void importClipboard(), disabled: locked },
+                { label: t("result.import"), icon: "i-lucide-download", action: () => void importDocuments(), disabled: locked },
+                ...TRANSFER_FORMATS.map(({ format }): MenuEntry => ({ label: t(`result.export.${format}`), icon: "i-lucide-upload", action: () => void exportDocuments(format) }))
+            ]
+        },
+        {
+            label: t("menu.fields"),
+            icon: "i-lucide-list-tree",
+            children: [
+                { label: t("field.remove"), action: () => void removeField(target), disabled: !field || !editable.value || target.path === "_id" },
+                "separator",
+                { label: t("result.expand.document"), hotkey: "Ctrl + J", action: () => setFold(true, target.index) },
+                { label: t("result.collapse.document"), hotkey: "Ctrl + Shift + J", action: () => setFold(false, target.index) },
+                { label: t("result.expand.all"), action: () => setFold(true) },
+                { label: t("result.collapse.all"), action: () => setFold(false) }
+            ]
+        },
+        {
+            label: t("menu.copy"),
+            icon: "i-lucide-copy",
+            children: [
+                { label: t("copy.value"), icon: "i-lucide-copy", action: () => void copy(toShell(target.value)) },
+                { label: t("copy.path"), action: () => void copy(target.path), disabled: !field },
+                { label: t("copy.document"), action: () => void copy(toShell(document ?? target.value)) },
+                { label: t("copy.json"), action: () => void copy(JSON.stringify(document ?? target.value, null, 2)) }
+            ]
+        },
         ...(extra.length > 0 ? ["separator" as const, ...extra] : []),
-        "separator",
-        { label: t("result.expand.document"), hotkey: "Ctrl + J", action: () => setFold(true, target.index) },
-        { label: t("result.collapse.document"), hotkey: "Ctrl + Shift + J", action: () => setFold(false, target.index) },
-        { label: t("result.expand.all"), action: () => setFold(true) },
-        { label: t("result.collapse.all"), action: () => setFold(false) },
-        "separator",
-        ...TRANSFER_FORMATS.map(({ format }): MenuEntry => ({ label: t(`result.export.${format}`), icon: "i-lucide-upload", action: () => void exportDocuments(format) })),
-        { label: t("result.import"), icon: "i-lucide-download", action: () => void importDocuments(), disabled: collection.value === undefined || tabs.locked(tab.value) },
-        { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", action: () => void importClipboard(), disabled: collection.value === undefined || tabs.locked(tab.value) },
-        { label: t("document.refresh"), icon: "i-lucide-rotate-cw", action: () => void tabs.refreshDocument(tab.value, target.index).catch(report), disabled: !document || collection.value === undefined },
         "separator",
         { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void tabs.refresh(tab.value) }
     ];
