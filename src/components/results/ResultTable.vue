@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot } from "@vuetify/v0";
-import { computed, nextTick, ref, shallowRef, useTemplateRef } from "vue";
+import { computed, ref, shallowRef, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
 import type { MenuEntry } from "@/menu";
 import { isDoc, preview, scalar, typeOf } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
 import { dateFormat, dateText, displayText, useResultContext } from "./result-context";
+import ValueEditor from "./ValueEditor.vue";
 
 /**
  * Documents as rows, their fields as columns: the type under each column name,
@@ -193,34 +194,33 @@ function toggle<T>(set: Set<T>, value: T, on: boolean): Set<T> {
 
 // Editing in place: one cell at a time.
 const editing = shallowRef<{ index: number; column: string }>();
-const draft = shallowRef("");
-const input = useTemplateRef<HTMLInputElement[]>("input");
+const tableKeys = useTemplateRef<HTMLDivElement>("tableKeys");
 
-async function activate(index: number, column: string) {
+function activate(index: number, column: string) {
     const value = cellAt(index, column);
     if (children(value).length > 0) {
         stepInto(column);
         return;
     }
-    const leaf = value === undefined ? undefined : scalar(value);
     if (!context.editable.value || fullPath(column) === "_id") {
         context.open(index);
         return;
     }
-    draft.value = leaf?.text ?? "";
     editing.value = { index, column };
-    await nextTick();
-    input.value?.[0]?.select();
 }
 
-function commit() {
-    const at = editing.value;
-    if (!at) return;
+function isEditing(index: number, column: string): boolean {
+    return editing.value?.index === index && editing.value.column === column;
+}
+
+function commit(index: number, column: string, text: string) {
+    context.commit({ index, path: fullPath(column), value: cellAt(index, column) ?? null }, text);
+}
+
+/** Back to the table after editing, so that its keys work again. */
+function stopEditing(back: boolean) {
     editing.value = undefined;
-    const value = cellAt(at.index, at.column);
-    if (draft.value.trim() !== "" && draft.value !== (value === undefined ? "" : scalar(value)?.text)) {
-        context.commit({ index: at.index, path: fullPath(at.column), value: value ?? null }, draft.value);
-    }
+    if (back) tableKeys.value?.focus();
 }
 
 function select(index: number, column: string, event?: MouseEvent) {
@@ -309,6 +309,7 @@ function onKey(event: KeyboardEvent) {
 
 <template>
     <div
+        ref="tableKeys"
         @keydown="onKey"
         class="outline-none"
         data-testid="result-table-keys"
@@ -379,28 +380,25 @@ function onKey(event: KeyboardEvent) {
                         @dblclick="activate(index, column)"
                         :class="[
                             cellClass(cell(value, column)),
-                            current?.index === index && current.column === column ? 'outline outline-1 -outline-offset-1 outline-primary' : ''
+                            current?.index === index && current.column === column ? 'outline outline-1 -outline-offset-1 outline-primary' : '',
+                            // The editor may reach past a narrow cell; the text below it keeps the width.
+                            isEditing(index, column) ? 'overflow-visible' : 'truncate'
                         ]"
                         :style="widthStyle(column)"
                         :title="cell(value, column) === undefined ? undefined : preview(cell(value, column)!, 1000)"
-                        class="max-w-64 px-2 h-[19px] truncate whitespace-nowrap"
+                        class="relative max-w-64 px-2 h-[19px] whitespace-nowrap"
                         data-testid="table-cell"
                     >
-                        <input
-                            v-if="editing?.index === index && editing.column === column"
-                            ref="input"
-                            v-model="draft"
-                            @blur="editing = undefined"
-                            @keydown.enter.prevent.stop="commit"
-                            @keydown.esc.stop="editing = undefined"
-                            :aria-label="column"
-                            class="w-full min-w-32 h-[17px] px-1 bg-surface-variant border border-primary outline-none font-mono text-on-surface-strong"
-                            data-testid="table-edit"
-                            spellcheck="false"
+                        <ValueEditor
+                            v-if="isEditing(index, column)"
+                            @close="stopEditing"
+                            @commit="text => commit(index, column, text)"
+                            :label="column"
+                            :value="cell(value, column)"
+                            class="absolute left-0 top-0 z-1 h-full min-w-full w-56 pl-2 outline outline-1 -outline-offset-1 outline-primary"
+                            testid="table-edit"
                         />
-                        <template v-else>
-                            {{ cellText(cell(value, column)) }}
-                        </template>
+                        <span :class="isEditing(index, column) ? 'invisible' : ''">{{ cellText(cell(value, column)) }}</span>
                     </td>
                 </tr>
             </tbody>

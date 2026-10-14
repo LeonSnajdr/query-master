@@ -916,7 +916,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
     await step("a value is changed in place in the tree", async () => {
         const value = panel.locator("[data-testid=tree-row]", { hasText: /^\s*1\s*name/ }).locator("[data-testid=tree-value]");
         await value.dblclick();
-        await panel.locator("[data-testid=tree-edit]").fill("\"THREE\"");
+        await panel.locator("[data-testid=tree-edit]").fill("THREE");
         await page.keyboard.press("Enter");
         await panel.locator("[data-testid=tree-value]", { hasText: "THREE" }).first().waitFor();
     });
@@ -924,7 +924,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
     await step("a cell is changed in place in the table", async () => {
         await panel.locator("[data-testid=view-table]").click();
         await panel.locator("[data-testid=table-cell]", { hasText: "two" }).dblclick();
-        await panel.locator("[data-testid=table-edit]").fill("\"TWO\"");
+        await panel.locator("[data-testid=table-edit]").fill("TWO");
         await page.keyboard.press("Enter");
         await panel.locator("[data-testid=table-cell]", { hasText: "TWO" }).waitFor();
         await panel.locator("[data-testid=view-tree]").click();

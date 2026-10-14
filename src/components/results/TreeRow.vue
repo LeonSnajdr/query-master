@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ButtonRoot } from "@vuetify/v0";
-import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { isDoc, scalar, typeOf } from "@/shell/ejson";
 import type { Json, ValueType } from "@/shell/ejson";
 import { dateFormat, dateText, displayText, foldReaches, useResultContext } from "./result-context";
+import ValueEditor from "./ValueEditor.vue";
 
 /** A line of the result tree: a document, or a field with what lies below it. */
 const props = withDefaults(defineProps<{
@@ -90,27 +91,16 @@ const dates = computed(() => dateFormat(locale.value));
 /** Dates as the table shows them; everything else as `displayText`. */
 const text = computed(() => (type.value === "date" ? dateText(props.value, dates.value) : undefined) ?? displayText(props.value));
 
-// Editing in place: scalar fields of documents that can be written back.
+// Editing in place: fields of documents that can be written back, also arrays and documents.
 const editing = shallowRef(false);
-const draft = shallowRef("");
-const input = useTemplateRef<HTMLInputElement>("input");
-const canEdit = computed(() => context.editable.value && leaf.value !== undefined && props.path !== "" && props.path !== "_id");
+const canEdit = computed(() => context.editable.value && props.path !== "" && props.path !== "_id");
 
-async function startEdit() {
+function startEdit() {
     if (!canEdit.value) {
         if (root.value) context.open(props.index);
         return;
     }
-    draft.value = leaf.value?.text ?? "";
     editing.value = true;
-    await nextTick();
-    input.value?.select();
-}
-
-function commit() {
-    if (!editing.value) return;
-    editing.value = false;
-    if (draft.value !== leaf.value?.text) context.commit(target.value, draft.value);
 }
 </script>
 
@@ -156,18 +146,14 @@ function commit() {
                 v-if="!root"
                 class="mx-1.5 text-on-surface-variant"
             >:</span>
-            <input
+            <ValueEditor
                 v-if="editing"
-                ref="input"
-                v-model="draft"
-                @blur="editing = false"
-                @click.stop
-                @keydown.enter.prevent="commit"
-                @keydown.esc.stop="editing = false"
-                :aria-label="title"
-                class="grow min-w-40 h-[19px] px-1 bg-surface-variant border border-primary outline-none text-on-surface-strong"
-                data-testid="tree-edit"
-                spellcheck="false"
+                @close="editing = false"
+                @commit="text => context.commit(target, text)"
+                :label="title"
+                :value
+                class="grow min-w-40 h-[19px] outline outline-1 -outline-offset-1 outline-primary"
+                testid="tree-edit"
             />
             <template v-else>
                 <span
