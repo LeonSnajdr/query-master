@@ -310,7 +310,7 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
     const document = documentAt(target.index);
     const field = target.path !== "";
     const entries: MenuEntry[] = [
-        { label: t("document.add"), icon: "i-lucide-file-plus-2", action: addDocument, disabled: collection.value === undefined || tab.value.readonly },
+        { label: t("document.add"), icon: "i-lucide-file-plus-2", action: addDocument, disabled: collection.value === undefined || tabs.locked(tab.value) },
         { label: t("document.view"), icon: "i-lucide-file-search", action: () => viewDocument(target.index), disabled: !document },
         { label: t("document.edit"), icon: "i-lucide-file-pen-line", action: () => editDocument(target.index), disabled: !document || !editable.value },
         { label: t("document.remove"), icon: "i-lucide-file-x-2", danger: true, action: () => void removeDocument(target.index), disabled: !document || !editable.value },

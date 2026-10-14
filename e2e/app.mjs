@@ -30,11 +30,26 @@ async function step(name, action) {
     } catch (error) {
         // The first lines say what was waited for; the rest is Playwright's retry log.
         steps.push(`FAIL  ${name}: ${String(error.message).split("\n").slice(0, 3).join(" | ")}`);
+        // An assertion says what it got; the stack says which one it was.
+        if ("actual" in error) steps.push(`      actual ${JSON.stringify(error.actual)}, expected ${JSON.stringify(error.expected)}`);
+        const line = String(error.stack).split("\n").find(entry => entry.includes("app.mjs"));
+        if (line) steps.push(`      at ${line.trim()}`);
         // What dialogs were open says most about a failure in one.
         const open = await page.locator("dialog[open]").evaluateAll(dialogs => dialogs.map(dialog => dialog.innerText.replace(/\s+/g, " ").slice(0, 400))).catch(() => []);
         if (open.length > 0) steps.push(`      open dialogs: ${open.join(" || ")}`);
         throw error;
     }
+}
+
+/** Waits until the field holds `value`: what the page sets after a reply, it sets a moment later. */
+async function valueBecomes(locator, value, timeout = 5000) {
+    const until = Date.now() + timeout;
+    let current = await locator.inputValue();
+    while (current !== value && Date.now() < until) {
+        await page.waitForTimeout(50);
+        current = await locator.inputValue();
+    }
+    assert.equal(current, value);
 }
 
 /** Replaces the text of the code editor inside `scope`. */
@@ -371,14 +386,14 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await item.waitFor();
         await shot("users");
         // The password is gone from the form once the server has it.
-        assert.equal(await visible("user-password").inputValue(), "");
+        await valueBecomes(visible("user-password"), "");
 
         // A second role is granted without touching the password.
         await visible("role-add").click();
         await page.locator("[data-testid=role-name]:visible").nth(1).fill("read");
         await visible("user-save").click();
         await page.locator("[data-testid=role-row]:visible").nth(1).waitFor();
-        assert.equal(await page.locator("[data-testid=role-name]:visible").nth(1).inputValue(), "read");
+        await valueBecomes(page.locator("[data-testid=role-name]:visible").nth(1), "read");
 
         await visible("user-drop").click();
         await id("confirm-action").click();

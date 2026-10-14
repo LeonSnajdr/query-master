@@ -10,6 +10,7 @@ import { preview } from "@/shell/ejson";
 import type { Doc } from "@/shell/ejson";
 import { formatUptime, OPERATIONS, runningOperation, summarize } from "@/shell/server";
 import type { RunningOperation, StatusSample } from "@/shell/server";
+import { useTabsStore } from "@/stores/tabs";
 import type { WorkTab } from "@/stores/tabs";
 
 /** Figures of `serverStatus`, refreshed every few seconds, and the operations running now. */
@@ -22,6 +23,7 @@ const REFRESH_MS = 3000;
 const { t, n } = useI18n();
 const { say, report } = useMessages();
 const dialogs = useDialogs();
+const tabs = useTabsStore();
 
 const sample = shallowRef<StatusSample>();
 const previous = shallowRef<StatusSample>();
@@ -65,7 +67,7 @@ function toggle() {
 }
 
 async function kill(operation: RunningOperation) {
-    if (props.tab.readonly) {
+    if (tabs.locked(props.tab)) {
         report(new Error(t("error.plan.readonly")));
         return;
     }
@@ -259,7 +261,7 @@ onMounted(() => {
                             <td>
                                 <IconButton
                                     @click="kill(operation)"
-                                    :disabled="tab.readonly"
+                                    :disabled="tabs.locked(tab)"
                                     :label="$t('server.kill')"
                                     icon="i-lucide-octagon-x"
                                     tint="text-error"
