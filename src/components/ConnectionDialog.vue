@@ -4,7 +4,7 @@ import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
 import type { Profile } from "@/api";
-import SelectField from "@/components/SelectField.vue";
+import ChoiceField from "@/components/ChoiceField.vue";
 import { useActions } from "@/composables/actions";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
@@ -197,7 +197,7 @@ async function save(connect = false) {
                             value="basic"
                         >
                             <span>{{ $t("connection.mode") }}:</span>
-                            <SelectField
+                            <ChoiceField
                                 v-model="fields.mode"
                                 :label="$t('connection.mode')"
                                 :options="connectOptions"
@@ -255,7 +255,7 @@ async function save(connect = false) {
                             value="auth"
                         >
                             <span>{{ $t("connection.auth") }}:</span>
-                            <SelectField
+                            <ChoiceField
                                 v-model="fields.auth"
                                 :label="$t('connection.auth')"
                                 :options="authOptions"
@@ -294,7 +294,7 @@ async function save(connect = false) {
                             value="tls"
                         >
                             <span>{{ $t("connection.tls") }}:</span>
-                            <SelectField
+                            <ChoiceField
                                 v-model="tlsChoice"
                                 :label="$t('connection.tls')"
                                 :options="tlsOptions"
@@ -345,7 +345,7 @@ async function save(connect = false) {
                             value="ssh"
                         >
                             <span>{{ $t("connection.ssh") }}:</span>
-                            <SelectField
+                            <ChoiceField
                                 v-model="sshChoice"
                                 :label="$t('connection.ssh')"
                                 :options="sshOptions"

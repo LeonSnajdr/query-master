@@ -11,6 +11,8 @@ export interface PromptRequest {
     action: string;
     /** The value is code (index keys …) and shown in the code font. */
     code?: boolean;
+    /** Names to suggest while typing, such as those already taken. */
+    suggestions?: string[];
 }
 
 export interface ConfirmRequest {

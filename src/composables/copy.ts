@@ -37,6 +37,7 @@ export function useCopy() {
             title: t("copy.exists.title"),
             label: t("copy.exists.label", { name, database }),
             value: `${name}_copy`,
+            suggestions: taken,
             action: t("action.paste")
         });
         if (!chosen) return undefined;

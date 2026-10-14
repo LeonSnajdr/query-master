@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogDescription, DialogRoot, DialogTitle, useTimer } from "@vuetify/v0";
 import { computed, shallowRef, watch } from "vue";
+import { namesAsChoices } from "@/choice";
+import ChoiceField from "@/components/ChoiceField.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
 import CollectionDialog from "@/components/CollectionDialog.vue";
 import ConnectionDialog from "@/components/ConnectionDialog.vue";
@@ -21,6 +23,7 @@ const confirmOpen = computed({ get: () => state.confirm !== undefined, set: open
 const textOpen = computed({ get: () => state.text !== undefined, set: open => !open && (state.text = undefined) });
 
 const answer = shallowRef("");
+const suggestions = computed(() => namesAsChoices(state.prompt?.suggestions ?? []));
 watch(() => state.prompt, request => (answer.value = request?.value ?? ""));
 
 const text = shallowRef("");
@@ -73,7 +76,24 @@ async function copyText() {
                 <DialogTitle class="dialog-title">
                     {{ state.prompt.title }}
                 </DialogTitle>
-                <label class="flex flex-col gap-1.5">
+                <div
+                    v-if="state.prompt.suggestions"
+                    class="flex flex-col gap-1.5"
+                >
+                    <span class="text-sm text-on-surface-variant">{{ state.prompt.label }}</span>
+                    <ChoiceField
+                        v-model="answer"
+                        :class="state.prompt.code ? 'font-mono' : ''"
+                        :label="state.prompt.label"
+                        :options="suggestions"
+                        data-testid="prompt-input"
+                        free
+                    />
+                </div>
+                <label
+                    v-else
+                    class="flex flex-col gap-1.5"
+                >
                     <span class="text-sm text-on-surface-variant">{{ state.prompt.label }}</span>
                     <input
                         v-model="answer"

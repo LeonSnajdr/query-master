@@ -5,7 +5,7 @@ import { computed, onBeforeUnmount, onMounted, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { inApp } from "@/api";
 
-import SelectField from "@/components/SelectField.vue";
+import ChoiceField from "@/components/ChoiceField.vue";
 import { useImportWizard } from "@/composables/importWizard";
 import { CSV_FILES, JSON_FILES, JSON_LINES_FILES, pickOpenPaths } from "@/files";
 import { useConnectionsStore } from "@/stores/connections";
@@ -151,7 +151,7 @@ const STATE_ICONS: Record<string, string> = {
                     <div class="form-grid grid-cols-[10rem_1fr]!">
                         <span>{{ $t("import.to") }}:</span>
                         <div class="w-72">
-                            <SelectField
+                            <ChoiceField
                                 v-model="server"
                                 :label="$t('import.to')"
                                 :options="serverOptions"
@@ -176,14 +176,14 @@ const STATE_ICONS: Record<string, string> = {
                 >
                     <div class="form-grid grid-cols-[16rem_1fr]!">
                         <span>{{ $t("export.csv.delimiter") }}:</span>
-                        <SelectField
+                        <ChoiceField
                             v-model="delimiter"
                             :label="$t('export.csv.delimiter')"
                             :options="delimiterOptions"
                             data-testid="import-delimiter"
                         />
                         <span>{{ $t("export.csv.quote") }}:</span>
-                        <SelectField
+                        <ChoiceField
                             v-model="quote"
                             :label="$t('export.csv.quote')"
                             :options="quoteOptions"
@@ -199,7 +199,7 @@ const STATE_ICONS: Record<string, string> = {
                             type="number"
                         />
                         <span>{{ $t("import.csv.empty") }}:</span>
-                        <SelectField
+                        <ChoiceField
                             v-model="empty"
                             :label="$t('import.csv.empty')"
                             :options="emptyOptions"

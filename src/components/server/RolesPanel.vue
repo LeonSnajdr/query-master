@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot } from "@vuetify/v0";
-import { computed, onMounted, ref, shallowRef, useId } from "vue";
+import { computed, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
 import IconButton from "@/components/IconButton.vue";
 import RoleRows from "@/components/server/RoleRows.vue";
-import SelectField from "@/components/SelectField.vue";
+import ChoiceField from "@/components/ChoiceField.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import { isDoc } from "@/shell/ejson";
@@ -24,7 +24,6 @@ const { t } = useI18n();
 const { say, report } = useMessages();
 const dialogs = useDialogs();
 const connections = useConnectionsStore();
-const actionList = useId();
 
 const roles = shallowRef<Doc[]>([]);
 const roleNames = shallowRef<string[]>([]);
@@ -38,10 +37,18 @@ const busy = shallowRef(false);
 const existing = computed(() => selected.value !== undefined);
 const databases = computed(() => connections.sessions[props.tab.connectionId]?.databases.map(database => database.name) ?? []);
 const kindOptions = computed(() => (["namespace", "cluster"] as const).map(value => ({ value, label: t(`roles.resource.${value}`) })));
+const actionChoices = PRIVILEGE_ACTIONS.map(action => ({ value: action, label: action }));
 const unknownActions = computed(() => actionTexts.value.flatMap(splitActions).filter(action => !PRIVILEGE_ACTIONS.includes(action)));
 
 function splitActions(text: string): string[] {
     return text.split(/[\s,]+/).map(item => item.trim()).filter(Boolean);
+}
+
+/** An action chosen from the list joins those typed, once. */
+function addAction(position: number, action: string) {
+    const actions = splitActions(actionTexts.value[position] ?? "");
+    if (!actions.includes(action)) actions.push(action);
+    actionTexts.value[position] = actions.join(", ");
 }
 
 async function load() {
@@ -178,13 +185,6 @@ onMounted(async () => {
                 />
             </div>
 
-            <datalist :id="actionList">
-                <option
-                    v-for="action in PRIVILEGE_ACTIONS"
-                    :key="action"
-                    :value="action"
-                />
-            </datalist>
             <div class="flex flex-col gap-1.5">
                 <span>{{ $t("roles.privileges") }}</span>
                 <div
@@ -195,7 +195,7 @@ onMounted(async () => {
                 >
                     <div class="flex items-center gap-1.5">
                         <div class="w-36">
-                            <SelectField
+                            <ChoiceField
                                 v-model="privilege.kind"
                                 :label="$t('roles.resource')"
                                 :options="kindOptions"
@@ -227,15 +227,28 @@ onMounted(async () => {
                             icon="i-lucide-x"
                         />
                     </div>
-                    <input
-                        v-model="actionTexts[position]"
-                        :aria-label="$t('roles.actions')"
-                        :list="actionList"
-                        :placeholder="$t('roles.actions.placeholder')"
-                        class="field font-mono"
-                        data-testid="privilege-actions"
-                        spellcheck="false"
-                    />
+                    <div class="flex items-center gap-1.5">
+                        <input
+                            v-model="actionTexts[position]"
+                            :aria-label="$t('roles.actions')"
+                            :placeholder="$t('roles.actions.placeholder')"
+                            class="field grow font-mono"
+                            data-testid="privilege-actions"
+                            spellcheck="false"
+                        />
+                        <div class="w-52 shrink-0">
+                            <!-- Keyed by the text: after each choice it shows its placeholder again. -->
+                            <ChoiceField
+                                :key="actionTexts[position]"
+                                @update:modelValue="(action: string) => addAction(position, action)"
+                                :label="$t('roles.addAction')"
+                                :modelValue="''"
+                                :options="actionChoices"
+                                :placeholder="$t('roles.addAction')"
+                                data-testid="privilege-add-action"
+                            />
+                        </div>
+                    </div>
                 </div>
                 <ButtonRoot
                     @click="addPrivilege"

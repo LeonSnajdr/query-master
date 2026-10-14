@@ -2,7 +2,7 @@
 import { computed, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
-import SelectField from "@/components/SelectField.vue";
+import ChoiceField from "@/components/ChoiceField.vue";
 import { useMessages } from "@/composables/messages";
 import { splitPath } from "@/transfer/export";
 import { COLUMN_TYPES, csvOptions } from "@/transfer/import";
@@ -66,7 +66,7 @@ watch(current, path => void load(path), { immediate: true });
     >
         <div class="form-grid grid-cols-[12rem_1fr]!">
             <span>{{ $t("import.schema.file") }}:</span>
-            <SelectField
+            <ChoiceField
                 v-model="current"
                 :label="$t('import.schema.file')"
                 :options="fileOptions"
@@ -124,11 +124,12 @@ watch(current, path => void load(path), { immediate: true });
                             />
                         </td>
                         <td class="px-1 py-0.5 border-t border-divider">
-                            <SelectField
+                            <ChoiceField
                                 @update:modelValue="(value: ColumnType) => change(index, { type: value })"
                                 :label="$t('import.schema.type')"
                                 :modelValue="column.type"
                                 :options="typeOptions"
+                                size="compact"
                             />
                         </td>
                     </tr>

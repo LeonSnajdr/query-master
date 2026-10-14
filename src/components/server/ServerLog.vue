@@ -3,7 +3,7 @@ import { computed, onMounted, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
 import IconButton from "@/components/IconButton.vue";
-import SelectField from "@/components/SelectField.vue";
+import ChoiceField from "@/components/ChoiceField.vue";
 import { useMessages } from "@/composables/messages";
 import { keepLine, parseLogLine } from "@/shell/server";
 import type { LogLine, SeverityFilter } from "@/shell/server";
@@ -71,7 +71,7 @@ onMounted(load);
             </IconButton>
             <span class="toolbar-rule" />
             <div class="w-40">
-                <SelectField
+                <ChoiceField
                     v-model="severity"
                     :label="$t('log.severity')"
                     :options="severityOptions"

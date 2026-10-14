@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot, PopoverActivator, PopoverContent, PopoverRoot } from "@vuetify/v0";
-import { computed, nextTick, ref, shallowRef, useId, watch } from "vue";
+import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { namesAsChoices } from "@/choice";
+import ChoiceField from "@/components/ChoiceField.vue";
 import IconButton from "@/components/IconButton.vue";
-import SelectField from "@/components/SelectField.vue";
 import { useConnectionsStore } from "@/stores/connections";
 import { splitPath } from "@/transfer/export";
 import type { InsertMode } from "@/transfer/export";
@@ -25,12 +26,33 @@ const props = defineProps<{
 }>();
 const { t } = useI18n();
 const connections = useConnectionsStore();
-const databaseList = useId();
-const collectionList = useId();
 
 const MODES: InsertMode[] = ["overwrite", "newId"];
 const modeOptions = computed(() => MODES.map(value => ({ value, label: t(`import.mode.${value}`) })));
-const databases = computed(() => connections.sessions[props.state.connectionId]?.databases.map(database => database.name) ?? []);
+const databases = computed(() => namesAsChoices(connections.sessions[props.state.connectionId]?.databases.map(database => database.name) ?? []));
+
+/** The collections of a database of the target server, views marked; read when first needed. */
+function collectionChoices(name: string) {
+    if (!name) return [];
+    const names = connections.collectionsOf(props.state.connectionId, name);
+    const types = connections.sessions[props.state.connectionId]?.databases.find(database => database.name === name)?.types ?? {};
+    return namesAsChoices(names, Object.fromEntries(names.map(collection => [collection, types[collection] === "view" ? t("choice.view") : undefined])));
+}
+
+function collectionsLoading(name: string): boolean {
+    return connections.sessions[props.state.connectionId]?.databases.find(database => database.name === name)?.loading ?? false;
+}
+
+/** The import creates this database: the server is known and has none of that name. */
+function isNewDatabase(name: string): boolean {
+    return connections.sessions[props.state.connectionId] !== undefined && !databases.value.some(choice => choice.value === name);
+}
+
+/** The import creates this collection, in a new database or one whose collections are known. */
+function isNewCollection(database: string, collection: string): boolean {
+    if (isNewDatabase(database)) return true;
+    return !collectionsLoading(database) && !collectionChoices(database).some(choice => choice.value === collection);
+}
 
 const rows = computed(() => props.state.rows);
 const selected = ref(new Set<number>());
@@ -92,7 +114,7 @@ function remove() {
 // Editing in place: the row's fields become inputs; Enter or leaving the row keeps, Esc drops.
 const editing = shallowRef<number>();
 const draft = ref({ database: "", collection: "" });
-const draftCollections = computed(() => (draft.value.database ? connections.collectionsOf(props.state.connectionId, draft.value.database) : []));
+const draftCollections = computed(() => collectionChoices(draft.value.database));
 
 async function edit(index: number) {
     const row = rows.value[index];
@@ -127,6 +149,8 @@ function editSelected() {
 
 function onKey(event: KeyboardEvent) {
     if (editing.value !== undefined) return;
+    // Keys typed into a field (the one of a column header) belong to its text, not to the rows.
+    if ((event.target as HTMLElement).closest("input:not([type=checkbox]), textarea, [contenteditable]")) return;
     if (event.key === "Delete") remove();
     else if (event.key === "F2" || event.key === "Enter") editSelected();
     else if (event.key === "a" && (event.ctrlKey || event.metaKey)) {
@@ -138,6 +162,9 @@ function onKey(event: KeyboardEvent) {
 // A click on a column header: one value for the selected rows, or for all.
 const bulkOpen = ref<Record<string, boolean>>({ database: false, collection: false, mode: false });
 const bulkValue = shallowRef("");
+/** The collections offered in the header: those of the database of the first row it applies to. */
+const bulkDatabase = computed(() => rows.value[targets.value[0] ?? -1]?.database ?? "");
+const bulkCollections = computed(() => collectionChoices(bulkDatabase.value));
 function openBulk(column: "database" | "collection") {
     const first = rows.value[targets.value[0] ?? -1];
     bulkValue.value = first ? first[column] : "";
@@ -162,20 +189,6 @@ defineExpose({ editSelected, remove });
 
 <template>
     <div class="grow min-h-0 flex flex-col gap-2">
-        <datalist :id="databaseList">
-            <option
-                v-for="name in databases"
-                :key="name"
-                :value="name"
-            />
-        </datalist>
-        <datalist :id="collectionList">
-            <option
-                v-for="name in draftCollections"
-                :key="name"
-                :value="name"
-            />
-        </datalist>
         <div class="flex items-center gap-0.5">
             <IconButton
                 @click="emit('addFiles')"
@@ -263,13 +276,14 @@ defineExpose({ editSelected, remove });
                                         class="flex flex-col gap-2"
                                     >
                                         <span class="text-on-surface-variant">{{ $t(`import.setColumn.${column}`, { count: targets.length }, targets.length) }}</span>
-                                        <input
+                                        <ChoiceField
                                             v-model="bulkValue"
-                                            :aria-label="$t(`import.column.${column}`)"
-                                            :list="column === 'database' ? databaseList : undefined"
-                                            class="field"
+                                            :label="$t(`import.column.${column}`)"
+                                            :loading="column === 'collection' && collectionsLoading(bulkDatabase)"
+                                            :options="column === 'database' ? databases : bulkCollections"
                                             data-testid="import-bulk-value"
-                                            spellcheck="false"
+                                            free
+                                            markNew
                                         />
                                         <ButtonRoot
                                             @click="applyBulk(column)"
@@ -336,48 +350,73 @@ defineExpose({ editSelected, remove });
                                 type="checkbox"
                             />
                         </td>
+                        <!-- Enter and Esc reach the cell only when the field's list did not use them. -->
                         <template v-if="editing === index">
-                            <td class="px-1 py-0.5 border-t border-divider">
-                                <input
+                            <td
+                                @focusout="leave"
+                                @keydown.enter.stop.prevent="commit"
+                                @keydown.esc.stop.prevent="editing = undefined"
+                                class="px-1 py-0.5 border-t border-divider"
+                            >
+                                <ChoiceField
                                     v-model="draft.database"
-                                    @blur="leave"
-                                    @keydown.enter.stop.prevent="commit"
-                                    @keydown.esc.stop.prevent="editing = undefined"
-                                    :aria-label="$t('import.column.database')"
-                                    :list="databaseList"
-                                    class="field h-7! w-full"
+                                    :label="$t('import.column.database')"
+                                    :options="databases"
                                     data-testid="import-edit-database"
-                                    spellcheck="false"
+                                    size="compact"
+                                    free
+                                    markNew
                                 />
                             </td>
-                            <td class="px-1 py-0.5 border-t border-divider">
-                                <input
+                            <td
+                                @focusout="leave"
+                                @keydown.enter.stop.prevent="commit"
+                                @keydown.esc.stop.prevent="editing = undefined"
+                                class="px-1 py-0.5 border-t border-divider"
+                            >
+                                <ChoiceField
                                     v-model="draft.collection"
-                                    @blur="leave"
-                                    @keydown.enter.stop.prevent="commit"
-                                    @keydown.esc.stop.prevent="editing = undefined"
-                                    :aria-label="$t('import.column.collection')"
-                                    :list="collectionList"
-                                    class="field h-7! w-full"
+                                    :label="$t('import.column.collection')"
+                                    :loading="collectionsLoading(draft.database)"
+                                    :options="draftCollections"
                                     data-testid="import-edit-collection"
-                                    spellcheck="false"
+                                    size="compact"
+                                    free
+                                    markNew
                                 />
                             </td>
                         </template>
                         <template v-else>
                             <td
                                 :title="row.database"
-                                class="px-2.5 py-1 border-t border-divider truncate"
-                                data-testid="import-database"
+                                class="px-2.5 py-1 border-t border-divider"
                             >
-                                {{ row.database }}
+                                <span class="flex items-center gap-1.5">
+                                    <span
+                                        class="truncate"
+                                        data-testid="import-database"
+                                    >{{ row.database }}</span>
+                                    <span
+                                        v-if="isNewDatabase(row.database)"
+                                        class="shrink-0 badge-new"
+                                    >{{ $t("choice.new") }}</span>
+                                </span>
                             </td>
                             <td
                                 :title="row.collection"
-                                class="px-2.5 py-1 border-t border-divider truncate"
-                                data-testid="import-collection"
+                                class="px-2.5 py-1 border-t border-divider"
                             >
-                                {{ row.collection }}
+                                <span class="flex items-center gap-1.5">
+                                    <span
+                                        class="truncate"
+                                        data-testid="import-collection"
+                                    >{{ row.collection }}</span>
+                                    <span
+                                        v-if="isNewCollection(row.database, row.collection)"
+                                        class="shrink-0 badge-new"
+                                        data-testid="import-collection-new"
+                                    >{{ $t("choice.new") }}</span>
+                                </span>
                             </td>
                         </template>
                         <td
@@ -385,11 +424,12 @@ defineExpose({ editSelected, remove });
                             @dblclick.stop
                             class="px-1 py-0.5 border-t border-divider"
                         >
-                            <SelectField
+                            <ChoiceField
                                 @update:modelValue="(mode: InsertMode) => setMode(index, mode)"
                                 :label="$t('import.column.mode')"
                                 :modelValue="row.mode"
                                 :options="modeOptions"
+                                size="compact"
                             />
                         </td>
                         <td

@@ -55,6 +55,26 @@ async function valueBecomes(locator, value, timeout = 5000) {
     assert.equal(current, value);
 }
 
+/**
+ * Chooses `text` in a choice field (`field` is the field itself or its `choice-field` box): from
+ * the list of a fixed one; typed into a free one and taken from its list, or kept as a new name.
+ */
+async function choose(field, text) {
+    const exact = page.locator("[data-testid=choice-option]:visible").filter({ hasText: new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`) });
+    const input = field.locator("input[role=combobox]").or(field.and(page.locator("input[role=combobox]")));
+    if (await input.count() === 0) {
+        // Fixed lists name entries with more than the value ("Semicolon (;)"): part of the text is enough.
+        await field.click();
+        await page.locator("[data-testid=choice-option]:visible", { hasText: text }).first().click();
+        return;
+    }
+    await input.fill(text);
+    await exact.or(visible("choice-new")).first().waitFor();
+    if (await exact.count() > 0) await exact.first().click();
+    else await visible("choice-new").click();
+    await valueBecomes(input, text);
+}
+
 /** Replaces the text of the code editor inside `scope`. */
 async function write(scope, text) {
     // Tabs keep their hidden panels in the page: only the editor that shows is meant.
@@ -268,9 +288,12 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.locator("[data-testid=index-row]", { hasText: "_id_" }).waitFor();
         await row.click({ button: "right" });
         await chooseMenu("Create index");
-        await id("index-field").nth(0).fill("name");
+        // The field comes from the fields of a sample of the collection: typed in part, taken from the list.
+        await id("index-field").nth(0).fill("nam");
+        await page.locator("[data-testid=choice-option]:visible", { hasText: /^\s*name\s*$/ }).click();
+        await valueBecomes(id("index-field").nth(0), "name");
         await id("index-add-field").click();
-        await id("index-field").nth(1).fill("n");
+        await choose(id("index-field").nth(1), "n");
         assert.equal(await id("index-name").getAttribute("placeholder"), "name_1_n_1");
         await id("index-save").click();
         const index = page.locator("[data-testid=index-row]", { hasText: "name_1_n_1" });
@@ -318,10 +341,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
             await chooseMenu("Export...");
             await id("export-wizard").waitFor();
         };
-        const wizardSelect = async (position, label) => {
-            await page.locator("[data-testid=export-wizard] [data-testid=select-field]").nth(position).click();
-            await page.locator("[data-testid=select-option]:visible", { hasText: label }).first().click();
-        };
+        const wizardSelect = (position, label) => choose(page.locator("[data-testid=export-wizard] [data-testid=choice-field]").nth(position), label);
         // A row is done a moment before the text reaches the clipboard: wait for it to change.
         const readClipboard = () => page.evaluate(() => navigator.clipboard.readText()).catch(() => "");
         let clipboard = await readClipboard();
@@ -395,7 +415,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await id("export-tile-database").click();
         await shot("export-database");
         await wizardSelect(0, NAME);
-        await id("export-target-database").fill(DATABASE);
+        await choose(id("export-target-database"), DATABASE);
         await id("export-output").fill(`${COLLECTION}_exported`);
         await id("export-next").click();
         await page.locator("[data-testid=export-progress-row][data-state=done]").waitFor();
@@ -438,15 +458,29 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await id("import-row").waitFor();
         assert.equal((await id("import-database").innerText()).trim(), DATABASE);
         assert.equal((await id("import-collection").innerText()).trim(), COLLECTION);
-        // A double click edits the row in place; Enter keeps it.
+        // A double click edits the row in place. Typing filters the collections of the database
+        // (the export made one more); Esc closes the list and puts the name back, the row stays open.
         await id("import-row").dblclick();
-        await id("import-edit-collection").fill(`${COLLECTION}_json`);
-        await id("import-edit-collection").press("Enter");
+        const edit = id("import-edit-collection");
+        await edit.fill(`${COLLECTION}_exp`);
+        await page.locator("[data-testid=choice-option]:visible", { hasText: `${COLLECTION}_exported` }).waitFor();
+        await shot("choice-filter");
+        await edit.press("Escape");
+        await valueBecomes(edit, COLLECTION);
+        assert.equal(await visible("choice-option").count(), 0);
+        // A name no collection has is taken as new, as the list says; Enter keeps the row.
+        await edit.fill(`${COLLECTION}_json`);
+        await visible("choice-new").waitFor();
+        await visible("choice-new-mark").waitFor();
+        await shot("choice-new");
+        await edit.press("Enter");
+        // The row says the collection will be created.
+        await id("import-collection-new").waitFor();
         assert.equal((await id("import-collection").innerText()).trim(), `${COLLECTION}_json`);
         // The mode, set through its column header for every file.
         await id("import-header-mode").click();
         await page.locator("[data-testid=import-bulk-mode]:visible", { hasText: "Generate new _id" }).click();
-        assert.match(await page.locator("[data-testid=import-row] [data-testid=select-field]").innerText(), /Generate new _id/);
+        assert.match(await page.locator("[data-testid=import-row] [data-testid=choice-field]").innerText(), /Generate new _id/);
         await shot("import-wizard");
         await id("import-next").click();
         assert.match(await progressText("import"), /3 documents/);
@@ -459,20 +493,24 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.equal(await id("import-tile-csv").getAttribute("aria-checked"), "true");
         // The collection, set through its column header.
         await id("import-header-collection").click();
-        await visible("import-bulk-value").fill(`${COLLECTION}_csv`);
-        await visible("import-bulk-apply").click();
+        // Ctrl+A in the field selects its text, not the rows of the table.
+        await visible("import-bulk-value").fill("draft");
+        await visible("import-bulk-value").press("Control+a");
+        await visible("import-bulk-value").pressSequentially(`${COLLECTION}_csv`);
+        await valueBecomes(visible("import-bulk-value"), `${COLLECTION}_csv`);
+        assert.equal(await page.locator("[data-testid=import-row][data-selected]").count(), 0);
+        // Enter, with no entry of the list marked, keeps the text and applies it.
+        await visible("import-bulk-value").press("Enter");
         assert.equal((await id("import-collection").innerText()).trim(), `${COLLECTION}_csv`);
         await id("import-next").click();
         // The export kept the semicolon of the CSV step before: the wizard remembers its settings.
-        await page.locator("[data-testid=import-wizard] [data-testid=select-field]").first().click();
-        await shot("select-open");
-        await page.locator("[data-testid=select-option]:visible", { hasText: "Semicolon" }).first().click();
+        await choose(page.locator("[data-testid=import-wizard] [data-testid=choice-field]").first(), "Semicolon");
         await id("import-schema-next").click();
         const names = page.locator("[data-testid=import-column-name]");
         await names.first().waitFor();
         const columns = await names.evaluateAll(inputs => inputs.map(input => input.value));
         assert.deepEqual(columns.slice(0, 3), ["_id", "n", "name"]);
-        assert.match(await page.locator("[data-testid=import-column] [data-testid=select-field]").nth(1).innerText(), /Int32/);
+        assert.match(await page.locator("[data-testid=import-column] [data-testid=choice-field]").nth(1).innerText(), /Int32/);
         await page.locator("[data-testid=import-preview] tbody tr").nth(2).waitFor();
         await shot("import-schema");
         await id("import-start").click();
@@ -664,7 +702,10 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.locator("[data-testid=role-name]:visible").nth(1).fill("read");
         await visible("user-save").click();
         await page.locator("[data-testid=role-row]:visible").nth(1).waitFor();
-        await valueBecomes(page.locator("[data-testid=role-name]:visible").nth(1), "read");
+        // Both roles are kept; the server gives them back in an order of its own.
+        const granted = async () => (await page.locator("[data-testid=role-name]:visible").evaluateAll(inputs => inputs.map(input => input.value))).sort();
+        for (let attempt = 0; attempt < 50 && (await granted()).join() !== [role, "read"].sort().join(); attempt++) await page.waitForTimeout(100);
+        assert.deepEqual(await granted(), [role, "read"].sort());
 
         // The new user signs in with a connection of its own and sees only what the role grants.
         const limited = new URL(uri);
@@ -978,14 +1019,11 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
     });
 
     await step("the settings give new tabs their page size and view", async () => {
-        const choose = async (field, label) => {
-            await page.locator("dialog[open] [data-testid=select-field]").nth(field).click();
-            await page.locator("[data-testid=select-option]:visible", { hasText: label }).first().click();
-        };
+        const setting = (field, label) => choose(page.locator("dialog[open] [data-testid=choice-field]").nth(field), label);
         await page.keyboard.press("Control+Alt+P");
         await visible("settings").waitFor();
-        await choose(2, "50");
-        await choose(3, "Table view");
+        await setting(2, "50");
+        await setting(3, "Table view");
         await visible("settings-close").click();
         await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).dblclick();
         await panel.locator("[data-testid=table-row]").first().waitFor();
@@ -994,8 +1032,8 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
 
         // Back to the defaults: later runs, and the app's own data, start as before.
         await page.keyboard.press("Control+Alt+P");
-        await choose(2, "20");
-        await choose(3, "Tree view");
+        await setting(2, "20");
+        await setting(3, "Tree view");
         await visible("settings-close").click();
     });
 

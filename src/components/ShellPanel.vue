@@ -99,6 +99,7 @@ function openInBuilder() {
         <h1 class="m-0 shrink-0 h-13 flex items-end gap-2 px-5.5 pb-1.5 text-[21px] font-normal text-on-surface whitespace-nowrap overflow-hidden">
             <DropMenu
                 :entries="databases"
+                :filterAbove="10"
                 :label="$t('query.database')"
             >
                 <span

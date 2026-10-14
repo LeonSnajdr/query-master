@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogRoot, DialogTitle, SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
-import { computed, shallowRef, useId } from "vue";
+import { computed, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
+import { namesAsChoices } from "@/choice";
 import IconButton from "@/components/IconButton.vue";
-import SelectField from "@/components/SelectField.vue";
+import ChoiceField from "@/components/ChoiceField.vue";
 import { useExportWizard } from "@/composables/exportWizard";
 import { CSV_FILES, JSON_FILES, pickFolder, pickSavePath, SQL_FILES } from "@/files";
 import type { FileKind } from "@/files";
@@ -16,9 +17,6 @@ import ColumnSchema from "./ColumnSchema.vue";
 const { t } = useI18n();
 const connections = useConnectionsStore();
 const { wizard, setFormat, addRows, chooseTargetConnection, start, stop, close } = useExportWizard();
-const databaseList = useId();
-const collectionList = useId();
-const targetList = useId();
 
 const open = computed({ get: () => wizard.open, set: value => !value && close() });
 const state = computed(() => wizard.state);
@@ -49,7 +47,8 @@ const notationOptions = computed(() => (["shell", "relaxed", "canonical"] as Jso
 const layoutOptions = computed(() => (["lines", "comma", "array"] as JsonLayout[]).map(value => ({ value, label: t(`export.json.layout.${value}`) })));
 
 const sourceDatabases = computed(() => connections.sessions[state.value.connectionId]?.databases.map(database => database.name) ?? []);
-const targetDatabases = computed(() => connections.sessions[state.value.database.connectionId]?.databases.map(database => database.name) ?? []);
+const sourceChoices = computed(() => namesAsChoices(sourceDatabases.value));
+const targetChoices = computed(() => namesAsChoices(connections.sessions[state.value.database.connectionId]?.databases.map(database => database.name) ?? []));
 const problems = computed(() => exportProblems(state.value));
 const problemText = computed(() => {
     const first = problems.value[0];
@@ -69,8 +68,14 @@ const quote = computed({ get: () => state.value.csv.quote, set: (value: CsvSetti
 /** The row clicked last; edit and remove act on it. */
 const selected = shallowRef<number>();
 /** The form of "Add collection", also for editing a row (`editing` is its index). */
-const form = shallowRef<{ database: string; collection: string; output: string; filter: string; editing?: number }>();
-const formCollections = computed(() => (form.value?.database ? connections.collectionsOf(state.value.connectionId, form.value.database) : []));
+const form = ref<{ database: string; collection: string; output: string; filter: string; editing?: number }>();
+const formDatabase = computed(() => connections.sessions[state.value.connectionId]?.databases.find(database => database.name === form.value?.database));
+const formCollections = computed(() => {
+    const database = form.value?.database;
+    if (!database) return [];
+    const names = connections.collectionsOf(state.value.connectionId, database);
+    return namesAsChoices(names, Object.fromEntries(names.map(name => [name, formDatabase.value?.types[name] === "view" ? t("choice.view") : undefined])));
+});
 
 function openForm(row?: number) {
     const existing = row === undefined ? undefined : state.value.rows[row];
@@ -186,7 +191,7 @@ const STATE_ICONS: Record<string, string> = {
                             <span>{{ $t("export.to") }}:</span>
                             <div class="flex items-center gap-2">
                                 <div class="w-34 shrink-0">
-                                    <SelectField
+                                    <ChoiceField
                                         v-model="target"
                                         :label="$t('export.to')"
                                         :options="targetOptions"
@@ -216,32 +221,27 @@ const STATE_ICONS: Record<string, string> = {
                             <span>{{ $t("export.to") }}:</span>
                             <div class="flex items-center gap-2">
                                 <div class="w-56 shrink-0">
-                                    <SelectField
+                                    <ChoiceField
                                         v-model="server"
                                         :label="$t('export.server')"
                                         :options="serverOptions"
                                         data-testid="export-server"
                                     />
                                 </div>
-                                <datalist :id="targetList">
-                                    <option
-                                        v-for="name in targetDatabases"
-                                        :key="name"
-                                        :value="name"
+                                <div class="grow min-w-0">
+                                    <ChoiceField
+                                        v-model="state.database.database"
+                                        :label="$t('export.targetDatabase')"
+                                        :options="targetChoices"
+                                        :placeholder="$t('export.targetDatabase.placeholder')"
+                                        data-testid="export-target-database"
+                                        free
+                                        markNew
                                     />
-                                </datalist>
-                                <input
-                                    v-model="state.database.database"
-                                    :aria-label="$t('export.targetDatabase')"
-                                    :list="targetList"
-                                    :placeholder="$t('export.targetDatabase.placeholder')"
-                                    class="field grow"
-                                    data-testid="export-target-database"
-                                    spellcheck="false"
-                                />
+                                </div>
                             </div>
                             <span>{{ $t("export.insertMode") }}:</span>
-                            <SelectField
+                            <ChoiceField
                                 v-model="insertMode"
                                 :label="$t('export.insertMode')"
                                 :options="insertOptions"
@@ -294,36 +294,22 @@ const STATE_ICONS: Record<string, string> = {
                         class="grid grid-cols-[1fr_1fr_1fr_1.4fr_auto] gap-2 items-center p-2 rounded-sm border border-divider"
                         data-testid="export-form"
                     >
-                        <datalist :id="databaseList">
-                            <option
-                                v-for="name in sourceDatabases"
-                                :key="name"
-                                :value="name"
-                            />
-                        </datalist>
-                        <datalist :id="collectionList">
-                            <option
-                                v-for="name in formCollections"
-                                :key="name"
-                                :value="name"
-                            />
-                        </datalist>
-                        <input
-                            v-model="form.database"
-                            :aria-label="$t('export.fromDatabase')"
-                            :list="databaseList"
+                        <!-- Another database: its collections differ, so the collection is chosen anew. -->
+                        <ChoiceField
+                            @update:modelValue="(database: string) => form && (form = { ...form, database, collection: '' })"
+                            :label="$t('export.fromDatabase')"
+                            :modelValue="form.database"
+                            :options="sourceChoices"
                             :placeholder="$t('export.fromDatabase')"
-                            class="field"
-                            spellcheck="false"
+                            data-testid="export-form-database"
                         />
-                        <input
+                        <ChoiceField
                             v-model="form.collection"
-                            :aria-label="$t('export.fromCollection')"
-                            :list="collectionList"
+                            :label="$t('export.fromCollection')"
+                            :loading="formDatabase?.loading"
+                            :options="formCollections"
                             :placeholder="$t('export.fromCollection')"
-                            class="field"
                             data-testid="export-form-collection"
-                            spellcheck="false"
                         />
                         <input
                             v-model="form.output"
@@ -421,14 +407,14 @@ const STATE_ICONS: Record<string, string> = {
                         class="form-grid grid-cols-[10rem_1fr]!"
                     >
                         <span>{{ $t("export.json.notation") }}:</span>
-                        <SelectField
+                        <ChoiceField
                             v-model="notation"
                             :label="$t('export.json.notation')"
                             :options="notationOptions"
                             data-testid="export-notation"
                         />
                         <span>{{ $t("export.json.layout") }}:</span>
-                        <SelectField
+                        <ChoiceField
                             v-model="layout"
                             :label="$t('export.json.layout')"
                             :options="layoutOptions"
@@ -440,7 +426,7 @@ const STATE_ICONS: Record<string, string> = {
                         class="form-grid grid-cols-[18rem_1fr]!"
                     >
                         <span>{{ $t("export.sql.dialect") }}:</span>
-                        <SelectField
+                        <ChoiceField
                             v-model="dialect"
                             :label="$t('export.sql.dialect')"
                             :options="dialectOptions"
@@ -476,14 +462,14 @@ const STATE_ICONS: Record<string, string> = {
                         class="form-grid grid-cols-[14rem_1fr]!"
                     >
                         <span>{{ $t("export.csv.delimiter") }}:</span>
-                        <SelectField
+                        <ChoiceField
                             v-model="delimiter"
                             :label="$t('export.csv.delimiter')"
                             :options="delimiterOptions"
                             data-testid="export-delimiter"
                         />
                         <span>{{ $t("export.csv.quote") }}:</span>
-                        <SelectField
+                        <ChoiceField
                             v-model="quote"
                             :label="$t('export.csv.quote')"
                             :options="quoteOptions"
