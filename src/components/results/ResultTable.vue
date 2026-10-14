@@ -152,6 +152,42 @@ function restore(): void {
     embedded.value = new Set();
     pinned.value = [];
     hidden.value = new Set();
+    widths.value = {};
+}
+
+/** Widths dragged at the right edge of a column head, in pixels; others take what they need. */
+const widths = ref<Record<string, number>>({});
+const MIN_WIDTH = 40;
+
+function widthStyle(column: string): Record<string, string> | undefined {
+    const width = widths.value[column];
+    return width === undefined ? undefined : { width: `${width}px`, minWidth: `${width}px`, maxWidth: `${width}px` };
+}
+
+/** Dragging the edge of a head sets the width of its column; a double click gives it back. */
+function startResize(event: PointerEvent, column: string): void {
+    const handle = event.currentTarget as HTMLElement;
+    const head = handle.parentElement!;
+    const start = event.clientX;
+    const width = head.getBoundingClientRect().width;
+    handle.setPointerCapture(event.pointerId);
+    const move = (moved: PointerEvent) => {
+        widths.value = { ...widths.value, [column]: Math.max(MIN_WIDTH, Math.round(width + moved.clientX - start)) };
+    };
+    const end = () => {
+        handle.removeEventListener("pointermove", move);
+        handle.removeEventListener("pointerup", end);
+        handle.removeEventListener("pointercancel", end);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+}
+
+function resetWidth(column: string): void {
+    const rest = { ...widths.value };
+    delete rest[column];
+    widths.value = rest;
 }
 
 function toggle<T>(set: Set<T>, value: T, on: boolean): Set<T> {
@@ -250,9 +286,17 @@ function openMenu(event: MouseEvent, index: number, column: string) {
                         v-for="column in columns"
                         :key="column"
                         :class="pinned.includes(column) ? 'bg-dock' : 'bg-background'"
-                        class="sticky top-0 z-1 px-2 pt-1 pb-0.5 text-left font-normal whitespace-nowrap align-bottom"
+                        :style="widthStyle(column)"
+                        class="sticky top-0 z-1 px-2 pt-1 pb-0.5 text-left font-normal whitespace-nowrap align-bottom overflow-hidden"
                         data-testid="table-column"
                     >
+                        <span
+                            @dblclick.stop="resetWidth(column)"
+                            @pointerdown.prevent="startResize($event, column)"
+                            :title="$t('table.resize')"
+                            class="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-primary/40"
+                            data-testid="column-resize"
+                        />
                         <span class="flex items-center gap-1 font-semibold text-on-surface-strong">
                             <span
                                 v-if="pinned.includes(column)"
@@ -284,6 +328,7 @@ function openMenu(event: MouseEvent, index: number, column: string) {
                             cellClass(cell(value, column)),
                             current?.index === index && current.column === column ? 'outline outline-1 -outline-offset-1 outline-primary' : ''
                         ]"
+                        :style="widthStyle(column)"
                         :title="cell(value, column) === undefined ? undefined : preview(cell(value, column)!, 1000)"
                         class="max-w-64 px-2 h-[19px] truncate whitespace-nowrap"
                         data-testid="table-cell"

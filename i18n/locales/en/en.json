@@ -948,6 +948,7 @@
   "table.hide": "Hide column",
   "table.hideOthers": "Hide other columns",
   "table.pin": "Pin column",
+  "table.resize": "Drag to change the width; double click for the natural width",
   "table.restore": "Restore default view",
   "table.showAll": "Show all columns",
   "table.stepBack": "Step back",

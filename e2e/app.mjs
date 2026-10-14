@@ -616,6 +616,17 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await panel.locator("[data-testid=view-table]").click();
         assert.equal(await panel.locator("[data-testid=table-row]").count(), 2);
         assert.match(await panel.locator("[data-testid=result-table] thead").innerText(), /name/);
+        // Dragging the edge of a column head widens the column; a double click gives the width back.
+        const head = panel.locator("[data-testid=table-column]").first();
+        const before = (await head.boundingBox()).width;
+        const handle = (await head.locator("[data-testid=column-resize]").boundingBox());
+        await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+        await page.mouse.down();
+        await page.mouse.move(handle.x + 80, handle.y + handle.height / 2, { steps: 4 });
+        await page.mouse.up();
+        assert.ok((await head.boundingBox()).width > before + 60, "the column did not widen");
+        await head.locator("[data-testid=column-resize]").dblclick();
+        assert.ok(Math.abs((await head.boundingBox()).width - before) < 2, "the width did not come back");
         await panel.locator("[data-testid=view-json]").click();
         assert.match(await panel.locator("[data-testid=query-result] .cm-content").innerText(), /"name": "three"/);
         await panel.locator("[data-testid=view-tree]").click();

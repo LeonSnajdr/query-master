@@ -948,6 +948,7 @@
   "table.hide": "Spalte verbergen",
   "table.hideOthers": "Andere Spalten verbergen",
   "table.pin": "Spalte anheften",
+  "table.resize": "Ziehen ändert die Breite; Doppelklick gibt die natürliche zurück",
   "table.restore": "Standardansicht wiederherstellen",
   "table.showAll": "Alle Spalten zeigen",
   "table.stepBack": "Zurück",
