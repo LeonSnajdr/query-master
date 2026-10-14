@@ -127,27 +127,27 @@ function childDone() {
                 v-else
                 @mouseenter="closeGroup"
                 :aria-label="entry.label"
-                class="h-7 px-2.5 flex items-center gap-1.5"
+                class="h-7 px-2.5 flex items-center gap-2"
                 role="group"
             >
-                <ButtonRoot
-                    @click="chooseColor(entry, null)"
-                    :ariaLabel="$t('color.none')"
-                    :title="$t('color.none')"
-                    class="size-4.5 inline-flex items-center justify-center rounded-full border border-on-surface-variant/60 text-on-surface-variant hover:border-on-surface-strong"
-                    data-testid="swatch-none"
-                >
-                    <span class="i-lucide-x size-3" />
-                </ButtonRoot>
+                <!--: the current color larger, the others lighter, "none" last. -->
                 <ButtonRoot
                     v-for="color in entry.swatches"
                     :key="color"
                     @click="chooseColor(entry, color)"
+                    :aria-pressed="entry.current === color"
                     :ariaLabel="$t(`color.${color}`)"
-                    :class="[`note-${color}`, entry.current === color ? 'outline-2 outline-offset-1 outline-on-surface-strong' : '']"
+                    :class="[`note-${color}`, entry.current === color ? 'size-5.5' : 'size-3.5 brightness-115 hover:scale-125']"
                     :data-testid="`swatch-${color}`"
                     :title="$t(`color.${color}`)"
-                    class="size-4.5 rounded-full outline outline-transparent hover:scale-110 transition-transform"
+                    class="shrink-0 rounded-full transition-transform"
+                />
+                <ButtonRoot
+                    @click="chooseColor(entry, null)"
+                    :ariaLabel="$t('color.none')"
+                    :title="$t('color.none')"
+                    class="size-4 shrink-0 i-lucide-ban text-on-surface-variant hover:text-on-surface-strong"
+                    data-testid="swatch-none"
                 />
             </div>
         </template>

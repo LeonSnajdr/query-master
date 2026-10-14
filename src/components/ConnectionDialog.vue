@@ -13,9 +13,13 @@ import type { AuthMode, ConnectMode, ConnectionFields } from "@/connection/uri";
 import { pickFilePath } from "@/files";
 import { useConnectionsStore } from "@/stores/connections";
 
-/** Creates a connection, or changes the one given: the fields of a connection string, by topic. */
+/**
+ * Creates a connection, or changes the one given: the fields of a connection string, by topic.
+ * With `clone` the one given is only the start of a new connection.
+ */
 const props = defineProps<{
     profile?: Profile;
+    clone?: boolean;
 }>();
 const open = defineModel<boolean>({ default: false });
 
@@ -67,7 +71,7 @@ watch(open, async (isOpen) => {
     if (!isOpen) return;
     notice.value = undefined;
     tab.value = "basic";
-    name.value = props.profile?.name ?? "";
+    name.value = props.profile ? (props.clone ? t("connection.clone.name", { name: props.profile.name }) : props.profile.name) : "";
     fields.value = emptyFields();
     if (!props.profile) return;
     try {
@@ -121,7 +125,7 @@ async function test() {
 async function save(connect = false) {
     busy.value = true;
     try {
-        const profile = await connections.save({ id: props.profile?.id, name: name.value.trim() || t("connection.unnamed"), uri: uri.value });
+        const profile = await connections.save({ id: props.clone ? undefined : props.profile?.id, name: name.value.trim() || t("connection.unnamed"), uri: uri.value });
         open.value = false;
         if (connect) await actions.connect(profile);
     } catch (error) {
@@ -140,7 +144,7 @@ async function save(connect = false) {
                 class="flex flex-col gap-4"
             >
                 <DialogTitle class="dialog-title text-[21px]!">
-                    {{ $t(profile ? "connection.edit.title" : "connection.new.title") }}
+                    {{ $t(profile && !clone ? "connection.edit.title" : "connection.new.title") }}
                 </DialogTitle>
 
                 <label class="flex items-center gap-3">

@@ -348,22 +348,25 @@ export function useActions() {
         if (at) await connections.loadDatabases(at.connectionId).catch(report);
     }
 
+    /** The row is in the tree and selected at once; the connection opens behind it. */
     async function connect(profile: Profile) {
+        connections.selected = { connectionId: profile.id };
         const session = connections.sessions[profile.id];
         if (session) session.open = true;
-        else await connections.connect(profile.id).catch(report);
-        connections.selected = { connectionId: profile.id };
+        else if (!connections.connecting.has(profile.id)) await connections.connect(profile.id).catch(report);
+    }
+
+    async function reconnect(at = target.value) {
+        if (!at) return;
+        tabs.closeConnection(at.connectionId);
+        await connections.reconnect(at.connectionId).catch(report);
     }
 
     /** Connects with a string that is typed in and not saved "Connect from URI". */
     async function connectFromUri() {
         const uri = await dialogs.ask({ title: t("connection.fromUri.title"), label: t("connection.fromUri.label"), value: "mongodb://", action: t("connection.connect"), code: true });
         if (!uri) return;
-        try {
-            connections.selected = { connectionId: await connections.connectUri(uri) };
-        } catch (error) {
-            report(error);
-        }
+        await connections.connectUri(uri).catch(report);
     }
 
     async function disconnect(at = target.value) {
@@ -402,7 +405,7 @@ export function useActions() {
         openShell, browse, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, deleteFolder, moveToFolder,
-        refresh, connect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
+        refresh, connect, reconnect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };
 }

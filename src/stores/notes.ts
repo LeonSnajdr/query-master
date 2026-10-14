@@ -4,7 +4,8 @@ import { backend } from "@/api";
 import type { TreeFolder, TreeNote } from "@/api";
 
 /** The colors a row of the tree can carry: eight dots. */
-export const NOTE_COLORS = ["red", "orange", "yellow", "green", "teal", "blue", "purple", "gray"] as const;
+/** In the order of the swatches. */
+export const NOTE_COLORS = ["red", "purple", "blue", "teal", "green", "yellow", "orange", "gray"] as const;
 export type NoteColor = typeof NOTE_COLORS[number];
 
 /** A row of the tree, as far as notes go: indexes carry none of their own. */

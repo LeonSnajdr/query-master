@@ -74,7 +74,9 @@ const state = reactive({
     connectionOpen: false,
     collectionOpen: false,
     collection: undefined as CollectionRequest | undefined,
-    connection: undefined as Profile | undefined
+    connection: undefined as Profile | undefined,
+    /** The dialog starts from `connection` but saves a new one. */
+    connectionClone: false
 });
 
 let answerPrompt: ((value: string | undefined) => void) | undefined;
@@ -102,6 +104,14 @@ export function useDialogs() {
     /** Opens the connection dialog for a new connection, or for the one given. */
     function editConnection(profile?: Profile): void {
         state.connection = profile;
+        state.connectionClone = false;
+        state.connectionOpen = true;
+    }
+
+    /** Opens the connection dialog for a new connection that starts as a copy of the one given. */
+    function cloneConnection(profile: Profile): void {
+        state.connection = profile;
+        state.connectionClone = true;
         state.connectionOpen = true;
     }
 
@@ -132,7 +142,7 @@ export function useDialogs() {
         state.help = page;
     }
 
-    return { ask, confirm, showText, editConnection, editCollection, editIndex, openSettings, openHelp };
+    return { ask, confirm, showText, editConnection, cloneConnection, editCollection, editIndex, openSettings, openHelp };
 }
 
 /** For `AppDialogs.vue` only. */

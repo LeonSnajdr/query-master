@@ -6,7 +6,11 @@ import type { Doc, Json } from "./shell/ejson";
  * Made-up data for work on the interface in a browser (`bun run dev` without Tauri). Filters are
  * not evaluated: every query returns the same documents, cut by skip, limit and `$skip`.
  */
-const profiles: Profile[] = [{ id: "demo", name: "Demo (made-up data)", address: "mongodb://localhost:27017" }];
+const profiles: Profile[] = [
+    { id: "demo", name: "Demo (made-up data)", address: "mongodb://localhost:27017" },
+    // A server that is not there: shows how a connection that fails stays in the tree.
+    { id: "offline", name: "Offline (unreachable)", address: "mongodb://10.0.0.1:27017" }
+];
 
 const COLLECTIONS: Record<string, string[]> = {
     shop: ["orders", "customers", "order-items"],
@@ -64,7 +68,11 @@ export const mockBackend: Backend = {
         profiles.splice(profiles.findIndex(item => item.id === id), 1);
     },
     testConnection: async () => ({ version: "8.0.4" }),
-    connect: async () => ({ version: "8.0.4" }),
+    connect: async (id) => {
+        if (id !== "offline") return { version: "8.0.4" };
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        throw new Error("Server selection timeout: No available servers (10.0.0.1:27017)");
+    },
     connectUri: async (_id, uri) => ({ version: "8.0.4", address: uri.replace(/\/\/[^@/]*@/, "//").split("?")[0]! }),
     disconnect: async () => undefined,
     runCommand: async (_id, _database, command): Promise<Doc> => {

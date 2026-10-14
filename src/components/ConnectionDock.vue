@@ -2,6 +2,7 @@
 import { ButtonRoot, PopoverActivator, PopoverContent, PopoverRoot } from "@vuetify/v0";
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { errorMessage } from "@/api";
 import type { Profile } from "@/api";
 import ContextMenu from "@/components/ContextMenu.vue";
 import DropMenu from "@/components/DropMenu.vue";
@@ -21,7 +22,7 @@ import type { CollectionRow, NotePlace } from "@/stores/notes";
 
 /** The dock at the left: saved connections, the toolbar, and the tree of what is connected. */
 const { t } = useI18n();
-const { report } = useMessages();
+const { report, say } = useMessages();
 const dialogs = useDialogs();
 const actions = useActions();
 const copying = useCopy();
@@ -56,24 +57,37 @@ function tint(place: NotePlace): string {
     return color ? `note-fg-${color}` : "text-on-surface";
 }
 
-/** Color, comment and read-only of a row, for its context menu. */
+/** Comment, read-only and color of a row, for its context menu, in the order. */
 function noteEntries(at: TreeSelection): MenuEntry[] {
     const place = { connectionId: at.connectionId, database: at.database, collection: at.collection };
     const note = notes.noteOf(place);
     const entries: MenuEntry[] = [
         "separator",
-        { label: t("note.color"), swatches: NOTE_COLORS, current: note?.color ?? null, choose: color => void actions.setColor(at, color) },
         { label: t(note?.comment ? "note.comment.edit" : "note.comment.add"), icon: "i-lucide-message-square-text", action: () => void actions.editComment(at) }
     ];
     if (note?.comment) entries.push({ label: t("note.comment.remove"), action: () => void actions.removeComment(at) });
-    entries.push({ label: t("note.readonly"), icon: "i-lucide-lock", checked: note?.readonly === true, action: () => void actions.toggleReadonly(at) });
+    entries.push(
+        { label: t("note.readonly"), icon: "i-lucide-lock", checked: note?.readonly === true, action: () => void actions.toggleReadonly(at) },
+        { label: t("note.color"), swatches: NOTE_COLORS, current: note?.color ?? null, choose: color => void actions.setColor(at, color) }
+    );
     return entries;
 }
 
 const listOpen = shallowRef(false);
 const searching = shallowRef(false);
 const search = shallowRef("");
-const connected = computed(() => connections.profiles.filter(profile => connections.sessions[profile.id]));
+/** Connections in the tree: open ones, and, those being opened or that failed. */
+const connected = computed(() => connections.profiles.filter(profile => connections.inTree(profile.id)));
+
+/** The color noted for a connection, shown as a bar along its rows. */
+function connectionColor(profile: Profile): string | undefined {
+    return notes.noteOf({ connectionId: profile.id })?.color ?? undefined;
+}
+
+/** Why a connection could not be opened, for the tooltip of its red mark. */
+function failure(profile: Profile): string {
+    return t("connection.failed", { reason: say(errorMessage(connections.failed.get(profile.id))) });
+}
 
 function matches(name: string): boolean {
     return !search.value.trim() || name.toLowerCase().includes(search.value.trim().toLowerCase());
@@ -224,10 +238,63 @@ function deletePicked() {
     void actions.deleteConnection(profile);
 }
 
-/** Up and down pick, Enter connects, Del deletes. */
+const listMenu = useTemplateRef("listMenu");
+const listSearchInput = useTemplateRef("listSearchInput");
+
+function uriOf(profile: Profile) {
+    listOpen.value = false;
+    void actions.viewUri({ connectionId: profile.id });
+}
+
+/**
+ * The menu of the list: on a connection everything for it, on the folder
+ * only what adds one. Groups of connections and moving between them are not built (one folder).
+ */
+function openListMenu(event: MouseEvent, profile?: Profile) {
+    event.stopPropagation();
+    const close = (action: () => void) => () => {
+        listOpen.value = false;
+        action();
+    };
+    const head: MenuEntry[] = [
+        { label: t("connection.connect"), icon: "i-lucide-plug", hotkey: "Enter", action: () => profile && void choose(profile), disabled: !profile },
+        "separator",
+        { label: t("connection.add"), icon: "i-lucide-plus", hotkey: "Ctrl + F2", action: close(() => actions.newConnection()) },
+        { label: t("connection.addFromUri"), icon: "i-lucide-link", action: close(() => void actions.connectFromUri()) }
+    ];
+    const find: MenuEntry = { label: t("connection.find"), icon: "i-lucide-search", hotkey: "Ctrl + F", action: () => listSearchInput.value?.focus() };
+    if (!profile) {
+        void listMenu.value?.open(event, [...head, "separator", find]);
+        return;
+    }
+    picked.value = profile.id;
+    const at = { connectionId: profile.id };
+    void listMenu.value?.open(event, [
+        ...head,
+        { label: t("connection.clone"), icon: "i-lucide-copy", action: close(() => dialogs.cloneConnection(profile)) },
+        "separator",
+        { label: t("connection.edit"), icon: "i-lucide-pencil", hotkey: "Ctrl + E", action: () => editPicked() },
+        { label: t("action.delete"), icon: "i-lucide-x", hotkey: "Del", danger: true, action: () => deletePicked() },
+        "separator",
+        { label: t("connection.uri"), hotkey: "Ctrl + Alt + F2", action: () => uriOf(profile) },
+        "separator",
+        find,
+        ...noteEntries(at)
+    ]);
+}
+
+/** Up and down pick, Enter connects, Del deletes, Ctrl+E edits, Ctrl+F searches, Ctrl+Alt+F2 shows the string. */
 function onListKey(event: KeyboardEvent) {
     const at = listed.value.findIndex(profile => profile.id === picked.value);
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    const control = event.ctrlKey || event.metaKey;
+    const key = event.key.toLowerCase();
+    if (control && !event.altKey && key === "e") {
+        editPicked();
+    } else if (control && !event.altKey && key === "f") {
+        listSearchInput.value?.focus();
+    } else if (control && event.altKey && event.key === "F2") {
+        if (pickedProfile.value) uriOf(pickedProfile.value);
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         const next = listed.value[Math.min(listed.value.length - 1, Math.max(0, at + (event.key === "ArrowDown" ? 1 : -1)))];
         if (next) picked.value = next.id;
     } else if (event.key === "Enter" && pickedProfile.value) {
@@ -305,7 +372,20 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
         { label: t("connection.disconnect"), command: "connection.disconnect", action: () => void actions.disconnect(at) }
     ];
     let entries: MenuEntry[];
-    if (at.index !== undefined) {
+    if (!connections.sessions[at.connectionId]) {
+        // Failed or still being opened:, only its settings and the way out.
+        entries = [
+            ...(connections.isTransient(at.connectionId)
+                ? []
+                : [
+                    { label: t("connection.settings"), action: () => actions.connectionSettings(at) },
+                    { label: t("connection.uri"), hotkey: "Ctrl + Alt + F2", action: () => void actions.viewUri(at) },
+                    "separator"
+                ] satisfies MenuEntry[]),
+            { label: t("connection.reconnect"), icon: "i-lucide-refresh-cw", action: () => void actions.reconnect(at) },
+            { label: t("connection.disconnect"), hotkey: "Ctrl + Alt + D", action: () => void actions.disconnect(at) }
+        ];
+    } else if (at.index !== undefined) {
         entries = [
             { label: t("tab.shell"), icon: "i-lucide-square-terminal", command: "tab.shell", action: () => actions.openShell(at) },
             "separator",
@@ -470,6 +550,7 @@ defineExpose({
                     <label class="mx-4 mb-2 h-7 shrink-0 flex items-center gap-1.5 px-2 rounded-sm bg-surface-variant border border-divider focus-within:border-primary">
                         <span class="i-lucide-search size-3.5 shrink-0 text-on-surface-variant" />
                         <input
+                            ref="listSearchInput"
                             v-model="listSearch"
                             :aria-label="$t('tree.search')"
                             :placeholder="`${$t('tree.search')} …`"
@@ -490,6 +571,7 @@ defineExpose({
                     >
                         <div
                             @click="listFolderOpen = !listFolderOpen"
+                            @contextmenu="openListMenu($event)"
                             @keydown.enter.self.stop="listFolderOpen = !listFolderOpen"
                             class="tree-row pl-5"
                             role="treeitem"
@@ -516,6 +598,7 @@ defineExpose({
                                 v-for="profile in listed"
                                 :key="profile.id"
                                 @click="picked = profile.id"
+                                @contextmenu="openListMenu($event, profile)"
                                 @dblclick="choose(profile)"
                                 :class="picked === profile.id ? 'tree-row-on' : ''"
                                 :title="profile.address"
@@ -526,22 +609,17 @@ defineExpose({
                             >
                                 <!-- The color of the connection, as a bar at the left edge. -->
                                 <span
-                                    v-if="notes.noteOf({ connectionId: profile.id })?.color"
-                                    :class="`note-${notes.noteOf({ connectionId: profile.id })?.color}`"
-                                    class="absolute left-4 inset-y-0 w-1"
+                                    v-if="connectionColor(profile)"
+                                    :class="`note-${connectionColor(profile)}`"
+                                    class="absolute z-1 left-4 inset-y-0 w-[5px]"
                                 />
                                 <span class="relative size-4 shrink-0">
-                                    <span
-                                        :class="[
-                                            connections.connecting.has(profile.id) ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-server',
-                                            connections.sessions[profile.id] ? 'text-success' : 'text-on-surface'
-                                        ]"
-                                        class="size-4 block"
-                                    />
+                                    <span class="i-lucide-server size-4 block text-on-surface" />
+                                    <!-- Read-only: a lock over the lower left of the icon. -->
                                     <span
                                         v-if="notes.noteOf({ connectionId: profile.id })?.readonly"
                                         :title="$t('note.readonly')"
-                                        class="i-lucide-lock absolute -right-0.5 -bottom-0.5 size-2.5 text-warning"
+                                        class="i-lucide-lock absolute -left-0.5 -bottom-0.5 size-2.5 text-warning"
                                     />
                                 </span>
                                 <span class="shrink-0 text-on-surface-strong">{{ profile.name }}</span>
@@ -549,6 +627,8 @@ defineExpose({
                             </div>
                         </template>
                     </div>
+                    <!-- Inside the panel, so that opening it leaves the panel open. -->
+                    <ContextMenu ref="listMenu" />
                 </PopoverContent>
             </PopoverRoot>
             <IconButton
@@ -646,8 +726,16 @@ defineExpose({
             <div
                 v-for="profile in connected"
                 :key="profile.id"
+                class="relative"
                 data-testid="connection"
             >
+                <!-- The color of the connection: a bar along all of its rows. -->
+                <span
+                    v-if="connectionColor(profile)"
+                    :class="`note-${connectionColor(profile)}`"
+                    class="absolute z-1 left-px inset-y-0 w-[5px] rounded-sm pointer-events-none"
+                    data-testid="connection-color"
+                />
                 <div
                     @click="select({ connectionId: profile.id })"
                     @contextmenu="openMenu($event, { connectionId: profile.id })"
@@ -660,14 +748,27 @@ defineExpose({
                     tabindex="0"
                 >
                     <span
+                        v-if="connections.connecting.has(profile.id)"
+                        :title="$t('connection.connecting')"
+                        class="i-lucide-loader-circle animate-spin size-3.5 shrink-0 text-on-surface-variant"
+                        data-testid="connection-connecting"
+                    />
+                    <!-- Could not be opened: a red mark instead of the arrow; the row stays. -->
+                    <span
+                        v-else-if="connections.failed.has(profile.id)"
+                        :title="failure(profile)"
+                        class="size-3.5 shrink-0 inline-flex items-center justify-center"
+                        data-testid="connection-failed"
+                    >
+                        <span class="size-2 rounded-full bg-[#f75326]" />
+                    </span>
+                    <span
+                        v-else
                         @click.stop="toggleConnection(profile)"
                         :class="connections.sessions[profile.id]?.open ? 'rotate-90' : ''"
                         class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
                     />
-                    <span
-                        :class="tint({ connectionId: profile.id })"
-                        class="i-lucide-server size-4 shrink-0"
-                    />
+                    <span class="i-lucide-server size-4 shrink-0 text-on-surface" />
                     <span class="truncate text-on-surface-strong">{{ profile.name }}</span>
                     <NoteMarks :place="{ connectionId: profile.id }" />
                     <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>

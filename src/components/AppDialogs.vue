@@ -222,6 +222,7 @@ async function copyText() {
 
     <ConnectionDialog
         v-model="state.connectionOpen"
+        :clone="state.connectionClone"
         :profile="state.connection"
     />
     <CollectionDialog

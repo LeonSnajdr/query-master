@@ -1,15 +1,18 @@
 import { defineConfig, presetIcons, presetWind4 } from "unocss";
 
-/** The colors of notes on rows of the tree (`src/stores/notes.ts`); readable on dark and light themes. */
+/**
+ * The colors of notes on rows of the tree (`src/stores/notes.ts`): the 300 shades
+ * of Material (brown 200). The keys stay as stored; `teal` shows as light blue, `gray` as brown.
+ */
 const NOTE_COLORS: Record<string, string> = {
-    red: "#e5534b",
-    orange: "#e8913a",
-    yellow: "#d4b02f",
-    green: "#57ab5a",
-    teal: "#39a9a5",
-    blue: "#4f8fe6",
-    purple: "#a371f7",
-    gray: "#8b949e"
+    red: "#e57373",
+    purple: "#ba68c8",
+    blue: "#64b5f6",
+    teal: "#4fc3f7",
+    green: "#81c784",
+    yellow: "#ffd54f",
+    orange: "#ff8a65",
+    gray: "#bcaaa4"
 };
 
 export default defineConfig({

@@ -68,6 +68,11 @@ export const useConnectionsStore = defineStore("connections", () => {
     const sessions = reactive<Record<string, Session>>({});
     /** Connections being opened. */
     const connecting = reactive(new Set<string>());
+    /**
+     * Connections that could not be opened, with the reason. they stay in the
+     * tree (with a red mark) until they are connected again or closed.
+     */
+    const failed = reactive(new Map<string, unknown>());
     /** Field paths per `connection/database/collection`; filled when the editor first asks. */
     const fields = reactive(new Map<string, string[]>());
     const fieldRequests = new Set<string>();
@@ -76,6 +81,13 @@ export const useConnectionsStore = defineStore("connections", () => {
 
     /** Connections made from a string that is not saved; they go with `disconnect`. */
     const transient: Profile[] = [];
+    /** The typed string of each of them, to connect again after a failure. */
+    const transientUris = new Map<string, string>();
+
+    /** Whether a connection shows in the tree: open, being opened, or failed. */
+    function inTree(id: string): boolean {
+        return sessions[id] !== undefined || connecting.has(id) || failed.has(id);
+    }
 
     async function load(): Promise<void> {
         profiles.value = [...await backend.listConnections(), ...transient];
@@ -91,14 +103,38 @@ export const useConnectionsStore = defineStore("connections", () => {
     /** "Connect from URI": connects without saving anything; the tree shows the address. */
     async function connectUri(uri: string): Promise<string> {
         const id = crypto.randomUUID();
+        // Shown in the tree right away, under the address as far as it can be read without the server.
+        const address = uri.trim().replace(/\/\/[^@/]*@/, "//").split("?")[0]!;
+        transient.push({ id, name: address.replace(/^mongodb(\+srv)?:\/\//, ""), address });
+        transientUris.set(id, uri);
+        await load();
+        selected.value = { connectionId: id };
+        await open(id, () => backend.connectUri(id, uri));
+        return id;
+    }
+
+    /**
+     * Opens a connection. Its row is in the tree from the start; a failure leaves it there,
+     * marked, and is thrown. Closed while it was being opened, the new session is closed again.
+     */
+    async function open(id: string, start: () => Promise<{ version: string }>): Promise<void> {
+        failed.delete(id);
         connecting.add(id);
         try {
-            const info = await backend.connectUri(id, uri);
-            transient.push({ id, name: info.address.replace(/^mongodb(\+srv)?:\/\//, ""), address: info.address });
-            await load();
+            const info = await start();
+            if (!connecting.has(id)) {
+                await backend.disconnect(id);
+                return;
+            }
             sessions[id] = { version: info.version, databases: [], open: true };
+            // Read-only marks must be known before anything can be written.
+            if (!isTransient(id)) await useNotesStore().load(id);
             await loadDatabases(id);
-            return id;
+        } catch (error) {
+            // Closed meanwhile: nobody waits for this connection any more.
+            if (!connecting.has(id)) return;
+            if (!sessions[id]) failed.set(id, error);
+            throw error;
         } finally {
             connecting.delete(id);
         }
@@ -161,30 +197,43 @@ export const useConnectionsStore = defineStore("connections", () => {
     }
 
     async function connect(id: string): Promise<void> {
-        connecting.add(id);
-        try {
-            const info = await backend.connect(id);
-            sessions[id] = { version: info.version, databases: [], open: true };
-            // Read-only marks must be known before anything can be written.
-            await useNotesStore().load(id);
-            await loadDatabases(id);
-        } finally {
-            connecting.delete(id);
+        await open(id, () => backend.connect(id));
+    }
+
+    /** Tries a connection again that is open, failed or still being opened. */
+    async function reconnect(id: string): Promise<void> {
+        const uri = transientUris.get(id);
+        if (sessions[id]) {
+            delete sessions[id];
+            for (const key of [...fields.keys()]) if (key.startsWith(`${id}/`)) fields.delete(key);
         }
+        connecting.delete(id);
+        await open(id, () => (uri === undefined ? backend.connect(id) : backend.connectUri(id, uri)));
     }
 
     async function disconnect(id: string): Promise<void> {
-        if (!sessions[id]) return;
-        delete sessions[id];
+        const wasOpen = sessions[id] !== undefined;
+        failed.delete(id);
+        // A connection still being opened is closed as soon as it is (see `open`).
+        connecting.delete(id);
         if (selected.value?.connectionId === id) selected.value = undefined;
+        if (!wasOpen) {
+            dropTransient(id);
+            return;
+        }
+        delete sessions[id];
         for (const key of [...fields.keys()]) if (key.startsWith(`${id}/`)) fields.delete(key);
         await backend.disconnect(id);
-        // Nothing was saved for it: once closed, it is gone.
+        dropTransient(id);
+    }
+
+    /** Nothing was saved for a connection from a typed string: once closed, it is gone. */
+    function dropTransient(id: string): void {
         const index = transient.findIndex(profile => profile.id === id);
-        if (index !== -1) {
-            transient.splice(index, 1);
-            profiles.value = profiles.value.filter(profile => profile.id !== id);
-        }
+        if (index === -1) return;
+        transient.splice(index, 1);
+        transientUris.delete(id);
+        profiles.value = profiles.value.filter(profile => profile.id !== id);
     }
 
     /** The collections of a database as far as known, loading them if they are not. */
@@ -223,5 +272,5 @@ export const useConnectionsStore = defineStore("connections", () => {
         return fields.get(key) ?? [];
     }
 
-    return { profiles, saved, sessions, connecting, selected, load, save, remove, connect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, collapseAll };
+    return { profiles, saved, sessions, connecting, failed, selected, inTree, load, save, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, collapseAll };
 });
