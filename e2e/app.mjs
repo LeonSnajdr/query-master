@@ -189,7 +189,11 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await id("collection-name").fill(`${COLLECTION}_view`);
         await write(page.locator("dialog[open]"), "[{ $match: { n: { $gte: 2 } } }]");
         await id("collection-save").click();
-        await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_view` }).waitFor();
+        const view = page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_view` });
+        await view.waitFor();
+        // A view shows as one, and has nothing to unfold.
+        assert.equal(await view.locator(".i-lucide-eye").count(), 1);
+        assert.ok(await view.locator("[data-testid=collection-toggle].invisible").count() === 1);
     });
 
     const panel = page.locator("[data-testid=tab-panel]:visible");
@@ -522,6 +526,15 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await panel.locator("[data-testid=history]").click();
         await page.locator("[data-testid=menu-item]:visible", { hasText: COLLECTION }).first().waitFor();
         await page.keyboard.press("Escape");
+    });
+
+    await step("Ctrl+Shift+U folds the whole tree", async () => {
+        await id("database-row").first().waitFor();
+        await page.keyboard.press("Control+Shift+U");
+        await id("database-row").first().waitFor({ state: "detached" });
+        await id("connection-row").first().dblclick();
+        await id("database-row").first().waitFor();
+        assert.equal(await id("collection-row").count(), 0);
     });
 
     await step("the window maximizes and restores", async () => {

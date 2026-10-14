@@ -18,6 +18,8 @@ export interface DatabaseNode {
     name: string;
     /** Absent until the database was opened in the tree. */
     collections?: string[];
+    /** `collection`, `view` or `timeseries`, per collection, as `listCollections` says. */
+    types: Record<string, string>;
     /** Per collection that was unfolded: its indexes. */
     details: Record<string, CollectionDetail>;
     open: boolean;
@@ -100,7 +102,7 @@ export const useConnectionsStore = defineStore("connections", () => {
             if (!named) throw error;
             names = [decodeURIComponent(named)];
         }
-        session.databases = names.map(name => session.databases.find(database => database.name === name) ?? { name, open: false, loading: false, details: {} });
+        session.databases = names.map(name => session.databases.find(database => database.name === name) ?? { name, open: false, loading: false, details: {}, types: {} });
         await Promise.all(session.databases.filter(database => database.open).map(database => loadCollections(id, database.name)));
     }
 
@@ -111,6 +113,7 @@ export const useConnectionsStore = defineStore("connections", () => {
         try {
             const page = await backend.runCursorCommand(id, name, { listCollections: 1, nameOnly: true }, 10_000);
             database.collections = page.documents.map(collection => String(collection.name)).sort((a, b) => a.localeCompare(b));
+            database.types = Object.fromEntries(page.documents.map(collection => [String(collection.name), String(collection.type ?? "collection")]));
             await Promise.all(Object.entries(database.details).filter(([, detail]) => detail.open).map(([collection]) => loadIndexes(id, name, collection)));
         } finally {
             database.loading = false;
@@ -158,6 +161,17 @@ export const useConnectionsStore = defineStore("connections", () => {
         return database?.collections ?? [];
     }
 
+    /** Folds every connection, database and collection of the tree. */
+    function collapseAll(): void {
+        for (const session of Object.values(sessions)) {
+            session.open = false;
+            for (const database of session.databases) {
+                database.open = false;
+                for (const detail of Object.values(database.details)) detail.open = false;
+            }
+        }
+    }
+
     /** The field paths of a collection as far as known; a sample is read on the first call. */
     function fieldsOf(id: string, database: string, collection: string): string[] {
         const key = `${id}/${database}/${collection}`;
@@ -176,5 +190,5 @@ export const useConnectionsStore = defineStore("connections", () => {
         return fields.get(key) ?? [];
     }
 
-    return { profiles, sessions, connecting, selected, load, save, remove, connect, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf };
+    return { profiles, sessions, connecting, selected, load, save, remove, connect, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, collapseAll };
 });

@@ -27,6 +27,19 @@ const connections = useConnectionsStore();
 const notes = useNotesStore();
 const menu = useTemplateRef("menu");
 
+/** Views, time series and the server's own collections each have an icon of their own. */
+function collectionIcon(database: DatabaseNode, collection: string): string {
+    const type = database.types[collection];
+    if (type === "view") return "i-lucide-eye";
+    if (type === "timeseries") return "i-lucide-chart-line";
+    return collection.startsWith("system.") ? "i-lucide-file-cog" : "i-lucide-file-text";
+}
+
+function isView(at: TreeSelection): boolean {
+    const database = connections.sessions[at.connectionId]?.databases.find(item => item.name === at.database);
+    return at.collection !== undefined && database?.types[at.collection] === "view";
+}
+
 /** The icon of a row takes the color noted for it. */
 function tint(place: NotePlace): string {
     const color = notes.noteOf(place)?.color;
@@ -185,9 +198,10 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("collection.rename"), action: () => void actions.renameCollection(at) },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", hotkey: "Del", danger: true, action: () => void actions.dropCollection(at) },
             "separator",
-            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(at) },
-            { label: t("index.list"), action: () => actions.indexes(at) },
-            { label: t("validator.edit"), hotkey: "Ctrl + Alt + V", action: () => actions.editValidator(at) },
+            // A view has neither indexes nor a validator of its own.
+            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(at), disabled: isView(at) },
+            { label: t("index.list"), action: () => actions.indexes(at), disabled: isView(at) },
+            { label: t("validator.edit"), hotkey: "Ctrl + Alt + V", action: () => actions.editValidator(at), disabled: isView(at) },
             "separator",
             { label: t("collection.stats"), action: () => actions.collectionStats(at) },
             ...noteEntries(at),
@@ -224,6 +238,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(at) },
             "separator",
             { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void actions.refresh(at) },
+            { label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", hotkey: "Ctrl + Shift + U", action: () => connections.collapseAll() },
             "separator",
             { label: t("connection.settings"), action: () => actions.connectionSettings(at) },
             { label: t("connection.uri"), hotkey: "Ctrl + Alt + F2", action: () => void actions.viewUri(at) },
@@ -480,14 +495,17 @@ defineExpose({
                                         @dblclick.stop
                                         :class="[
                                             database.details[collection]?.loading ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-chevron-right',
-                                            database.details[collection]?.open ? 'rotate-90' : ''
+                                            database.details[collection]?.open ? 'rotate-90' : '',
+                                            // A view has no indexes to unfold.
+                                            database.types[collection] === 'view' ? 'invisible' : ''
                                         ]"
                                         class="size-3.5 shrink-0 text-on-surface-variant"
                                         data-testid="collection-toggle"
                                     />
                                     <span
-                                        :class="tint({ connectionId: profile.id, database: database.name, collection })"
-                                        class="i-lucide-file-text size-4 shrink-0"
+                                        :class="[collectionIcon(database, collection), tint({ connectionId: profile.id, database: database.name, collection })]"
+                                        :title="database.types[collection] === 'collection' ? undefined : $t(`collection.type.${database.types[collection] ?? 'collection'}`)"
+                                        class="size-4 shrink-0"
                                     />
                                     <span class="truncate text-on-surface-strong">{{ collection }}</span>
                                     <NoteMarks :place="{ connectionId: profile.id, database: database.name, collection }" />
