@@ -12,6 +12,7 @@ import { useMessages } from "@/composables/messages";
 import { sqlCollection, sqlToShell } from "@/sql/sql";
 import { useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
+import { useKeymap } from "@/keys/keymap";
 
 /** SQL for reading: a SELECT above, the shell statement it becomes, the result below. */
 const props = defineProps<{
@@ -20,6 +21,7 @@ const props = defineProps<{
 
 const { t } = useI18n();
 const { report } = useMessages();
+const keymap = useKeymap();
 const notifications = useNotifications();
 const { layout } = useLayout();
 const connections = useConnectionsStore();
@@ -79,7 +81,7 @@ async function copyStatement() {
                 @click="run"
                 :disabled="tab.running"
                 :icon="tab.running ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-play'"
-                :label="`${$t('query.run')} (F5)`"
+                :label="keymap.titled($t('query.run'), 'query.run')"
                 data-testid="query-run"
                 tint="text-success"
             >

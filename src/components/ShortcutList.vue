@@ -1,80 +1,61 @@
 <script setup lang="ts">
-/** The keyboard shortcuts, by group: on the startup page and in Help → Keyboard shortcuts (F12). */
+import { computed } from "vue";
+import { GROUPS } from "@/keys/commands";
+import { commandsOfGroup, useKeymap } from "@/keys/keymap";
 
-/** The keys of each shortcut; their names are those printed on keyboards. */
-const SHORTCUTS: { group: string; items: { action: string; keys: string[] }[] }[] = [
-    {
-        group: "shortcut.group.editor",
-        items: [
-            { action: "shortcut.complete", keys: ["Ctrl", "Space"] },
-            { action: "shortcut.run", keys: ["Ctrl", "Enter"] },
-            { action: "shortcut.run", keys: ["F5"] },
-            { action: "shortcut.comment", keys: ["Ctrl", "/"] },
-            { action: "shortcut.indent", keys: ["Ctrl", "]"] },
-            { action: "shortcut.outdent", keys: ["Ctrl", "["] },
-            { action: "shortcut.undo", keys: ["Ctrl", "Z"] }
-        ]
-    },
-    {
-        group: "shortcut.group.app",
-        items: [
-            { action: "connection.list.hint", keys: ["F2"] },
-            { action: "connection.add", keys: ["Ctrl", "F2"] },
-            { action: "tab.browse", keys: ["Ctrl", "Q"] },
-            { action: "tab.shell", keys: ["Ctrl", "T"] },
-            { action: "tab.aggregation", keys: ["Ctrl", "Shift", "Q"] },
-            { action: "tab.sql", keys: ["Ctrl", "Alt", "Q"] },
-            { action: "folder.add", keys: ["Ctrl", "G"] },
-            { action: "action.refresh", keys: ["Ctrl", "R"] },
-            { action: "view.tree", keys: ["Alt", "1"] },
-            { action: "view.table", keys: ["Alt", "2"] },
-            { action: "view.json", keys: ["Alt", "3"] },
-            { action: "tab.next", keys: ["Ctrl", "Tab"] },
-            { action: "tab.duplicate", keys: ["Ctrl", "Shift", "T"] },
-            { action: "tab.close.current", keys: ["Ctrl", "W"] },
-            { action: "focus.tree", keys: ["F4"] },
-            { action: "focus.editor", keys: ["F6"] },
-            { action: "focus.results", keys: ["F7"] },
-            { action: "help.shortcuts", keys: ["F12"] }
-        ]
-    },
-    {
-        group: "shortcut.group.results",
-        items: [
-            { action: "result.pin", keys: ["Ctrl", "P"] },
-            { action: "result.expand.node", keys: ["Ctrl", "J"] },
-            { action: "result.collapse.node", keys: ["Ctrl", "Shift", "J"] },
-            { action: "result.export", keys: ["Ctrl", "S"] },
-            { action: "result.import", keys: ["Ctrl", "O"] },
-            { action: "result.importClipboard", keys: ["Ctrl", "Shift", "V"] }
-        ]
-    }
-];
+/**
+ * The keyboard shortcuts, by group, as the user set them: on the startup page and in
+ * Help → Keyboard shortcuts (F12). A command without a key shows only when the user took it away.
+ */
+const keymap = useKeymap();
+
+const groups = computed(() => GROUPS.map(group => ({
+    group,
+    items: commandsOfGroup(group).filter(command => keymap.keys(command.id).length > 0 || keymap.changed(command.id))
+})).filter(entry => entry.items.length > 0));
 </script>
 
 <template>
     <template
-        v-for="group in SHORTCUTS"
-        :key="group.group"
+        v-for="entry in groups"
+        :key="entry.group"
     >
         <h3 class="m-0 mt-3 mb-2 px-2.5 text-[15px] font-semibold text-on-surface-strong">
-            {{ $t(group.group) }}
+            {{ $t(`keys.group.${entry.group}`) }}
         </h3>
         <div
-            v-for="(item, index) in group.items"
-            :key="index"
+            v-for="(command, index) in entry.items"
+            :key="command.id"
             :class="index % 2 === 0 ? 'bg-on-surface/4' : ''"
-            class="h-[25px] flex items-center px-2.5"
+            class="min-h-[25px] flex items-center px-2.5"
+            data-testid="shortcut-row"
         >
-            <span class="w-1/2 text-on-surface-strong">{{ $t(item.action) }}</span>
-            <span class="flex items-center gap-1.5">
+            <span class="w-1/2 text-on-surface-strong">{{ $t(command.label) }}</span>
+            <span class="flex flex-wrap items-center gap-1.5">
+                <span
+                    v-if="keymap.keys(command.id).length === 0"
+                    class="italic text-on-surface-variant"
+                >{{ $t("keys.none") }}</span>
                 <template
-                    v-for="(key, position) in item.keys"
-                    :key="key"
+                    v-for="(names, alternative) in keymap.names(command.id)"
+                    :key="alternative"
                 >
-                    <span v-if="position > 0">+</span>
-                    <kbd class="px-1.5 rounded-sm border border-divider bg-on-surface/8 font-sans text-[12px] text-on-surface-strong">{{ key }}</kbd>
+                    <span
+                        v-if="alternative > 0"
+                        class="px-1 text-on-surface-variant"
+                    >{{ $t("keys.or") }}</span>
+                    <template
+                        v-for="(key, position) in names"
+                        :key="position"
+                    >
+                        <span v-if="position > 0">+</span>
+                        <kbd class="px-1.5 rounded-sm border border-divider bg-on-surface/8 font-sans text-[12px] text-on-surface-strong">{{ key }}</kbd>
+                    </template>
                 </template>
+                <span
+                    v-if="keymap.changed(command.id)"
+                    class="pl-1 text-[11px] text-primary"
+                >{{ $t("keys.changed") }}</span>
             </span>
         </div>
     </template>

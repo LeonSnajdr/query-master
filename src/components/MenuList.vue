@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot } from "@vuetify/v0";
 import { nextTick, shallowRef, useTemplateRef } from "vue";
+import { useKeymap } from "@/keys/keymap";
 import { isMenuGroup, isMenuItem } from "@/menu";
 import type { MenuEntry, MenuGroup, MenuItem, MenuSwatches } from "@/menu";
 
@@ -12,6 +13,13 @@ const emit = defineEmits<{
 defineProps<{
     entries: MenuEntry[];
 }>();
+
+const keymap = useKeymap();
+
+/** What stands at the right of an item: its shortcut, or the text it brings. */
+function hintOf(item: MenuItem): string | undefined {
+    return item.command ? keymap.label(item.command) : item.hotkey;
+}
 
 const sub = useTemplateRef<HTMLDivElement>("sub");
 /** The group whose menu is open, and where that menu lies. */
@@ -111,9 +119,9 @@ function childDone() {
                     {{ entry.label }}
                 </ButtonContent>
                 <span
-                    v-if="entry.hotkey"
+                    v-if="hintOf(entry)"
                     class="pl-6 text-on-surface-variant whitespace-nowrap"
-                >{{ entry.hotkey }}</span>
+                >{{ hintOf(entry) }}</span>
             </ButtonRoot>
             <div
                 v-else

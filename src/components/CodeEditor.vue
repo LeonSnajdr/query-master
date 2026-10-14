@@ -11,11 +11,13 @@ import { EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers } f
 import { tags } from "@lezer/highlight";
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
 import { useMessages } from "@/composables/messages";
+import { codeMirrorKey } from "@/keys/hotkey";
+import { useKeymap } from "@/keys/keymap";
 import { suggest } from "@/shell/complete";
 import type { Environment, Suggestion, SuggestionType } from "@/shell/complete";
 
 const emit = defineEmits<{
-    /** Ctrl+Enter or F5 (in a single line also Enter): run, with the cursor and the selected text. */
+    /** The run keys (Ctrl+Enter, F5; in a single line also Enter): run, with the cursor and the selected text. */
     run: [position: number, selection: string];
 }>();
 /** An editor for shell code: a script, one field of a query, or a result to read. */
@@ -38,6 +40,14 @@ const text = defineModel<string>({ required: true });
 
 /** The language part, swapped when the SQL schema (collections, fields) becomes known. */
 const language = new Compartment();
+/** The run keys, swapped when they are changed in the settings. */
+const runKeys = new Compartment();
+const shortcuts = useKeymap();
+
+function runKeymap(): Extension {
+    const keys = shortcuts.keys("query.run").map(codeMirrorKey).filter((key): key is string => key !== undefined);
+    return keymap.of([...keys.map(key => ({ key, run })), ...(props.singleLine ? [{ key: "Enter", run }] : [])]);
+}
 
 function languageExtension(): Extension {
     return props.sqlSchema ? sql({ schema: props.sqlSchema, upperCaseKeywords: true }) : javascript();
@@ -149,10 +159,8 @@ function extensions(): Extension[] {
         // SQL completes from its language (keywords, schema); shell code from the shell's catalog.
         props.sqlSchema ? autocompletion({ icons: true }) : autocompletion({ override: [complete], icons: true }),
         // Before the default keys, so Ctrl+Enter is not taken as "new line below".
+        runKeys.of(runKeymap()),
         keymap.of([
-            { key: "Mod-Enter", run },
-            { key: "F5", run },
-            ...(props.singleLine ? [{ key: "Enter", run }] : []),
             ...closeBracketsKeymap,
             ...completionKeymap,
             ...historyKeymap,
@@ -184,6 +192,8 @@ watch(text, (value) => {
 });
 
 watch(() => props.sqlSchema, () => view?.dispatch({ effects: language.reconfigure(languageExtension()) }));
+
+watch(() => shortcuts.keys("query.run"), () => view?.dispatch({ effects: runKeys.reconfigure(runKeymap()) }));
 
 watch(() => props.errorPosition, (position) => {
     if (!view || position === undefined) return;

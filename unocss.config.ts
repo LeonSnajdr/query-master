@@ -41,6 +41,9 @@ export default defineConfig({
         // The mark of a name that does not exist yet and will be created.
         "badge-new": "px-1.5 rounded-sm bg-success/15 text-success text-[11px] leading-4",
         "choice-field": "[&:hover:not(:focus):not([data-state=open])]:border-on-surface-variant/70 data-[state=open]:border-primary",
+        // A key as printed on the keyboard, and the field that records one in the settings.
+        "kbd": "px-1.5 rounded-sm border border-divider bg-on-surface/8 font-sans text-[12px] leading-[18px] text-on-surface-strong whitespace-nowrap",
+        "recorder": "h-6 px-2 inline-flex items-center rounded-sm border border-primary bg-primary/10 outline outline-2 outline-primary/30 text-[12px] italic text-on-surface-strong whitespace-nowrap",
         "toolbar-rule": "w-px h-4.5 mx-1.5 shrink-0 bg-divider",
         // Rows of the connection tree; the selected one carries a frame, as a focused one does.
         "tree-row": "h-[19px] mr-4.5 flex items-center gap-1.5 pr-2 whitespace-nowrap border border-transparent outline-none hover:bg-on-surface/5 focus-visible:border-primary/60",

@@ -1038,6 +1038,45 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("settings-close").click();
     });
 
+    await step("a shortcut changed in the settings acts, shows on the buttons, outlasts a reload and is reset", async () => {
+        const browseRow = page.locator("dialog[open] [data-command='tab.browse']");
+        await page.keyboard.press("Control+Alt+P");
+        await visible("settings-tab-keys").click();
+        await browseRow.locator("[data-testid=keys-chip]").click();
+        await browseRow.locator("[data-testid=keys-recorder]").waitFor();
+        await page.keyboard.press("Control+B");
+        await browseRow.getByText("Ctrl + B").waitFor();
+        await visible("settings-close").click();
+        assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ B\)$/);
+
+        // The new key opens the collection; the old one is free.
+        await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).click();
+        const tabs = await id("tab").count();
+        await page.keyboard.press("Control+Q");
+        await page.waitForTimeout(300);
+        assert.equal(await id("tab").count(), tabs);
+        await page.keyboard.press("Control+B");
+        await page.waitForFunction(count => document.querySelectorAll("[data-testid=tab]").length === count + 1, tabs);
+        await page.keyboard.press("Control+w");
+
+        // Kept in the app's database: still there after the page is loaded anew.
+        await page.reload();
+        await id("dock-browse").waitFor();
+        assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ B\)$/);
+
+        await page.keyboard.press("Control+Alt+P");
+        await visible("settings-tab-keys").click();
+        await visible("keys-reset-all").click();
+        await id("confirm-action").click();
+        await browseRow.getByText("Ctrl + Q").waitFor();
+        await visible("settings-tab-general").click();
+        await visible("settings-close").click();
+        assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ Q\)$/);
+        // The reload closed the connection; the next steps work on it.
+        await id("connection-row").first().dblclick();
+        await id("database-row").first().waitFor();
+    });
+
     await step("Ctrl+Shift+U folds the whole tree", async () => {
         await id("database-row").first().waitFor();
         await page.keyboard.press("Control+Shift+U");

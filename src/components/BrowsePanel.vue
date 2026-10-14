@@ -19,6 +19,7 @@ import { parseStatements } from "@/shell/parse";
 import { useConnectionsStore } from "@/stores/connections";
 import { STAGE_NAMES, browseStatement, useTabsStore } from "@/stores/tabs";
 import type { Stage, StageName } from "@/stores/tabs";
+import { useKeymap } from "@/keys/keymap";
 
 /** A collection: the fields of its query above, the documents below. */
 const props = defineProps<{
@@ -26,6 +27,7 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
+const keymap = useKeymap();
 const { report } = useMessages();
 const notifications = useNotifications();
 const { layout } = useLayout();
@@ -146,7 +148,7 @@ function openInShell() {
                     @click="tabs.runBrowse(tab)"
                     :disabled="tab.running"
                     :icon="tab.running ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-play'"
-                    :label="`${$t('query.run')} (F5)`"
+                    :label="keymap.titled($t('query.run'), 'query.run')"
                     data-testid="query-run"
                     tint="text-success"
                 >

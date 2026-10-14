@@ -21,6 +21,7 @@ import { aggregateStatement, keepsDocuments, newStage, optionsOf, pipelineText, 
 import type { PipelineStage } from "@/shell/pipeline";
 import { collectFields, useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
+import { useKeymap } from "@/keys/keymap";
 
 /** The aggregation builder: the stages of a pipeline as rows above, the result below. */
 const props = defineProps<{
@@ -31,6 +32,7 @@ const props = defineProps<{
 const MAX_LINES = 14;
 
 const { t } = useI18n();
+const keymap = useKeymap();
 const { report } = useMessages();
 const notifications = useNotifications();
 const dialogs = useDialogs();
@@ -210,7 +212,7 @@ function createView() {
                     @click="tabs.runAggregate(tab)"
                     :disabled="tab.running"
                     :icon="tab.running ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-play'"
-                    :label="`${$t('query.run')} (F5)`"
+                    :label="keymap.titled($t('query.run'), 'query.run')"
                     data-testid="query-run"
                     tint="text-success"
                 >
