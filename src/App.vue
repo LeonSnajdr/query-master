@@ -10,6 +10,7 @@ import BrowsePanel from "@/components/BrowsePanel.vue";
 import ConnectionDock from "@/components/ConnectionDock.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import IconButton from "@/components/IconButton.vue";
+import ServerPanel from "@/components/server/ServerPanel.vue";
 import ShellPanel from "@/components/ShellPanel.vue";
 import StartPage from "@/components/StartPage.vue";
 import { useActions } from "@/composables/actions";
@@ -20,6 +21,7 @@ import { appWindow } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
+import { isQueryTab } from "@/stores/tabs";
 import type { ResultView, WorkTab } from "@/stores/tabs";
 
 watchAppearance();
@@ -33,7 +35,7 @@ const tabs = useTabsStore();
 const dock = useTemplateRef("dock");
 const tabMenu = useTemplateRef("tabMenu");
 
-const TAB_ICONS = { start: "i-lucide-info", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal" } as const;
+const TAB_ICONS = { start: "i-lucide-info", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", server: "i-lucide-activity" } as const;
 
 /** TabsRoot wants a value; an empty one while no tab is open. */
 const activeTab = computed({
@@ -43,6 +45,7 @@ const activeTab = computed({
 
 function titleOf(tab: WorkTab): string {
     if (tab.kind === "start") return t("start.title");
+    if (tab.kind === "server") return t(`server.tab.${tab.page ?? "status"}`, { name: connections.profiles.find(item => item.id === tab.connectionId)?.name ?? "" });
     return tab.kind === "browse" ? tab.collection ?? "" : tab.database;
 }
 
@@ -60,7 +63,7 @@ function openTabMenu(event: MouseEvent, tab: WorkTab) {
         { label: t("tab.next"), hotkey: "Ctrl + Tab", action: () => tabs.step(1) },
         { label: t("tab.previous"), hotkey: "Ctrl + Shift + Tab", action: () => tabs.step(-1) },
         "separator",
-        { label: t("tab.duplicate"), hotkey: "Ctrl + Shift + T", action: () => tabs.duplicate(tab), disabled: tab.kind === "start" },
+        { label: t("tab.duplicate"), hotkey: "Ctrl + Shift + T", action: () => tabs.duplicate(tab), disabled: !isQueryTab(tab) },
         "separator",
         { label: t("tab.close.current"), hotkey: "Ctrl + W", action: () => tabs.close(tab.id) },
         { label: t("tab.close.others"), hotkey: "Ctrl + Shift + W", action: () => tabs.closeOthers(tab.id) },
@@ -70,7 +73,7 @@ function openTabMenu(event: MouseEvent, tab: WorkTab) {
 }
 
 function setView(view: ResultView) {
-    if (tabs.active && tabs.active.kind !== "start") tabs.active.view = view;
+    if (isQueryTab(tabs.active)) tabs.active.view = view;
 }
 
 function withActive(action: (tab: WorkTab) => void) {
@@ -101,8 +104,8 @@ useHotkey("alt+1", () => setView("tree"), everywhere);
 useHotkey("alt+2", () => setView("table"), everywhere);
 useHotkey("alt+3", () => setView("json"), everywhere);
 // Without these the web view would reload the app.
-useHotkey("ctrl+r", () => withActive(tab => tab.kind !== "start" && void tabs.refresh(tab)), everywhere);
-useHotkey("f5", () => withActive(tab => tab.kind !== "start" && void tabs.runTab(tab)));
+useHotkey("ctrl+r", () => withActive(tab => isQueryTab(tab) && void tabs.refresh(tab)), everywhere);
+useHotkey("f5", () => withActive(tab => isQueryTab(tab) && void tabs.runTab(tab)));
 
 onMounted(async () => {
     tabs.openStart();
@@ -247,6 +250,10 @@ onMounted(async () => {
                     <BrowsePanel
                         v-else-if="tab.kind === 'browse'"
                         :tabId="tab.id"
+                    />
+                    <ServerPanel
+                        v-else-if="tab.kind === 'server'"
+                        :tab
                     />
                     <ShellPanel
                         v-else

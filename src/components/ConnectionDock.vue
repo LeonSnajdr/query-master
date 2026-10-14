@@ -83,7 +83,8 @@ const manageEntries = computed<MenuEntry[]>(() => [
     { label: t("collection.stats"), action: () => actions.collectionStats(), disabled: !actions.hasCollection.value },
     { label: t("database.stats"), action: () => actions.databaseStats(), disabled: !actions.hasDatabase.value },
     { label: t("database.collectionsStats"), action: () => actions.collectionsStats(), disabled: !actions.hasDatabase.value },
-    { label: t("connection.status"), action: () => actions.serverStatus(), disabled: !actions.hasConnection.value }
+    { label: t("connection.status"), icon: "i-lucide-activity", action: () => actions.serverStatus(), disabled: !actions.hasConnection.value },
+    { label: t("connection.log"), icon: "i-lucide-scroll-text", action: () => actions.serverLog(), disabled: !actions.hasConnection.value }
 ]);
 
 /** Keys on a focused row act on the selected one: Del drops, Ctrl+C copies, Ctrl+V pastes. */
@@ -185,7 +186,8 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(at) },
             "separator",
-            { label: t("connection.status"), action: () => actions.serverStatus(at) },
+            { label: t("connection.status"), icon: "i-lucide-activity", action: () => actions.serverStatus(at) },
+            { label: t("connection.log"), icon: "i-lucide-scroll-text", action: () => actions.serverLog(at) },
             "separator",
             { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void actions.refresh(at) },
             "separator",

@@ -20,8 +20,10 @@ const UNPAGED_LIMIT = 10_000;
 const STRUCTURE_COMMANDS = ["create", "drop", "dropDatabase", "renameCollection"];
 
 export type ResultView = "tree" | "table" | "json";
-/** The start page, a collection with its query fields, or a shell. */
-export type TabKind = "start" | "browse" | "shell";
+/** The start page, a collection with its query fields, a shell, or a page about the server. */
+export type TabKind = "start" | "browse" | "shell" | "server";
+/** What a server tab shows. */
+export type ServerPage = "status" | "log";
 export type StageName = "filter" | "projection" | "sort" | "skip" | "limit";
 /** The stages a browse tab can show, in the order they apply. */
 export const STAGE_NAMES: StageName[] = ["filter", "projection", "sort", "skip", "limit"];
@@ -73,6 +75,13 @@ export interface WorkTab {
     output?: string;
     /** The script that is running, to stop it. */
     runId?: string;
+    /** Server tabs: what they show. */
+    page?: ServerPage;
+}
+
+/** Tabs with a query or a script, results and a result view. */
+export function isQueryTab(tab: WorkTab | undefined): tab is WorkTab {
+    return tab?.kind === "browse" || tab?.kind === "shell";
 }
 
 /** A failed write the server reports in a reply that is otherwise fine. */
@@ -155,8 +164,18 @@ export const useTabsStore = defineStore("tabs", () => {
         return create("shell", { connectionId: target.connectionId, database: target.database, text });
     }
 
+    /** The status or the log of a server; a tab that shows it already comes to the front. */
+    function openServer(connectionId: string, page: ServerPage): WorkTab {
+        const existing = tabs.value.find(tab => tab.kind === "server" && tab.connectionId === connectionId && tab.page === page);
+        if (existing) {
+            activeId.value = existing.id;
+            return existing;
+        }
+        return create("server", { connectionId, database: "admin", page });
+    }
+
     function duplicate(tab: WorkTab): void {
-        if (tab.kind === "start") return;
+        if (!isQueryTab(tab)) return;
         const copy = create(tab.kind, {
             connectionId: tab.connectionId,
             database: tab.database,
@@ -430,7 +449,7 @@ export const useTabsStore = defineStore("tabs", () => {
 
     return {
         tabs, activeId, active, historyOf, clearHistory,
-        openStart, openBrowse, openShell, duplicate, close, closeOthers, closeAll, closeConnection, step,
+        openStart, openBrowse, openShell, openServer, duplicate, close, closeOthers, closeAll, closeConnection, step,
         run, stop, runBrowse, runTab, showPage, refresh, count, sourceCollection, editable, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField
     };

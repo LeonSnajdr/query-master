@@ -273,6 +273,28 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.getByText(`Copied to ${COLLECTION}_copy: 3 documents, 0 indexes.`).first().waitFor();
     });
 
+    await step("the server status and the server log open as tabs of their own", async () => {
+        await id("connection-row").first().click({ button: "right" });
+        await chooseMenu("Server status");
+        const connectionsShown = page.locator("[data-testid=status-connections]:visible");
+        await connectionsShown.waitFor();
+        assert.match(await connectionsShown.innerText(), /^\d/);
+        await visible("running-operations").waitFor();
+        await page.keyboard.press("Control+w");
+
+        await id("connection-row").first().click({ button: "right" });
+        await chooseMenu("Server log");
+        const lines = page.locator("[data-testid=log-line]:visible");
+        await lines.first().waitFor();
+        await visible("log-search").fill("connection");
+        await lines.first().waitFor();
+        await visible("log-search").fill("no line holds this text 4711");
+        await lines.first().waitFor({ state: "detached" });
+        await page.keyboard.press("Control+w");
+        // Closed, the tab before comes back: the collection of the steps before.
+        await visible("browse-title").waitFor();
+    });
+
     await step("filter and sort narrow and order the result", async () => {
         const rows = panel.locator("[data-testid=stage-row]");
         await write(rows.nth(0), "{ n: { $gte: 2 } }");

@@ -8,7 +8,7 @@ import { useAppearance } from "@/composables/appearance";
 import { appWindow } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { THEMES } from "@/plugins/vuetify";
-import { useTabsStore } from "@/stores/tabs";
+import { isQueryTab, useTabsStore } from "@/stores/tabs";
 import type { ResultView } from "@/stores/tabs";
 
 const emit = defineEmits<{
@@ -23,7 +23,7 @@ const tabs = useTabsStore();
 const { theme, language, setTheme, setLanguage } = useAppearance();
 
 const hasTab = computed(() => tabs.active !== undefined);
-const hasQueryTab = computed(() => tabs.active !== undefined && tabs.active.kind !== "start");
+const hasQueryTab = computed(() => isQueryTab(tabs.active));
 
 function view(name: ResultView, hotkey: string): MenuEntry {
     return {
@@ -31,7 +31,7 @@ function view(name: ResultView, hotkey: string): MenuEntry {
         hotkey,
         checked: tabs.active?.view === name && hasQueryTab.value,
         disabled: !hasQueryTab.value,
-        action: () => tabs.active && (tabs.active.view = name)
+        action: () => isQueryTab(tabs.active) && (tabs.active.view = name)
     };
 }
 

@@ -29,7 +29,16 @@ export default defineConfig({
         // Label and field side by side connection dialog.
         "form-grid": "grid grid-cols-[9.5rem_1fr] items-center gap-x-4 gap-y-2",
         "switch-track": "w-8 h-4.5 flex items-center px-0.5 rounded-full bg-on-surface/20 data-[state=checked]:bg-primary/70",
-        "switch-thumb": "size-3.5 rounded-full bg-on-surface-strong transition-transform data-[state=checked]:translate-x-3.5"
+        "switch-thumb": "size-3.5 rounded-full bg-on-surface-strong transition-transform data-[state=checked]:translate-x-3.5",
+        // Figures of the server status: a label, the value, a note below it.
+        "stat-card": "flex flex-col gap-0.5 px-3 py-2.5 rounded-sm border border-divider",
+        "stat-label": "text-[12px] text-on-surface-variant",
+        "stat-value": "text-[18px] text-on-surface-strong tabular-nums",
+        "stat-note": "min-h-4 text-[11.5px] text-on-surface-variant",
+        // Plain tables of the server pages.
+        "plain-table": "w-full border-collapse text-[12.5px]",
+        "plain-head": "py-0.5 pr-3 text-left font-normal text-on-surface-variant whitespace-nowrap",
+        "plain-cell": "py-0.5 pr-3 border-t border-divider align-top"
     },
     preflights: [
         {

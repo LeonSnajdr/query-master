@@ -10,7 +10,7 @@ import { toShell } from "@/shell/ejson";
 import { replyError } from "@/shell/plan";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
-import { useTabsStore } from "@/stores/tabs";
+import { isQueryTab, useTabsStore } from "@/stores/tabs";
 
 /** The script behind "Collections statistics"; views have no storage and are left out. */
 const COLLECTIONS_STATS = `// Sizes in bytes, as the server counts them.
@@ -42,7 +42,8 @@ export function useActions() {
     const target = computed<TreeSelection | undefined>(() => {
         if (connections.selected) return connections.selected;
         const tab = tabs.active;
-        return tab && tab.kind !== "start" ? { connectionId: tab.connectionId, database: tab.database, collection: tab.collection } : undefined;
+        if (tab?.kind === "server") return { connectionId: tab.connectionId };
+        return isQueryTab(tab) ? { connectionId: tab.connectionId, database: tab.database, collection: tab.collection } : undefined;
     });
     const hasConnection = computed(() => target.value !== undefined && connections.sessions[target.value.connectionId] !== undefined);
     const hasDatabase = computed(() => hasConnection.value && target.value?.database !== undefined);
@@ -103,7 +104,11 @@ export function useActions() {
     }
 
     function serverStatus(at = target.value) {
-        if (at) inspect(at, "admin", "db.serverStatus()");
+        if (at) tabs.openServer(at.connectionId, "status");
+    }
+
+    function serverLog(at = target.value) {
+        if (at) tabs.openServer(at.connectionId, "log");
     }
 
     function indexes(at = target.value) {
@@ -258,7 +263,7 @@ export function useActions() {
 
     return {
         target, hasConnection, hasDatabase, hasCollection,
-        openShell, browse, aggregation, collectionStats, databaseStats, collectionsStats, serverStatus, indexes,
+        openShell, browse, aggregation, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         refresh, connect, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
