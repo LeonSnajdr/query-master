@@ -460,7 +460,12 @@ export const useTabsStore = defineStore("tabs", () => {
         const plan = tab.plan;
         const collection = sourceCollection(tab);
         if (!plan || collection === undefined || plan.command.find === undefined) return undefined;
-        const pipeline: Json[] = [{ $match: plan.command.filter ?? {} }, { $group: { _id: 1, n: { $sum: 1 } } }];
+        const filter = plan.command.filter ?? {};
+        // Without a filter the collection's own count answers at once, instead of reading every document.
+        if (isDoc(filter) && Object.keys(filter).length === 0 && plan.command.skip === undefined && plan.command.limit === undefined) {
+            return toNumber((await backend.runCommand(tab.connectionId, plan.database, { count: collection })).n) ?? 0;
+        }
+        const pipeline: Json[] = [{ $match: filter }, { $group: { _id: 1, n: { $sum: 1 } } }];
         const page = await backend.runCursorCommand(tab.connectionId, plan.database, { aggregate: collection, pipeline, cursor: {} }, 1);
         return toNumber(page.documents[0]?.n) ?? 0;
     }
