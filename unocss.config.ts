@@ -25,7 +25,11 @@ export default defineConfig({
         "btn-ghost": "btn-base text-on-surface-strong hover:bg-surface-variant",
         "dialog": "m-auto w-[min(92vw,34rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-md bg-dock text-on-surface border border-divider p-5 shadow-2xl backdrop:bg-black/45",
         "dialog-title": "m-0 text-[17px] font-normal text-on-surface-strong",
-        "field": "h-8 px-2.5 rounded-sm bg-background border border-divider outline-none focus:border-primary text-[13px] text-on-surface-strong"
+        "field": "h-8 px-2.5 rounded-sm bg-background border border-divider outline-none focus:border-primary text-[13px] text-on-surface-strong",
+        // Label and field side by side connection dialog.
+        "form-grid": "grid grid-cols-[9.5rem_1fr] items-center gap-x-4 gap-y-2",
+        "switch-track": "w-8 h-4.5 flex items-center px-0.5 rounded-full bg-on-surface/20 data-[state=checked]:bg-primary/70",
+        "switch-thumb": "size-3.5 rounded-full bg-on-surface-strong transition-transform data-[state=checked]:translate-x-3.5"
     },
     preflights: [
         {

@@ -74,7 +74,14 @@ try {
     await step("a connection is tested and saved", async () => {
         await id("start-create").click();
         await id("connection-name").fill(NAME);
-        await id("connection-uri").fill(uri);
+        // The fields come from the string, through "From URI".
+        await id("connection-from-uri").click();
+        await id("prompt-input").fill(uri);
+        await id("prompt-submit").click();
+        await id("connection-tab-auth").click();
+        assert.ok((await id("connection-username").inputValue()).length > 0, "the user was not taken from the string");
+        await id("connection-tab-basic").click();
+        assert.equal(await id("connection-host").inputValue(), "localhost");
         await id("connection-test").click();
         await page.locator("[data-testid=connection-notice]", { hasText: "MongoDB" }).waitFor();
         await id("connection-save").click();

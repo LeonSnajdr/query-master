@@ -104,6 +104,7 @@ onMounted(async () => {
     tabs.openStart();
     await connections.load().catch(report);
     // For work on the interface in a browser: `?demo` opens a collection of the made-up data right away.
+    if (import.meta.env.DEV && !inApp && location.search.includes("dialog")) actions.newConnection();
     if (import.meta.env.DEV && !inApp && location.search.includes("demo")) {
         const [profile] = connections.profiles;
         if (!profile) return;

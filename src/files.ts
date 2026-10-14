@@ -28,6 +28,13 @@ export async function openTextFile(kind: FileKind): Promise<string | undefined> 
     });
 }
 
+/** Lets the user pick a file and returns its path; `undefined` when they cancel or outside the app. */
+export async function pickFilePath(): Promise<string | undefined> {
+    if (!inApp) return undefined;
+    const path = await open({ multiple: false });
+    return typeof path === "string" ? path : undefined;
+}
+
 /** Lets the user pick where to save and writes the text there; `false` when they cancel. */
 export async function saveTextFile(suggestedName: string, kind: FileKind, text: string): Promise<boolean> {
     if (inApp) {
