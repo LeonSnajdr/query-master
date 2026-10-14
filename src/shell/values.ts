@@ -1,12 +1,13 @@
 /**
- * Values of a field the editor can suggest, as DataGrip does: only from documents the app has
- * already read (the sample for the fields, the result on screen), never with a query of its own.
- * Each place that knows documents is a `ValueSource`; more can be added later (the enum of a JSON
- * schema validator, a `$group` on demand …, see `docs/roadmap/16-werte.md`).
+ * Values of a field the editor can suggest. By themselves, as DataGrip does, only from documents
+ * the app has already read (the sample for the fields, the result on screen); a search of all
+ * data (`searchCommand`) runs only when asked for. Each place that knows values is a
+ * `ValueSource`; more can be added later (see `docs/roadmap/16-werte.md`).
  */
-import { isDoc, preview, scalar } from "./ejson";
+import { isDoc, preview, scalar, toNumber } from "./ejson";
 import type { Doc, Json } from "./ejson";
 import { ShellError } from "./message";
+import type { Message } from "./message";
 import { parseValue } from "./parse";
 
 /** A value seen in a field, and how often. */
@@ -20,6 +21,23 @@ export type ValueSource = (collection: string, field: string) => ValueHint[] | u
 
 /** Values per dotted field path, as `collectValues` counts them. */
 export type ValueIndex = Map<string, ValueHint[]>;
+
+/** A search of all data for the values of a field, while it runs and after. */
+export interface ValueSearch {
+    running: boolean;
+    hints: ValueHint[];
+    /** There were more values than the search keeps. */
+    truncated: boolean;
+    /** Searching everything took too long: the values are those of a sample. */
+    sampled: boolean;
+    error?: string | Message;
+}
+
+/** Runs searches of all data, for the editor; `prefix` is the text typed in the string so far. */
+export interface ValueSearcher {
+    state: (collection: string, field: string, prefix: string) => ValueSearch | undefined;
+    run: (collection: string, field: string, prefix: string) => Promise<ValueSearch>;
+}
 
 /** Values kept per field; a field with more is likely an id or a name, not a choice. */
 const MAX_VALUES = 100;
@@ -36,9 +54,9 @@ function suggestible(value: Json): boolean {
     return leaf?.type === "int" || leaf?.type === "long" || leaf?.type === "double" || leaf?.type === "decimal";
 }
 
-/** A key that tells two values apart: the same string and the same number count together. */
+/** A key that tells two values apart: the same string and the same number count together, however written. */
 function identity(value: Json): string {
-    return JSON.stringify(value);
+    return scalar(value)?.text ?? JSON.stringify(value);
 }
 
 /** Counts the values of the fields of the documents, also of documents and values in arrays. */
@@ -78,6 +96,28 @@ export function collectValues(documents: Json[]): ValueIndex {
     return index;
 }
 
+/** The values of `primary`, then those of `secondary` it does not have. */
+export function preferValues(primary: ValueSource, secondary: ValueSource): ValueSource {
+    return (collection, field) => {
+        const first = primary(collection, field) ?? [];
+        const known = new Set(first.map(hint => identity(hint.value)));
+        return [...first, ...(secondary(collection, field) ?? []).filter(hint => !known.has(identity(hint.value)))];
+    };
+}
+
+/** The values of several searches of one field (with different prefixes) as one list, each value once. */
+export function combineSearches(searches: ValueSearch[]): ValueHint[] {
+    const combined = new Map<string, ValueHint>();
+    for (const search of searches) {
+        for (const hint of search.hints) {
+            const key = identity(hint.value);
+            // A search with a longer prefix finds the same value with the same count.
+            if ((combined.get(key)?.count ?? -1) < hint.count) combined.set(key, hint);
+        }
+    }
+    return [...combined.values()].sort((a, b) => b.count - a.count);
+}
+
 /** The values of all sources together, counted together, the most frequent first. */
 export function mergeValues(sources: ValueSource[]): ValueSource {
     return (collection, field) => {
@@ -92,6 +132,47 @@ export function mergeValues(sources: ValueSource[]): ValueSource {
         }
         return [...merged.values()].sort((a, b) => b.count - a.count);
     };
+}
+
+/** Values a search of all data keeps; it asks for one more to tell that there were more. */
+export const SEARCH_LIMIT = 100;
+/** How long the server may search, in milliseconds; then the search looks at a sample instead. */
+export const SEARCH_TIME = 2000;
+/** Documents that sample holds. */
+export const SEARCH_SAMPLE = 5000;
+
+function startsWith(prefix: string): Doc {
+    return { $regex: `^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}` };
+}
+
+/**
+ * The search of all documents of a collection for the values of a field, the most frequent first.
+ * With `prefix` only strings that start with it (an index on the field serves that); with
+ * `sample` only in a random part of the collection, after a search of everything took too long.
+ * Values in arrays count one by one, as a filter matches them.
+ */
+export function searchCommand(collection: string, field: string, prefix: string, sample = false): Doc {
+    const pipeline: Json[] = [
+        ...(sample ? [{ $sample: { size: SEARCH_SAMPLE } }] : []),
+        { $match: { [field]: prefix ? startsWith(prefix) : { $exists: true } } },
+        { $project: { _id: 0, v: `$${field}` } },
+        { $unwind: "$v" },
+        // In an array that matched, other elements need not start with the text.
+        ...(prefix ? [{ $match: { v: startsWith(prefix) } }] : []),
+        { $group: { _id: "$v", n: { $sum: 1 } } },
+        { $sort: { n: -1, _id: 1 } },
+        { $limit: SEARCH_LIMIT + 1 }
+    ];
+    return { aggregate: collection, pipeline, cursor: {}, maxTimeMS: SEARCH_TIME };
+}
+
+/** The values a search found, and whether there were more than it keeps. */
+export function searchHints(documents: Json[]): { hints: ValueHint[]; truncated: boolean } {
+    const hints = documents
+        .filter(isDoc)
+        .map(document => ({ value: document._id ?? null, count: toNumber(document.n) ?? 0 }))
+        .filter(hint => suggestible(hint.value));
+    return { hints: hints.slice(0, SEARCH_LIMIT), truncated: documents.length > SEARCH_LIMIT };
 }
 
 /**

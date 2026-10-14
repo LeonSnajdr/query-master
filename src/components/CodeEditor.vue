@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { autocompletion, closeBrackets, closeBracketsKeymap, completeFromList, completionKeymap, snippet } from "@codemirror/autocomplete";
+import { autocompletion, closeBrackets, closeBracketsKeymap, completeFromList, completionKeymap, completionStatus, snippet, startCompletion } from "@codemirror/autocomplete";
 import type { Completion, CompletionContext, CompletionResult, CompletionSource } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { javascript, localCompletionSource, snippets } from "@codemirror/lang-javascript";
 import { sql } from "@codemirror/lang-sql";
 import { HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
-import { Compartment, EditorState } from "@codemirror/state";
+import { Compartment, EditorState, Prec } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
@@ -13,7 +13,7 @@ import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
 import { useMessages } from "@/composables/messages";
 import { codeMirrorKey } from "@/keys/hotkey";
 import { useKeymap } from "@/keys/keymap";
-import { scriptPlace, suggest } from "@/shell/complete";
+import { scriptPlace, suggest, valuePlace } from "@/shell/complete";
 import type { Environment, Suggestion, SuggestionType } from "@/shell/complete";
 
 const emit = defineEmits<{
@@ -52,7 +52,7 @@ function runKeymap(): Extension {
 function languageExtension(): Extension {
     return props.sqlSchema ? sql({ schema: props.sqlSchema, upperCaseKeywords: true }) : javascript();
 }
-const { say } = useMessages();
+const { say, report } = useMessages();
 const host = useTemplateRef<HTMLDivElement>("host");
 let view: EditorView | undefined;
 
@@ -105,6 +105,60 @@ const completeVariables: CompletionSource = context => (scriptPlaceAt(context) ?
 /** Keywords where a statement starts. */
 const completeStatement: CompletionSource = context => (scriptPlaceAt(context) === "statement" ? completeKeywords(context) : null);
 
+/** The value of a field at `position`, where the editor can search all data for values. */
+function searchPlace(state: EditorState, position: number) {
+    if (!props.environment?.search) return undefined;
+    return valuePlace((props.prefix ?? "") + state.sliceDoc(0, position));
+}
+
+/** Searches all data for the values of the field at the cursor; the list shows them when found. */
+function searchAll(view: EditorView): boolean {
+    const search = props.environment?.search;
+    const place = searchPlace(view.state, view.state.selection.main.head);
+    if (!search || !place) return false;
+    const reopen = () => {
+        if (view.hasFocus) startCompletion(view);
+    };
+    void search.run(place.collection, place.field, place.prefix).then(reopen, report);
+    // At once "Searching …"; the list was just closed by choosing the entry.
+    void Promise.resolve().then(reopen);
+    return true;
+}
+
+/**
+ * The last entry of the list where a value of a field stands: search all data. Shown with what is
+ * known already, or alone when asked for with Ctrl+Space. It replaces nothing (`from` is the
+ * cursor), so whatever is typed, it is never filtered away.
+ */
+const completeSearch: CompletionSource = (context) => {
+    const search = props.environment?.search;
+    const place = searchPlace(context.state, context.pos);
+    if (!search || !place) return null;
+    const known = props.environment?.values?.(place.collection, place.field)?.length ?? 0;
+    if (!context.explicit && known === 0) return null;
+    const state = search.state(place.collection, place.field, place.prefix);
+    let label = place.prefix ? say({ key: "complete.search.prefix", params: { text: place.prefix } }) : say({ key: "complete.search.all" });
+    if (state?.running) label = say({ key: "complete.search.running" });
+    else if (state) label = say({ key: "complete.search.again" });
+    let detail = say({ key: "complete.search.keys" });
+    if (state?.error) detail = say({ key: "complete.search.failed" });
+    else if (state?.sampled) detail = say({ key: "complete.search.sampled" });
+    else if (state?.truncated) detail = say({ key: "complete.search.truncated", params: { count: state.hints.length } });
+    else if (state && !state.running) detail = say({ key: "complete.search.found", params: { count: state.hints.length } });
+    return {
+        from: context.pos,
+        options: [{
+            label,
+            detail,
+            info: state?.error ? say(state.error) : say({ key: "complete.search.info" }),
+            type: "text",
+            // Last, so it is never chosen by a plain Enter; a line above it sets it apart (theme).
+            boost: -99,
+            apply: view => void (state?.running || searchAll(view))
+        }]
+    };
+};
+
 function selected(state: EditorState): string {
     const range = state.selection.main;
     return state.sliceDoc(range.from, range.to);
@@ -151,6 +205,7 @@ const theme = EditorView.theme({
     ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "var(--v0-primary)", color: "var(--v0-on-primary)" },
     ".cm-completionDetail": { marginLeft: "1em", opacity: "0.7", fontStyle: "normal", fontSize: "0.85em" },
     ".cm-completionInfo": { padding: "6px 10px", maxWidth: "22rem", fontFamily: "\"Open Sans\", system-ui, sans-serif" },
+    ".cm-tooltip-autocomplete ul li:has(.cm-completionIcon-text)": { borderTop: "1px solid var(--v0-divider)" },
     ".cm-snippetField": { backgroundColor: "color-mix(in srgb, var(--v0-primary) 18%, transparent)" }
 });
 
@@ -171,9 +226,12 @@ function extensions(): Extension[] {
         history(),
         indentOnInput(),
         closeBrackets(),
+        // Ctrl+Space again, with the list open at a value: search all data. Ahead of the list's own
+        // keys (also of the highest precedence, so the order decides), which take it to open the list.
+        Prec.highest(keymap.of([{ key: "Ctrl-Space", run: target => completionStatus(target.state) === "active" && searchAll(target) }])),
         // SQL completes from its language (keywords, schema); shell code from the shell's catalog,
         // and a script also with its own variables and the JavaScript keywords.
-        props.sqlSchema ? autocompletion({ icons: true }) : autocompletion({ override: [complete, completeVariables, completeStatement], icons: true }),
+        props.sqlSchema ? autocompletion({ icons: true }) : autocompletion({ override: [complete, completeVariables, completeStatement, completeSearch], icons: true }),
         // Before the default keys, so Ctrl+Enter is not taken as "new line below".
         runKeys.of(runKeymap()),
         keymap.of([

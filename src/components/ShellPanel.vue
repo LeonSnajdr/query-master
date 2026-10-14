@@ -9,7 +9,7 @@ import ReadonlyToggle from "@/components/ReadonlyToggle.vue";
 import ResultsPanel from "@/components/results/ResultsPanel.vue";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
-import { useValueSources } from "@/composables/values";
+import { useValueSearch, useValueSources } from "@/composables/values";
 import { SCRIPT_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
 import type { Environment } from "@/shell/complete";
@@ -46,6 +46,7 @@ const databases = computed<MenuEntry[]>(() => {
 });
 
 const values = useValueSources(() => tab.value);
+const search = useValueSearch(() => tab.value);
 
 /** What the editor completes with; read anew on every request for suggestions. */
 const environment = computed<Environment>(() => ({
@@ -53,7 +54,8 @@ const environment = computed<Environment>(() => ({
     databases: databases.value.map(entry => (entry === "separator" ? "" : entry.label)),
     collections: connections.collectionsOf(tab.value.connectionId, tab.value.database),
     fields: collection => connections.fieldsOf(tab.value.connectionId, tab.value.database, collection),
-    values
+    values,
+    search
 }));
 
 /** "Run": the selected text if there is one, else the whole script. */

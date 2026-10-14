@@ -12,7 +12,7 @@ import ResultsPanel from "@/components/results/ResultsPanel.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
-import { useValueSources } from "@/composables/values";
+import { useValueSearch, useValueSources } from "@/composables/values";
 import type { MenuEntry } from "@/menu";
 import { STAGES } from "@/shell/catalog";
 import type { Environment } from "@/shell/complete";
@@ -58,13 +58,15 @@ const wholeStatement = () => aggregateStatement(collection.value, stages.value, 
 const currentIndex = computed(() => stages.value.findIndex(stage => stage.id === current.value));
 
 const values = useValueSources(() => tab.value);
+const search = useValueSearch(() => tab.value);
 
 const environment = computed<Environment>(() => ({
     serverVersion: connections.sessions[tab.value.connectionId]?.version,
     databases: connections.sessions[tab.value.connectionId]?.databases.map(database => database.name) ?? [],
     collections: connections.collectionsOf(tab.value.connectionId, tab.value.database),
     fields: name => connections.fieldsOf(tab.value.connectionId, tab.value.database, name),
-    values
+    values,
+    search
 }));
 
 /** Fields the pipeline gives up to a point, per pipeline text; read from a sample when first asked. */
@@ -110,7 +112,7 @@ function environmentAt(stage: PipelineStage): Environment {
     const position = stages.value.indexOf(stage);
     // Values are those of the collection only while the stages before keep its documents.
     const before = stages.value.slice(0, position).filter(item => item.enabled && !WRITING_STAGES.includes(item.operator));
-    return { ...environment.value, fields: () => fieldsAt(position), values: keepsDocuments(before) ? values : undefined };
+    return { ...environment.value, fields: () => fieldsAt(position), ...(keepsDocuments(before) ? {} : { values: undefined, search: undefined }) };
 }
 
 /** What a stage's text continues, so the editor suggests the keys and operators of that stage. */

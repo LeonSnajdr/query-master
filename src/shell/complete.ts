@@ -10,7 +10,7 @@ import type { Message } from "./message";
 import { chainTarget, cursorContext } from "./context";
 import type { CursorContext, Target } from "./context";
 import { filterField } from "./values";
-import type { ValueHint, ValueSource } from "./values";
+import type { ValueHint, ValueSearcher, ValueSource } from "./values";
 
 export type SuggestionType = "method" | "collection" | "database" | "field" | "operator" | "stage" | "option" | "value" | "variable";
 
@@ -46,6 +46,17 @@ export interface Environment {
     fields: (collection: string) => string[];
     /** Values seen in a field of a collection, the most frequent first; see `values.ts`. */
     values?: ValueSource;
+    /** Searches all data for the values of a field, when asked (the last entry of the list). */
+    search?: ValueSearcher;
+}
+
+/** A value of a field where the cursor is: in which collection, and the text typed in its string. */
+export interface ValuePlace {
+    collection: string;
+    field: string;
+    /** What is typed in the string so far; empty outside a string. */
+    prefix: string;
+    inString: boolean;
 }
 
 const PLAIN_NAME = /^[A-Za-z_$][\w$]*$/;
@@ -243,6 +254,20 @@ function valueField(target: Target | undefined, argument: number, path: string[]
     return undefined;
 }
 
+function placeIn(context: CursorContext): ValuePlace | undefined {
+    if (context.kind !== "value" && context.kind !== "string") return undefined;
+    const target = chainTarget([...context.chain, { call: true }], context.variables);
+    const field = valueField(target, context.argument, context.key === undefined ? context.path : [...context.path, context.key]);
+    if (field === undefined || !target?.collection) return undefined;
+    const inString = context.kind === "string";
+    return { collection: target.collection, field, prefix: inString ? context.word : "", inString };
+}
+
+/** The value of a field at the end of the text, for the search of all data; `undefined` elsewhere. */
+export function valuePlace(text: string): ValuePlace | undefined {
+    return placeIn(cursorContext(text));
+}
+
 /** A value as a suggestion: strings without quotes in the list, with them when inserted outside a string. */
 function valueSuggestion(hint: ValueHint, rank: number, inString: boolean): Suggestion {
     const text = typeof hint.value === "string" ? hint.value : scalar(hint.value)?.text ?? "";
@@ -278,12 +303,12 @@ export function suggest(text: string, environment: Environment): Suggestions | u
     });
     const keySuffix = context.quoted ? "" : ": ";
     /** Values of the field the cursor is at, as far as the sources know them. */
-    const valuesHere = (inString: boolean): Suggestion[] => {
-        const field = valueField(target, context.argument, context.key === undefined ? context.path : [...context.path, context.key]);
-        if (field === undefined || !target?.collection || !environment.values) return [];
-        return (environment.values(target.collection, field) ?? [])
-            .filter(hint => !inString || typeof hint.value === "string")
-            .map((hint, rank) => valueSuggestion(hint, rank, inString));
+    const valuesHere = (): Suggestion[] => {
+        const place = placeIn(context);
+        if (!place || !environment.values) return [];
+        return (environment.values(place.collection, place.field) ?? [])
+            .filter(hint => !place.inString || typeof hint.value === "string")
+            .map((hint, rank) => valueSuggestion(hint, rank, place.inString));
     };
     const fieldsOf = (collection: string | undefined) => (collection ? environment.fields(collection) : []);
 
@@ -334,7 +359,7 @@ export function suggest(text: string, environment: Environment): Suggestions | u
         else if (context.word.startsWith("$")) names(fieldsOf(target?.collection).map(field => `$${field}`), "field");
         else if (target?.method === "distinct" && context.argument === 0) names(fieldsOf(target.collection), "field");
         else if (context.key !== undefined && FIELD_KEYS.includes(context.key)) names(fieldsOf(target?.collection), "field");
-        else options.push(...valuesHere(true));
+        else options.push(...valuesHere());
         if (options.length === 0) return undefined;
         return { from: context.from, options, auto: true };
     }
@@ -344,7 +369,7 @@ export function suggest(text: string, environment: Environment): Suggestions | u
             // An empty line, or the start of a statement: `db`, then what else a script has.
             options.push({ label: "db", type: "value", boost: 20 }, ...SCRIPT_GLOBALS.map(entry => snippetOf(entry, "value", 10)));
         }
-        options.push(...valuesHere(false), ...BSON_HELPERS.map(entry => snippetOf(entry, "value")));
+        options.push(...valuesHere(), ...BSON_HELPERS.map(entry => snippetOf(entry, "value")));
         return { from: context.from, options, auto: context.word !== "" };
     }
 

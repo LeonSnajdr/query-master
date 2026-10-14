@@ -1,5 +1,5 @@
 import type { Backend, Profile, Setting, TreeFolder, TreeNote } from "./api";
-import { toNumber } from "./shell/ejson";
+import { isDoc, toNumber } from "./shell/ejson";
 import type { Doc, Json } from "./shell/ejson";
 
 /**
@@ -52,6 +52,30 @@ const ORDERS = Array.from({ length: 137 }, (_, index) => order(index));
 function pipelineSkip(pipeline: Json[]): number {
     const stage = pipeline.findLast(item => typeof item === "object" && item !== null && "$skip" in item) as Doc | undefined;
     return toNumber(stage?.$skip) ?? 0;
+}
+
+/** The values of a field in the documents, arrays taken apart: what `$project` and `$unwind` give. */
+function valuesAt(value: Json | undefined, path: string[]): Json[] {
+    if (value === undefined) return [];
+    if (Array.isArray(value)) return value.flatMap(item => valuesAt(item, path));
+    if (path.length === 0) return [value];
+    return isDoc(value) ? valuesAt(value[path[0]!], path.slice(1)) : [];
+}
+
+/** The search of all data for values (`searchCommand` in `shell/values.ts`), counted in the made-up documents. */
+function valueGroups(pipeline: Json[]): Doc[] | undefined {
+    const project = pipeline.find(stage => isDoc(stage) && isDoc(stage.$project) && typeof stage.$project.v === "string") as Doc | undefined;
+    if (!project) return undefined;
+    const path = String((project.$project as Doc).v).slice(1).split(".");
+    const match = pipeline.findLast(stage => isDoc(stage) && isDoc(stage.$match) && isDoc(stage.$match.v)) as Doc | undefined;
+    const pattern = match ? String(((match.$match as Doc).v as Doc).$regex) : undefined;
+    const counts = new Map<string, { value: Json; n: number }>();
+    for (const value of ORDERS.flatMap(order => valuesAt(order, path))) {
+        if (pattern && (typeof value !== "string" || !new RegExp(pattern).test(value))) continue;
+        const key = JSON.stringify(value);
+        counts.set(key, { value, n: (counts.get(key)?.n ?? 0) + 1 });
+    }
+    return [...counts.values()].sort((a, b) => b.n - a.n).map(({ value, n }) => ({ _id: value, n: { $numberInt: String(n) } }));
 }
 
 export const mockBackend: Backend = {
@@ -159,7 +183,7 @@ export const mockBackend: Backend = {
         } else if (Array.isArray(command.pipeline)) {
             const pipeline = command.pipeline;
             const counts = pipeline.some(stage => typeof stage === "object" && stage !== null && "$group" in stage);
-            documents = counts ? [{ _id: 1, n: { $numberInt: String(ORDERS.length) } }] : ORDERS.slice(pipelineSkip(pipeline));
+            documents = valueGroups(pipeline) ?? (counts ? [{ _id: 1, n: { $numberInt: String(ORDERS.length) } }] : ORDERS.slice(pipelineSkip(pipeline)));
         }
         await new Promise(resolve => setTimeout(resolve, 120));
         return { documents: documents.slice(0, limit), hasMore: documents.length > limit };

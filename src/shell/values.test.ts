@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { suggest } from "./complete";
+import { suggest, valuePlace } from "./complete";
 import type { Environment } from "./complete";
 import type { Json } from "./ejson";
-import { addToFilter, collectValues, filterField, filterPath, mergeValues } from "./values";
-import type { ValueSource } from "./values";
+import {
+    SEARCH_LIMIT, addToFilter, collectValues, combineSearches, filterField, filterPath, mergeValues, preferValues, searchCommand, searchHints
+} from "./values";
+import type { ValueSearch, ValueSource } from "./values";
 
 describe("collectValues", () => {
     it("counts the values of each field, the most frequent first", () => {
@@ -100,5 +102,58 @@ describe("value suggestions", () => {
         expect(labels("db.orders.find({}).sort({ status: ")).toEqual([]);
         expect(labels("db.orders.find({ qty: { $gt: ")).toEqual([]);
         expect(labels("db.orders.insertOne({ status: \"")).toEqual([]);
+    });
+});
+
+describe("search of all data", () => {
+    it("groups the values of the field, arrays taken apart, with a time limit", () => {
+        expect(searchCommand("orders", "items.sku", "")).toEqual({
+            aggregate: "orders",
+            pipeline: [
+                { $match: { "items.sku": { $exists: true } } },
+                { $project: { _id: 0, v: "$items.sku" } },
+                { $unwind: "$v" },
+                { $group: { _id: "$v", n: { $sum: 1 } } },
+                { $sort: { n: -1, _id: 1 } },
+                { $limit: SEARCH_LIMIT + 1 }
+            ],
+            cursor: {},
+            maxTimeMS: 2000
+        });
+    });
+
+    it("searches for the typed text, escaped, and in a sample when asked to", () => {
+        const command = searchCommand("orders", "status", "a.b(", true);
+        const pipeline = command.pipeline as Json[];
+        expect(pipeline[0]).toEqual({ $sample: { size: 5000 } });
+        expect(pipeline[1]).toEqual({ $match: { status: { $regex: "^a\\.b\\(" } } });
+        expect(pipeline[4]).toEqual({ $match: { v: { $regex: "^a\\.b\\(" } } });
+        expect(new RegExp(String(((pipeline[1] as { $match: { status: { $regex: string } } }).$match.status.$regex))).test("a.b(c")).toBe(true);
+    });
+
+    it("reads what the server found", () => {
+        const found = searchHints([{ _id: "open", n: { $numberInt: "7" } }, { _id: { $oid: "64b7f0c2a1b2c3d4e5f60718" }, n: 1 }, { _id: 3, n: 2 }]);
+        expect(found).toEqual({ hints: [{ value: "open", count: 7 }, { value: 3, count: 2 }], truncated: false });
+        expect(searchHints(Array.from({ length: SEARCH_LIMIT + 1 }, (_, index) => ({ _id: `v${index}`, n: 1 })))).toMatchObject({ truncated: true });
+    });
+
+    it("takes searches with different prefixes together, each value once", () => {
+        const search = (hints: [Json, number][]): ValueSearch => ({ running: false, truncated: false, sampled: false, hints: hints.map(([value, count]) => ({ value, count })) });
+        expect(combineSearches([search([["paid", 5], ["open", 9]]), search([["paid", 5]])])).toEqual([{ value: "open", count: 9 }, { value: "paid", count: 5 }]);
+    });
+
+    it("puts the server's values before those known otherwise", () => {
+        const server: ValueSource = () => [{ value: "paid", count: 500 }];
+        const sample: ValueSource = () => [{ value: "open", count: 3 }, { value: "paid", count: 1 }];
+        expect(preferValues(server, sample)("orders", "status")).toEqual([{ value: "paid", count: 500 }, { value: "open", count: 3 }]);
+    });
+
+    it("knows where a search fits", () => {
+        expect(valuePlace("db.orders.find({ status: \"pa")).toEqual({ collection: "orders", field: "status", prefix: "pa", inString: true });
+        expect(valuePlace("db.orders.find({ status: ")).toEqual({ collection: "orders", field: "status", prefix: "", inString: false });
+        expect(valuePlace("db.getCollection(\"order-items\").aggregate([{ $match: { sku: \"")).toMatchObject({ collection: "order-items", field: "sku" });
+        expect(valuePlace("db.orders.find({ sta")).toBeUndefined();
+        expect(valuePlace("db.orders.find({}).sort({ status: ")).toBeUndefined();
+        expect(valuePlace("db.getCollection(\"\").find({ status: \"")).toBeUndefined();
     });
 });
