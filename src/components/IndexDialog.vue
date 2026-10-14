@@ -46,7 +46,8 @@ const environment = computed<Environment | undefined>(() => {
         serverVersion: connections.sessions[request.connectionId]?.version,
         databases: connections.sessions[request.connectionId]?.databases.map(database => database.name) ?? [],
         collections: connections.collectionsOf(request.connectionId, request.database),
-        fields: name => connections.fieldsOf(request.connectionId, request.database, name)
+        fields: name => connections.fieldsOf(request.connectionId, request.database, name),
+        values: (name, field) => connections.sampleValuesOf(request.connectionId, request.database, name, field)
     };
 });
 const placeholderName = computed(() => defaultIndexName(indexKey(form.value.fields)));

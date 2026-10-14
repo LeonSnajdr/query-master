@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, snippet } from "@codemirror/autocomplete";
-import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
+import { autocompletion, closeBrackets, closeBracketsKeymap, completeFromList, completionKeymap, snippet } from "@codemirror/autocomplete";
+import type { Completion, CompletionContext, CompletionResult, CompletionSource } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { javascript } from "@codemirror/lang-javascript";
+import { javascript, localCompletionSource, snippets } from "@codemirror/lang-javascript";
 import { sql } from "@codemirror/lang-sql";
 import { HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState } from "@codemirror/state";
@@ -13,7 +13,7 @@ import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
 import { useMessages } from "@/composables/messages";
 import { codeMirrorKey } from "@/keys/hotkey";
 import { useKeymap } from "@/keys/keymap";
-import { suggest } from "@/shell/complete";
+import { scriptPlace, suggest } from "@/shell/complete";
 import type { Environment, Suggestion, SuggestionType } from "@/shell/complete";
 
 const emit = defineEmits<{
@@ -90,6 +90,21 @@ function complete(context: CompletionContext): CompletionResult | null {
     return { from: found.from - prefix.length, options: found.options.map(completion), validFor: /^[\w$.-]*$/ };
 }
 
+/** Keywords as JavaScript completes them: `for`, `if`, `function` … with their brackets. */
+const completeKeywords = completeFromList(snippets);
+
+/** Where JavaScript completes by itself in a whole script; not in a field that continues a `prefix`. */
+function scriptPlaceAt(context: CompletionContext): ReturnType<typeof scriptPlace> {
+    if (!props.environment || props.prefix !== undefined || props.singleLine) return undefined;
+    return scriptPlace(context.state.sliceDoc(0, context.pos));
+}
+
+/** Variables and functions the script declares, wherever a value can stand. */
+const completeVariables: CompletionSource = context => (scriptPlaceAt(context) ? localCompletionSource(context) : null);
+
+/** Keywords where a statement starts. */
+const completeStatement: CompletionSource = context => (scriptPlaceAt(context) === "statement" ? completeKeywords(context) : null);
+
 function selected(state: EditorState): string {
     const range = state.selection.main;
     return state.sliceDoc(range.from, range.to);
@@ -156,8 +171,9 @@ function extensions(): Extension[] {
         history(),
         indentOnInput(),
         closeBrackets(),
-        // SQL completes from its language (keywords, schema); shell code from the shell's catalog.
-        props.sqlSchema ? autocompletion({ icons: true }) : autocompletion({ override: [complete], icons: true }),
+        // SQL completes from its language (keywords, schema); shell code from the shell's catalog,
+        // and a script also with its own variables and the JavaScript keywords.
+        props.sqlSchema ? autocompletion({ icons: true }) : autocompletion({ override: [complete, completeVariables, completeStatement], icons: true }),
         // Before the default keys, so Ctrl+Enter is not taken as "new line below".
         runKeys.of(runKeymap()),
         keymap.of([

@@ -11,6 +11,7 @@ import { parseStatements, statementAt } from "@/shell/parse";
 import { isWrite, pageCommand, planStatement, replyError } from "@/shell/plan";
 import type { Plan } from "@/shell/plan";
 import { aggregateStatement, keepsDocuments, newStage, previewStages } from "@/shell/pipeline";
+import { addToFilter, filterPath } from "@/shell/values";
 import type { PipelineStage } from "@/shell/pipeline";
 import { sqlToShell } from "@/sql/sql";
 import { useConnectionsStore } from "./connections";
@@ -488,6 +489,30 @@ export const useTabsStore = defineStore("tabs", () => {
         return typeof name === "string" ? name : undefined;
     }
 
+    /**
+     * "Filter by this value" (as Compass does from its schema view): a browse tab gets `field: value`
+     * in its filter and runs again; any other tab with documents of a collection opens a browse tab
+     * on it, with the filter of its `find` and the value.
+     */
+    async function filterByValue(tab: WorkTab, path: string, value: Json): Promise<boolean> {
+        const field = filterPath(path);
+        const collection = sourceCollection(tab);
+        if (!field || collection === undefined) return false;
+        if (tab.kind === "browse") {
+            let stage = tab.stages.find(item => item.name === "filter");
+            if (!stage) tab.stages.unshift((stage = { name: "filter", text: "{ }", enabled: true }));
+            // Switched off, the filter in it did not apply: it starts anew.
+            stage.text = addToFilter(stage.enabled ? stage.text : "", field, value);
+            stage.enabled = true;
+            return runBrowse(tab);
+        }
+        const command = tab.plan?.command;
+        const base = command?.find === collection && isDoc(command.filter) ? toShell(command.filter) : "";
+        const browse = create("browse", { connectionId: tab.connectionId, database: tab.plan?.database ?? tab.database, collection });
+        browse.stages[0]!.text = addToFilter(base, field, value);
+        return runBrowse(browse);
+    }
+
     /** How many documents the query matches in all; `undefined` when that can not be told. */
     async function count(tab: WorkTab): Promise<number | undefined> {
         const plan = tab.plan;
@@ -566,7 +591,7 @@ export const useTabsStore = defineStore("tabs", () => {
     return {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, move, step,
-        run, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, sourceCollection, editable, locked, lockedByTree, resultText,
+        run, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument
     };
 });

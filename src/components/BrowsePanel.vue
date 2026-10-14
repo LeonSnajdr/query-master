@@ -10,6 +10,7 @@ import ReadonlyToggle from "@/components/ReadonlyToggle.vue";
 import ResultsPanel from "@/components/results/ResultsPanel.vue";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
+import { useValueSources } from "@/composables/values";
 import type { MenuEntry } from "@/menu";
 import type { Environment } from "@/shell/complete";
 import { preview } from "@/shell/ejson";
@@ -41,11 +42,14 @@ const collection = computed(() => tab.value.collection ?? "");
 /** The stage row that was clicked last; "Remove stage" takes it away. */
 const current = shallowRef<StageName>("filter");
 
+const values = useValueSources(() => tab.value);
+
 const environment = computed<Environment>(() => ({
     serverVersion: connections.sessions[tab.value.connectionId]?.version,
     databases: connections.sessions[tab.value.connectionId]?.databases.map(database => database.name) ?? [],
     collections: connections.collectionsOf(tab.value.connectionId, tab.value.database),
-    fields: name => connections.fieldsOf(tab.value.connectionId, tab.value.database, name)
+    fields: name => connections.fieldsOf(tab.value.connectionId, tab.value.database, name),
+    values
 }));
 
 /** What each field continues, so the editor suggests what fits there. */

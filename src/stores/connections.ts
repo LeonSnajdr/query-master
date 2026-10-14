@@ -1,9 +1,11 @@
 import { defineStore } from "pinia";
-import { computed, reactive, ref } from "vue";
+import { computed, reactive, ref, shallowReactive } from "vue";
 import { backend } from "@/api";
 import type { Profile, ProfileInput } from "@/api";
 import { isDoc, scalar } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
+import { collectValues } from "@/shell/values";
+import type { ValueHint, ValueIndex } from "@/shell/values";
 import { useNotesStore } from "@/stores/notes";
 
 /** What the tree knows about a collection once it was unfolded. */
@@ -76,6 +78,8 @@ export const useConnectionsStore = defineStore("connections", () => {
     /** Field paths per `connection/database/collection`; filled when the editor first asks. */
     const fields = reactive(new Map<string, string[]>());
     const fieldRequests = new Set<string>();
+    /** Values of the fields in the same sample, for the editor to suggest. */
+    const sampleValues = shallowReactive(new Map<string, ValueIndex>());
     /** The row of the tree the toolbar and the menus act on. */
     const selected = ref<TreeSelection>();
 
@@ -205,7 +209,7 @@ export const useConnectionsStore = defineStore("connections", () => {
         const uri = transientUris.get(id);
         if (sessions[id]) {
             delete sessions[id];
-            for (const key of [...fields.keys()]) if (key.startsWith(`${id}/`)) fields.delete(key);
+            forgetFields(id);
         }
         connecting.delete(id);
         await open(id, () => (uri === undefined ? backend.connect(id) : backend.connectUri(id, uri)));
@@ -222,7 +226,7 @@ export const useConnectionsStore = defineStore("connections", () => {
             return;
         }
         delete sessions[id];
-        for (const key of [...fields.keys()]) if (key.startsWith(`${id}/`)) fields.delete(key);
+        forgetFields(id);
         await backend.disconnect(id);
         dropTransient(id);
     }
@@ -254,6 +258,12 @@ export const useConnectionsStore = defineStore("connections", () => {
         }
     }
 
+    /** What the samples of a connection taught: read again when it is opened again. */
+    function forgetFields(id: string): void {
+        for (const key of [...fields.keys()]) if (key.startsWith(`${id}/`)) fields.delete(key);
+        for (const key of [...sampleValues.keys()]) if (key.startsWith(`${id}/`)) sampleValues.delete(key);
+    }
+
     /** The field paths of a collection as far as known; a sample is read on the first call. */
     function fieldsOf(id: string, database: string, collection: string): string[] {
         const key = `${id}/${database}/${collection}`;
@@ -264,6 +274,7 @@ export const useConnectionsStore = defineStore("connections", () => {
                     const found = new Set<string>();
                     for (const document of page.documents) collectFields(document, "", 1, found);
                     fields.set(key, [...found].sort((a, b) => a.localeCompare(b)));
+                    sampleValues.set(key, collectValues(page.documents));
                 })
                 // A view that can not be sampled, or missing rights: then no fields are suggested.
                 .catch(() => fields.set(key, []))
@@ -272,5 +283,11 @@ export const useConnectionsStore = defineStore("connections", () => {
         return fields.get(key) ?? [];
     }
 
-    return { profiles, saved, sessions, connecting, failed, selected, inTree, load, save, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, collapseAll };
+    /** Values of a field in the sample `fieldsOf` reads (and reads now, if it has not yet). */
+    function sampleValuesOf(id: string, database: string, collection: string, field: string): ValueHint[] | undefined {
+        fieldsOf(id, database, collection);
+        return sampleValues.get(`${id}/${database}/${collection}`)?.get(field);
+    }
+
+    return { profiles, saved, sessions, connecting, failed, selected, inTree, load, save, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, sampleValuesOf, collapseAll };
 });
