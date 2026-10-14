@@ -2,19 +2,23 @@
 import { ToggleGroup, ToggleRoot, useNotifications } from "@vuetify/v0";
 import { computed, ref, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { backend, errorMessage } from "@/api";
+import { backend, errorMessage, inApp } from "@/api";
+import type { TransferFormat } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import DropMenu from "@/components/DropMenu.vue";
 import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
-import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
+import { useTask } from "@/composables/task";
+import { CSV_FILES, JSON_FILES, JSON_LINES_FILES, openTextFile, pickOpenPath, pickSavePath, saveTextFile } from "@/files";
+import type { FileKind } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { isDoc, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
+import { ShellError } from "@/shell/message";
 import { parseStatements, parseValue } from "@/shell/parse";
-import { pageCommand, planStatement } from "@/shell/plan";
+import { isWrite, pageCommand, planStatement } from "@/shell/plan";
 import { PAGE_SIZES, useTabsStore } from "@/stores/tabs";
 import type { ResultView } from "@/stores/tabs";
 import { provideResultContext } from "./result-context";
@@ -27,8 +31,6 @@ const props = defineProps<{
     tabId: string;
 }>();
 
-/** Documents written to a file at most. */
-const EXPORT_LIMIT = 100_000;
 const VIEWS: ResultView[] = ["tree", "table", "json"];
 
 const { t } = useI18n();
@@ -36,6 +38,7 @@ const { say, report } = useMessages();
 const dialogs = useDialogs();
 const notifications = useNotifications();
 const tabs = useTabsStore();
+const task = useTask();
 // The store's own object: the view, the page size and the search are changed here.
 const tab = computed(() => tabs.tabs.find(item => item.id === props.tabId)!);
 const result = computed(() => tab.value.result);
@@ -185,19 +188,48 @@ function queryCode() {
     if (result.value) dialogs.showText({ title: t("result.code"), text: result.value.statement });
 }
 
-async function exportDocuments() {
+const FORMATS: { format: TransferFormat; kind: FileKind; extension: string }[] = [
+    { format: "json", kind: JSON_FILES, extension: "json" },
+    { format: "jsonLines", kind: JSON_LINES_FILES, extension: "jsonl" },
+    { format: "csv", kind: CSV_FILES, extension: "csv" }
+];
+const exportEntries = computed<MenuEntry[]>(() => FORMATS.map(({ format }) => ({
+    label: t(`result.export.${format}`),
+    action: () => void exportDocuments(format)
+})));
+
+/** The command that reads everything the query returns, when it can be read again without writing. */
+function exportCommand(): Doc | undefined {
     const plan = tab.value.plan;
-    if (!plan || !result.value) return;
+    if (!plan?.cursor || !plan.paging || plan.shape || isWrite(plan)) return undefined;
+    return pageCommand(plan, 0, 1000);
+}
+
+/**
+ * Everything the query returns, written into a file by the Rust side straight from the cursor;
+ * a result that is no cursor (or the browser preview) gives the documents shown, as JSON.
+ */
+async function exportDocuments(format: TransferFormat) {
+    const plan = tab.value.plan;
+    if (!result.value) return;
+    const { kind, extension } = FORMATS.find(item => item.format === format)!;
+    const name = `${collection.value ?? tab.value.database}.${extension}`;
     try {
-        // Everything the query returns, not only the page shown.
-        let documents: Json[] = result.value.items;
-        if (plan.cursor && plan.paging && !plan.shape) {
-            const command = pageCommand(plan, 0, 1000);
-            if (command) documents = (await backend.runCursorCommand(tab.value.connectionId, plan.database, command, EXPORT_LIMIT)).documents;
+        const command = exportCommand();
+        if (!inApp || !plan || !command) {
+            const documents = result.value.items;
+            if (await saveTextFile(name, JSON_FILES, JSON.stringify(documents, null, 2))) {
+                notifications.send({ subject: t("result.exported", { count: documents.length }, documents.length), timeout: 3000 });
+            }
+            return;
         }
-        const name = `${collection.value ?? tab.value.database}.json`;
-        if (await saveTextFile(name, JSON_FILES, JSON.stringify(documents, null, 2))) {
-            notifications.send({ subject: t("result.exported", { count: documents.length }, documents.length), timeout: 3000 });
+        const path = await pickSavePath(name, kind);
+        if (!path) return;
+        const outcome = await task.track(t("result.export.running"), path, (runId, progress) =>
+            backend.exportDocuments(runId, tab.value.connectionId, plan.database, command, path, format, progress));
+        notifications.send({ subject: t("result.exported", { count: outcome.documents }, outcome.documents), timeout: 3000 });
+        if (outcome.skippedFields.length > 0) {
+            notifications.send({ subject: t("result.export.skipped", { fields: outcome.skippedFields.join(", ") }), timeout: 8000 });
         }
     } catch (error) {
         report(error);
@@ -217,7 +249,29 @@ function readDocuments(text: string): Doc[] {
     return list as Doc[];
 }
 
+/** A JSON, JSON Lines or CSV file into the collection the result comes from, on the Rust side. */
 async function importDocuments() {
+    const target = collection.value;
+    if (target === undefined) return;
+    if (!inApp) return importShown();
+    const database = tab.value.plan?.database ?? tab.value.database;
+    try {
+        if (tabs.locked(tab.value) || tabs.lockedByTree(tab.value, database, target)) throw new ShellError("error.plan.readonly");
+        const path = await pickOpenPath(FORMATS.map(item => item.kind));
+        if (!path) return;
+        const extension = path.split(".").pop()?.toLowerCase() ?? "";
+        const format: TransferFormat = extension === "csv" ? "csv" : "json";
+        const outcome = await task.track(t("result.import.running"), path, (runId, progress) =>
+            backend.importDocuments(runId, tab.value.connectionId, database, target, path, format, progress));
+        notifications.send({ subject: t("result.imported", { count: outcome.documents }, outcome.documents), timeout: 3000 });
+        await tabs.refresh(tab.value);
+    } catch (error) {
+        report(error);
+    }
+}
+
+/** Browser preview: the file is read in the page and inserted in one go. */
+async function importShown() {
     try {
         const text = await openTextFile(JSON_FILES);
         if (text === undefined) return;
@@ -273,8 +327,8 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
         { label: t("result.expand.all"), action: () => setFold(true) },
         { label: t("result.collapse.all"), action: () => setFold(false) },
         "separator",
-        { label: t("result.export"), icon: "i-lucide-upload", action: () => void exportDocuments() },
-        { label: t("result.import"), icon: "i-lucide-download", action: () => void importDocuments(), disabled: collection.value === undefined || tab.value.readonly },
+        ...FORMATS.map(({ format }): MenuEntry => ({ label: t(`result.export.${format}`), icon: "i-lucide-upload", action: () => void exportDocuments(format) })),
+        { label: t("result.import"), icon: "i-lucide-download", action: () => void importDocuments(), disabled: collection.value === undefined || tabs.locked(tab.value) },
         "separator",
         { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void tabs.refresh(tab.value) }
     ];
@@ -388,15 +442,20 @@ provideResultContext({ editable, selected, fold, commit: (target, text) => void 
                 icon="i-lucide-braces"
             />
             <span class="toolbar-rule" />
-            <IconButton
-                @click="exportDocuments"
-                :disabled="!result"
+            <DropMenu
+                :entries="exportEntries"
                 :label="$t('result.export')"
-                icon="i-lucide-upload"
-                tint="text-warning"
             >
-                {{ $t("result.export.short") }}
-            </IconButton>
+                <span
+                    :class="result ? '' : 'pointer-events-none opacity-35'"
+                    :title="$t('result.export')"
+                    class="h-6.5 px-1 inline-flex items-center gap-1.5 rounded-sm text-[13px] text-on-surface hover:text-on-surface-strong hover:bg-on-surface/10"
+                    data-testid="result-export"
+                >
+                    <span class="i-lucide-upload size-4 text-warning" />
+                    <span class="pr-1 text-on-surface-strong">{{ $t("result.export.short") }}</span>
+                </span>
+            </DropMenu>
             <IconButton
                 @click="importDocuments"
                 :disabled="collection === undefined || tabs.locked(tab)"

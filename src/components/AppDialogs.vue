@@ -4,7 +4,7 @@ import { computed, shallowRef, watch } from "vue";
 import CodeEditor from "@/components/CodeEditor.vue";
 import CollectionDialog from "@/components/CollectionDialog.vue";
 import ConnectionDialog from "@/components/ConnectionDialog.vue";
-import CopyProgress from "@/components/CopyProgress.vue";
+import TaskProgress from "@/components/TaskProgress.vue";
 import IndexDialog from "@/components/IndexDialog.vue";
 import { useDialogState } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
@@ -184,5 +184,5 @@ async function copyText() {
         v-model="state.indexOpen"
         :request="state.index"
     />
-    <CopyProgress />
+    <TaskProgress />
 </template>

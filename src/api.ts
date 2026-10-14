@@ -62,6 +62,15 @@ export interface CopyResult {
     view: boolean;
 }
 
+/** How documents are written to and read from files. */
+export type TransferFormat = "json" | "jsonLines" | "csv";
+
+export interface TransferResult {
+    documents: number;
+    /** CSV export: fields that appeared only after the columns were fixed, so are not in the file. */
+    skippedFields: string[];
+}
+
 export interface ServerInfo {
     version: string;
 }
@@ -98,6 +107,10 @@ export interface Backend {
     listHistory: (connectionId: string) => Promise<string[]>;
     addHistory: (connectionId: string, database: string, statement: string) => Promise<void>;
     clearHistory: (connectionId: string) => Promise<void>;
+    /** Streams what the cursor command gives into the file at `path`, on the Rust side. */
+    exportDocuments: (runId: string, id: string, database: string, command: Doc, path: string, format: TransferFormat, progress: (done: number) => void) => Promise<TransferResult>;
+    /** Inserts the documents of the file at `path` into the collection, in batches. */
+    importDocuments: (runId: string, id: string, database: string, collection: string, path: string, format: TransferFormat, progress: (done: number) => void) => Promise<TransferResult>;
     listTreeNotes: (connectionId: string) => Promise<TreeNote[]>;
     /** A note without color, comment and read-only is forgotten. */
     saveTreeNote: (connectionId: string, node: TreeNote) => Promise<void>;
@@ -130,6 +143,16 @@ const tauriBackend: Backend = {
     listHistory: connectionId => invoke("history_list", { connectionId }),
     addHistory: (connectionId, database, statement) => invoke("history_add", { connectionId, database, statement }),
     clearHistory: connectionId => invoke("history_clear", { connectionId }),
+    exportDocuments: (runId, id, database, command, path, format, progress) => {
+        const onProgress = new Channel<{ done: number }>();
+        onProgress.onmessage = update => progress(update.done);
+        return invoke("export_documents", { runId, id, database, command, path, format, onProgress });
+    },
+    importDocuments: (runId, id, database, collection, path, format, progress) => {
+        const onProgress = new Channel<{ done: number }>();
+        onProgress.onmessage = update => progress(update.done);
+        return invoke("import_documents", { runId, id, database, collection, path, format, onProgress });
+    },
     listTreeNotes: connectionId => invoke("tree_node_list", { connectionId }),
     saveTreeNote: (connectionId, node) => invoke("tree_node_save", { connectionId, node }),
     renameTreeNotes: (connectionId, from, to) => invoke("tree_node_rename", { connectionId, from, to }),

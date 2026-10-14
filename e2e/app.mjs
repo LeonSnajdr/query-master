@@ -215,6 +215,10 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         const text = await panel.locator("[data-testid=query-result]").innerText();
         assert.match(text, /NumberLong\(9007199254740993\)/);
         assert.match(text, /2024-05-01T00:00:00\.000Z/);
+        // The export offers its formats; the file dialog itself belongs to the system.
+        await visible("result-export").click();
+        for (const format of ["JSON", "JSON Lines", "CSV"]) await page.locator("[data-testid=menu-item]:visible", { hasText: `Export as ${format}` }).first().waitFor();
+        await page.keyboard.press("Escape");
     });
 
     await step("a collection unfolds to its indexes; they are created, hidden, duplicated and dropped", async () => {

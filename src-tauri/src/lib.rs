@@ -8,6 +8,7 @@ mod mongo;
 mod runs;
 mod script;
 mod setting;
+mod transfer;
 mod tree;
 
 use sqlx::SqlitePool;
@@ -46,6 +47,8 @@ pub fn run() {
             script::commands::script_run,
             runs::run_stop,
             copy::copy_collection,
+            transfer::commands::export_documents,
+            transfer::commands::import_documents,
             files::read_text_file,
             files::write_text_file
         ])

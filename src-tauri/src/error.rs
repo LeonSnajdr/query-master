@@ -28,6 +28,10 @@ pub enum Error {
     CopyStopped,
     #[error("there is no collection {0}")]
     CollectionMissing(String),
+    #[error("the export or import was stopped")]
+    TransferStopped,
+    #[error("a file to import holds documents: an array of them, one, or one per line")]
+    ImportShape,
     #[error("{0}")]
     Script(String),
     #[error("the local database reported an error: {0}")]
@@ -56,6 +60,8 @@ impl Error {
             Self::ScriptStopped => Some("error.script.stopped"),
             Self::CopyStopped => Some("error.copy.stopped"),
             Self::CollectionMissing(_) => Some("error.copy.missing"),
+            Self::TransferStopped => Some("error.transfer.stopped"),
+            Self::ImportShape => Some("error.transfer.shape"),
             Self::Mongo(_) | Self::Io(_) | Self::Script(_) => None,
         }
     }
@@ -68,7 +74,9 @@ impl Error {
             | Self::CommandDocument
             | Self::ReadOnly
             | Self::ScriptStopped
-            | Self::CopyStopped => None,
+            | Self::CopyStopped
+            | Self::TransferStopped
+            | Self::ImportShape => None,
             Self::CollectionMissing(name) => Some(name.clone()),
             Self::Script(message) => Some(message.clone()),
             Self::ExtendedJson(cause) => Some(cause.clone()),

@@ -1,25 +1,17 @@
 import { useNotifications } from "@vuetify/v0";
-import { reactive, shallowRef } from "vue";
+import { shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend } from "@/api";
 import type { Place } from "@/api";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
+import { useTask } from "@/composables/task";
 import { ShellError } from "@/shell/message";
 import { useConnectionsStore } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
 
 /** The collection "Copy collection" picked; pasted on a database, possibly of another connection. */
 const copied = shallowRef<Place>();
-
-/** The copy that is running, for the progress dialog. */
-const running = reactive({
-    runId: undefined as string | undefined,
-    source: "",
-    target: "",
-    copied: 0,
-    total: 0
-});
 
 /** Copying collections and pasting them into a database, with progress and a way to stop. */
 export function useCopy() {
@@ -29,6 +21,7 @@ export function useCopy() {
     const dialogs = useDialogs();
     const connections = useConnectionsStore();
     const notes = useNotesStore();
+    const task = useTask();
 
     function copy(place: Place) {
         copied.value = { ...place };
@@ -54,7 +47,7 @@ export function useCopy() {
 
     async function paste(connectionId: string, database: string) {
         const source = copied.value;
-        if (!source || running.runId) return;
+        if (!source || task.running.runId) return;
         if (notes.isReadonly({ connectionId, database })) {
             report(new ShellError("error.plan.readonlyTree", { name: database }));
             return;
@@ -62,18 +55,12 @@ export function useCopy() {
         const choice = await chooseName(connectionId, database, source.collection);
         if (!choice) return;
         const target: Place = { connectionId, database, collection: choice.name };
-        Object.assign(running, {
-            runId: `copy-${Date.now()}`,
-            source: `${source.database}.${source.collection}`,
-            target: `${database}.${choice.name}`,
-            copied: 0,
-            total: 0
-        });
         try {
-            const result = await backend.copyCollection(running.runId!, source, target, choice.replace, (progress) => {
-                running.copied = progress.copied;
-                running.total = progress.total;
-            });
+            const result = await task.track(
+                t("copy.running.title"),
+                t("copy.running.text", { source: `${source.database}.${source.collection}`, target: `${database}.${choice.name}` }),
+                (runId, progress) => backend.copyCollection(runId, source, target, choice.replace, update => progress(update.copied, update.total))
+            );
             notifications.send({
                 subject: result.view
                     ? t("copy.doneView", { name: choice.name })
@@ -83,14 +70,9 @@ export function useCopy() {
         } catch (error) {
             report(error);
         } finally {
-            running.runId = undefined;
             await connections.loadDatabases(connectionId).catch(report);
         }
     }
 
-    function stop() {
-        if (running.runId) void backend.stopRun(running.runId);
-    }
-
-    return { copied, running, copy, paste, stop };
+    return { copied, running: task.running, copy, paste };
 }

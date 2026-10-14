@@ -9,6 +9,8 @@ export interface FileKind {
 }
 
 export const JSON_FILES: FileKind = { name: "JSON", extensions: ["json"] };
+export const JSON_LINES_FILES: FileKind = { name: "JSON Lines", extensions: ["jsonl", "ndjson"] };
+export const CSV_FILES: FileKind = { name: "CSV", extensions: ["csv"] };
 export const SCRIPT_FILES: FileKind = { name: "JavaScript", extensions: ["js", "mongodb"] };
 
 /** Lets the user pick a file and returns its text; `undefined` when they cancel. */
@@ -33,6 +35,17 @@ export async function pickFilePath(): Promise<string | undefined> {
     if (!inApp) return undefined;
     const path = await open({ multiple: false });
     return typeof path === "string" ? path : undefined;
+}
+
+/** Lets the user pick a file of one of the kinds; its path, `undefined` when they cancel. */
+export async function pickOpenPath(kinds: FileKind[]): Promise<string | undefined> {
+    const path = await open({ multiple: false, filters: kinds });
+    return typeof path === "string" ? path : undefined;
+}
+
+/** Lets the user pick where to save a file of the kind; its path, `undefined` when they cancel. */
+export async function pickSavePath(suggestedName: string, kind: FileKind): Promise<string | undefined> {
+    return (await save({ defaultPath: suggestedName, filters: [kind] })) ?? undefined;
 }
 
 /** Lets the user pick where to save and writes the text there; `false` when they cancel. */
