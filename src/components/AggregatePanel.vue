@@ -14,7 +14,7 @@ import type { MenuEntry } from "@/menu";
 import { STAGES } from "@/shell/catalog";
 import type { Environment } from "@/shell/complete";
 import { parseStatements } from "@/shell/parse";
-import { aggregateStatement, newStage, pipelineText, stagesOf } from "@/shell/pipeline";
+import { aggregateStatement, newStage, optionsOf, pipelineText, stagesOf, WRITING_STAGES } from "@/shell/pipeline";
 import type { PipelineStage } from "@/shell/pipeline";
 import { useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
@@ -42,6 +42,13 @@ const stages = computed(() => tab.value.pipeline ?? []);
 
 /** The stage that was clicked last; remove and move act on it. */
 const current = shallowRef<number>();
+/** The row of options (`allowDiskUse`, `maxTimeMS` …) shows; it does by itself when it holds some. */
+const showOptions = shallowRef((tab.value.aggregateOptions ?? "").replace(/[\s{}]/g, "") !== "");
+const options = computed({
+    get: () => tab.value.aggregateOptions ?? "{ }",
+    set: (text: string) => (tab.value.aggregateOptions = text)
+});
+const wholeStatement = () => aggregateStatement(collection.value, stages.value, tab.value.aggregateOptions);
 const currentIndex = computed(() => stages.value.findIndex(stage => stage.id === current.value));
 
 const environment = computed<Environment>(() => ({
@@ -96,7 +103,7 @@ function move(by: -1 | 1) {
 
 async function copyPipeline() {
     try {
-        await navigator.clipboard.writeText(aggregateStatement(collection.value, stages.value));
+        await navigator.clipboard.writeText(wholeStatement());
         notifications.send({ subject: t("action.copied"), timeout: 1500 });
     } catch (error) {
         report(error);
@@ -109,6 +116,8 @@ function applyStatement(text: string) {
         const [statement] = parseStatements(text);
         if (!statement) return;
         tab.value.pipeline = stagesOf(statement);
+        tab.value.aggregateOptions = optionsOf(statement) || undefined;
+        showOptions.value = tab.value.aggregateOptions !== undefined;
         current.value = undefined;
         void tabs.runAggregate(tab.value);
     } catch (error) {
@@ -126,7 +135,7 @@ async function pastePipeline() {
 
 function openInShell() {
     try {
-        tabs.openShell({ connectionId: tab.value.connectionId, database: tab.value.database, text: aggregateStatement(collection.value, stages.value) });
+        tabs.openShell({ connectionId: tab.value.connectionId, database: tab.value.database, text: wholeStatement() });
     } catch (error) {
         report(error);
     }
@@ -160,6 +169,14 @@ function createView() {
                 >
                     {{ $t("query.run") }}
                 </IconButton>
+                <IconButton
+                    @click="tabs.runAggregate(tab, currentIndex)"
+                    :disabled="tab.running || currentIndex === -1"
+                    :label="$t('aggregate.preview')"
+                    data-testid="stage-preview"
+                    icon="i-lucide-step-forward"
+                    tint="text-success"
+                />
                 <span class="toolbar-rule" />
                 <DropMenu
                     :entries="stageEntries(addStage)"
@@ -231,6 +248,14 @@ function createView() {
                     data-testid="aggregate-view"
                     icon="i-lucide-file-search"
                 />
+                <span class="toolbar-rule" />
+                <IconButton
+                    @click="showOptions = !showOptions"
+                    :active="showOptions"
+                    :label="$t('aggregate.options')"
+                    data-testid="aggregate-options"
+                    icon="i-lucide-sliders-horizontal"
+                />
             </div>
 
             <div class="shrink-0 max-h-[50vh] overflow-y-auto mx-5 mt-1.5 mb-1 border-t border-divider">
@@ -254,6 +279,11 @@ function createView() {
                         >
                             {{ stage.operator }}
                             <span class="i-lucide-chevron-down size-3.5 text-on-surface-variant" />
+                            <span
+                                v-if="WRITING_STAGES.includes(stage.operator)"
+                                :title="$t('aggregate.writes')"
+                                class="i-lucide-pen-line size-3.5 text-warning"
+                            />
                         </span>
                     </DropMenu>
                     <div
@@ -286,6 +316,22 @@ function createView() {
                 >
                     {{ $t("aggregate.empty") }}
                 </p>
+                <div
+                    v-if="showOptions"
+                    class="h-8 flex items-center border-b border-divider border-l-3 border-l-transparent"
+                    data-testid="aggregate-options-row"
+                >
+                    <span class="w-36 shrink-0 pl-4 text-[13px] font-semibold text-on-surface-variant">{{ $t("aggregate.options") }}</span>
+                    <CodeEditor
+                        v-model="options"
+                        @run="tabs.runAggregate(tab)"
+                        :environment
+                        :label="$t('aggregate.options')"
+                        :prefix="`db.getCollection(${JSON.stringify(collection)}).aggregate([], `"
+                        class="grow"
+                        singleLine
+                    />
+                </div>
             </div>
         </template>
 

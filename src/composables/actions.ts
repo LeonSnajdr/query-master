@@ -111,7 +111,7 @@ export function useActions() {
         if (at) tabs.openServer(at.connectionId, "log");
     }
 
-    /** Users and roles belong to a database; without one chosen, to dmin. */
+    /** Users and roles belong to a database; without one chosen, to `admin`. */
     function manageUsers(at = target.value) {
         if (at) tabs.openServer(at.connectionId, "users", at.database ?? "admin");
     }

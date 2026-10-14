@@ -11,6 +11,9 @@ import { useMessages } from "@/composables/messages";
 import { SCRIPT_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
 import type { Environment } from "@/shell/complete";
+import { ShellError } from "@/shell/message";
+import { parseStatements, statementAt } from "@/shell/parse";
+import { optionsOf, stagesOf } from "@/shell/pipeline";
 import { useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
 
@@ -68,6 +71,25 @@ async function openScript() {
 
 async function saveScript() {
     await saveTextFile(`${tab.value.database}.js`, SCRIPT_FILES, tab.value.text).catch(report);
+}
+
+/** The `aggregate` statement at the cursor, as rows of the aggregation builder. */
+function openInBuilder() {
+    try {
+        const cursor = editor.value?.cursor();
+        const statement = statementAt(parseStatements(cursor?.selection?.trim() ? cursor.selection : tab.value.text), cursor?.selection?.trim() ? 0 : cursor?.position ?? 0);
+        if (statement?.method !== "aggregate" || statement.collection === undefined) throw new ShellError("error.pipeline.notAggregate");
+        const opened = tabs.openAggregate({
+            connectionId: tab.value.connectionId,
+            database: statement.database ?? tab.value.database,
+            collection: statement.collection,
+            pipeline: stagesOf(statement),
+            aggregateOptions: optionsOf(statement) || undefined
+        });
+        void tabs.runAggregate(opened);
+    } catch (error) {
+        report(error);
+    }
 }
 </script>
 
@@ -142,6 +164,13 @@ async function saveScript() {
                 :icon="tab.readonly ? 'i-lucide-lock' : 'i-lucide-lock-open'"
                 :label="$t('query.readonly')"
                 data-testid="query-readonly"
+            />
+            <span class="toolbar-rule" />
+            <IconButton
+                @click="openInBuilder"
+                :label="$t('aggregate.fromShell')"
+                data-testid="shell-to-builder"
+                icon="i-lucide-network"
             />
         </div>
 

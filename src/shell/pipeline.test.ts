@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseStatements } from "./parse";
-import { aggregateStatement, keepsDocuments, newStage, pipelineText, stagesOf, stageTemplate } from "./pipeline";
+import { aggregateStatement, keepsDocuments, newStage, optionsOf, pipelineText, previewStages, stagesOf, stageTemplate } from "./pipeline";
 
 describe("aggregateStatement", () => {
     it("leaves stages that are switched off out", () => {
@@ -24,6 +24,20 @@ describe("aggregateStatement", () => {
     it("refuses what is no pipeline", () => {
         expect(() => stagesOf(parseStatements("db.orders.find({})")[0]!)).toThrow("error.pipeline.notAggregate");
         expect(() => stagesOf(parseStatements("db.orders.aggregate([{ $match: {}, $sort: {} }])")[0]!)).toThrow("error.pipeline.stageShape");
+    });
+});
+
+describe("options and preview", () => {
+    it("adds options only when there are some, and reads them back", () => {
+        expect(aggregateStatement("orders", [], "{ }")).toBe("db.getCollection(\"orders\").aggregate([])");
+        const text = aggregateStatement("orders", [], "{ allowDiskUse: true }");
+        expect(text).toBe("db.getCollection(\"orders\").aggregate([], { allowDiskUse: true })");
+        expect(optionsOf(parseStatements(text)[0]!)).toBe("{\n    allowDiskUse: true\n}");
+    });
+
+    it("looks up to a stage, never with a stage that writes", () => {
+        const stages = [newStage("$match"), newStage("$out", "\"copy\""), newStage("$sort"), newStage("$limit")];
+        expect(previewStages(stages, 2).map(stage => stage.operator)).toEqual(["$match", "$sort"]);
     });
 });
 

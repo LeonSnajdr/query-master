@@ -374,7 +374,26 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("query-run").click();
         await panel.locator("[data-testid=query-run]:not([disabled])").waitFor();
         assert.match(await panel.locator("[data-testid=query-result]").innerText(), /documents/);
-        await page.keyboard.press("Control+w");
+
+        // Up to the first stage only; then with options; then over the shell and back.
+        await rows.nth(0).locator(".cm-content").click();
+        await visible("stage-preview").click();
+        await panel.locator("[data-testid=query-run]:not([disabled])").waitFor();
+        assert.match(await panel.locator("[data-testid=query-result]").innerText(), /documents/);
+        await visible("aggregate-options").click();
+        await write(visible("aggregate-options-row"), "{ allowDiskUse: true }");
+        await visible("query-run").click();
+        await panel.locator("[data-testid=query-run]:not([disabled])").waitFor();
+        assert.equal(await panel.locator("[data-testid=query-error]").count(), 0);
+        await visible("query-to-shell").click();
+        assert.match(await page.locator(".cm-content:visible").first().innerText(), /allowDiskUse: true/);
+        await visible("shell-to-builder").click();
+        await visible("aggregate-title").waitFor();
+        // The stage that was switched off is not part of the statement, so not of the new builder.
+        assert.equal(await rows.count(), 1);
+        assert.equal(await rows.nth(0).locator("[data-testid=stage-operator]").innerText(), "$group");
+        await visible("aggregate-options-row").waitFor();
+        for (let close = 0; close < 3; close++) await page.keyboard.press("Control+w");
         await visible("browse-title").waitFor();
     });
 

@@ -9,7 +9,7 @@ import type { Message } from "@/shell/message";
 import { parseStatements, statementAt } from "@/shell/parse";
 import { isWrite, pageCommand, planStatement, replyError } from "@/shell/plan";
 import type { Plan } from "@/shell/plan";
-import { aggregateStatement, keepsDocuments, newStage } from "@/shell/pipeline";
+import { aggregateStatement, keepsDocuments, newStage, previewStages } from "@/shell/pipeline";
 import type { PipelineStage } from "@/shell/pipeline";
 import { useConnectionsStore } from "./connections";
 
@@ -81,6 +81,8 @@ export interface WorkTab {
     page?: ServerPage;
     /** Aggregate tabs: the stages of the pipeline. */
     pipeline?: PipelineStage[];
+    /** Aggregate tabs: shell text of the options (`allowDiskUse`, `maxTimeMS` …). */
+    aggregateOptions?: string;
 }
 
 /** Tabs with a query or a script, results and a result view. */
@@ -169,7 +171,7 @@ export const useTabsStore = defineStore("tabs", () => {
     }
 
     /** The aggregation builder on a collection, with the stages given or one empty $match. */
-    function openAggregate(target: { connectionId: string; database: string; collection: string; pipeline?: PipelineStage[] }): WorkTab {
+    function openAggregate(target: { connectionId: string; database: string; collection: string; pipeline?: PipelineStage[]; aggregateOptions?: string }): WorkTab {
         return create("aggregate", { ...target, pipeline: target.pipeline ?? [newStage("$match", "{ }")] });
     }
 
@@ -195,6 +197,7 @@ export const useTabsStore = defineStore("tabs", () => {
             text: tab.text,
             stages: tab.stages.map(stage => ({ ...stage })),
             pipeline: tab.pipeline?.map(stage => newStage(stage.operator, stage.text, stage.enabled)),
+            aggregateOptions: tab.aggregateOptions,
             view: tab.view,
             pageSize: tab.pageSize,
             readonly: tab.readonly
@@ -381,10 +384,14 @@ export const useTabsStore = defineStore("tabs", () => {
         });
     }
 
-    /** Aggregate tabs: runs the stages that are switched on. */
-    function runAggregate(tab: WorkTab): Promise<boolean> {
+    /**
+     * Aggregate tabs: runs the stages that are switched on; with `upTo`, only those up to that
+     * stage and none that writes, to look at the documents there.
+     */
+    function runAggregate(tab: WorkTab, upTo?: number): Promise<boolean> {
         return guarded(tab, async () => {
-            const text = aggregateStatement(tab.collection ?? "", tab.pipeline ?? []);
+            const stages = tab.pipeline ?? [];
+            const text = aggregateStatement(tab.collection ?? "", upTo === undefined ? stages : previewStages(stages, upTo), tab.aggregateOptions);
             let statement;
             try {
                 [statement] = parseStatements(text);

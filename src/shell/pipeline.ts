@@ -46,9 +46,18 @@ export function pipelineText(stages: PipelineStage[]): string {
     return parts.length === 0 ? "[]" : `[\n    ${parts.join(",\n    ")}\n]`;
 }
 
-/** The shell statement the builder stands for. */
-export function aggregateStatement(collection: string, stages: PipelineStage[]): string {
-    return `db.getCollection(${JSON.stringify(collection)}).aggregate(${pipelineText(stages)})`;
+/** The shell statement the builder stands for; `options` is the shell text of the second argument. */
+export function aggregateStatement(collection: string, stages: PipelineStage[], options = ""): string {
+    const extra = options.replace(/\s/g, "") === "" || options.replace(/\s/g, "") === "{}" ? "" : `, ${options.trim()}`;
+    return `db.getCollection(${JSON.stringify(collection)}).aggregate(${pipelineText(stages)}${extra})`;
+}
+
+/**
+ * The stages up to and including the one at `index`, to look at the documents there. Stages that
+ * write are left out: looking must not change data.
+ */
+export function previewStages(stages: PipelineStage[], index: number): PipelineStage[] {
+    return stages.slice(0, index + 1).filter(stage => !WRITING_STAGES.includes(stage.operator));
 }
 
 /** The rows of an `aggregate` statement, for one pasted or chosen from the history. */
@@ -60,6 +69,12 @@ export function stagesOf(statement: Statement): PipelineStage[] {
         const [operator, value] = entries[0]!;
         return newStage(operator, toShell(value));
     });
+}
+
+/** The options of an `aggregate` statement as shell text; empty when it has none. */
+export function optionsOf(statement: Statement): string {
+    const options = statement.args[1];
+    return isDoc(options) && Object.keys(options).length > 0 ? toShell(options) : "";
 }
 
 /** Whether the result still consists of documents of the collection, unchanged. */
