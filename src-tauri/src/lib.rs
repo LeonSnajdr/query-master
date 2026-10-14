@@ -3,6 +3,7 @@ mod copy;
 mod db;
 mod error;
 mod files;
+mod gridfs;
 mod history;
 mod mongo;
 mod runs;
@@ -49,6 +50,8 @@ pub fn run() {
             copy::copy_collection,
             transfer::commands::export_documents,
             transfer::commands::import_documents,
+            gridfs::gridfs_upload,
+            gridfs::gridfs_download,
             files::read_text_file,
             files::write_text_file
         ])
