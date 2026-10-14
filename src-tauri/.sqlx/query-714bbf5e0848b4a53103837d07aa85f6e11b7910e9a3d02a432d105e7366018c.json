@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            update tree_folder set name = $4\n            where connection_id = $1 and database_name = $2 and name = $3\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "714bbf5e0848b4a53103837d07aa85f6e11b7910e9a3d02a432d105e7366018c"
+}

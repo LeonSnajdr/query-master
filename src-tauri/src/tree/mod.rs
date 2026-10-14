@@ -1,5 +1,6 @@
-//! Notes on rows of the connection tree: a color, a comment, read-only. They belong to the app,
-//! not to the database, and go with their connection.
+//! Notes on rows of the connection tree: a color, a comment, read-only, the folder a collection
+//! sits in; and the folders of each database. They belong to the app, not to the database, and
+//! go with their connection.
 
 pub mod commands;
 mod repository;
@@ -18,18 +19,30 @@ pub struct TreeNode {
     pub color: Option<String>,
     pub comment: Option<String>,
     pub readonly: bool,
+    /// The folder of the database a collection is shown in.
+    #[serde(default)]
+    pub folder: Option<String>,
 }
 
 impl TreeNode {
     fn is_empty(&self) -> bool {
-        self.color.is_none() && self.comment.is_none() && !self.readonly
+        self.color.is_none() && self.comment.is_none() && !self.readonly && self.folder.is_none()
     }
+}
+
+/// A folder of a database in the tree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, sqlx::FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct TreeFolder {
+    pub database: String,
+    pub name: String,
 }
 
 /// Blank text counts as none.
 fn normalized(mut node: TreeNode) -> TreeNode {
     node.color = node.color.filter(|color| !color.trim().is_empty());
     node.comment = node.comment.filter(|comment| !comment.trim().is_empty());
+    node.folder = node.folder.filter(|folder| !folder.trim().is_empty());
     node
 }
 
@@ -57,10 +70,47 @@ pub async fn rename(pool: &SqlitePool, connection_id: Uuid, from: &str, to: &str
     Ok(())
 }
 
-/// A database or collection was dropped: its notes, and those of what lay below, go too.
+/// A database or collection was dropped: its notes, and those of what lay below, go too; a
+/// database takes its folders along.
 pub async fn remove(pool: &SqlitePool, connection_id: Uuid, path: &str) -> Result<()> {
     let mut transaction = pool.begin().await?;
     repository::delete_below(&mut transaction, connection_id, path).await?;
+    if !path.contains('/') {
+        repository::delete_folders(&mut transaction, connection_id, path).await?;
+    }
+    transaction.commit().await?;
+    Ok(())
+}
+
+pub async fn folders(pool: &SqlitePool, connection_id: Uuid) -> Result<Vec<TreeFolder>> {
+    repository::folders(pool, connection_id).await
+}
+
+pub async fn add_folder(pool: &SqlitePool, connection_id: Uuid, folder: &TreeFolder) -> Result<()> {
+    repository::insert_folder(pool, connection_id, folder).await
+}
+
+/// The folder gets another name; the collections in it stay in it.
+pub async fn rename_folder(
+    pool: &SqlitePool,
+    connection_id: Uuid,
+    folder: &TreeFolder,
+    name: &str,
+) -> Result<()> {
+    let mut transaction = pool.begin().await?;
+    repository::rename_folder(&mut transaction, connection_id, folder, name).await?;
+    transaction.commit().await?;
+    Ok(())
+}
+
+/// The folder goes; its collections show in the database again, keeping their other notes.
+pub async fn delete_folder(
+    pool: &SqlitePool,
+    connection_id: Uuid,
+    folder: &TreeFolder,
+) -> Result<()> {
+    let mut transaction = pool.begin().await?;
+    repository::delete_folder(&mut transaction, connection_id, folder).await?;
     transaction.commit().await?;
     Ok(())
 }

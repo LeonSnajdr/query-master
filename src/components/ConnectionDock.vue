@@ -16,8 +16,8 @@ import type { MenuEntry } from "@/menu";
 import { useConnectionsStore } from "@/stores/connections";
 import type { DatabaseNode, TreeSelection } from "@/stores/connections";
 import { bucketOf, treeCollections } from "@/shell/gridfs";
-import { NOTE_COLORS, useNotesStore } from "@/stores/notes";
-import type { NotePlace } from "@/stores/notes";
+import { collectionRows, NOTE_COLORS, useNotesStore } from "@/stores/notes";
+import type { CollectionRow, NotePlace } from "@/stores/notes";
 
 /** The dock at the left: saved connections, the toolbar, and the tree of what is connected. */
 const { t } = useI18n();
@@ -82,6 +82,38 @@ function shownCollections(database: DatabaseNode): string[] {
     // A GridFS bucket shows once, as its `.files`.
     const all = treeCollections(database.collections ?? []);
     return matches(database.name) ? all : all.filter(matches);
+}
+
+/** Folders and collections of an open database; while searching every folder shows its matches. */
+function rowsOf(profile: Profile, database: DatabaseNode): CollectionRow[] {
+    const searchingNow = search.value.trim() !== "";
+    return collectionRows(
+        shownCollections(database),
+        database.name,
+        notes.notes[profile.id],
+        notes.foldersOf(profile.id, database.name),
+        folder => searchingNow || notes.isOpen(profile.id, database.name, folder)
+    );
+}
+
+function openFolderMenu(event: MouseEvent, profile: Profile, database: DatabaseNode, folder: string) {
+    const at = { connectionId: profile.id, database: database.name };
+    void menu.value?.open(event, [
+        { label: t("folder.add"), icon: "i-lucide-folder-plus", hotkey: "Ctrl + G", action: () => void actions.addFolder(at) },
+        { label: t("folder.rename"), icon: "i-lucide-pencil", action: () => void actions.renameFolder(at, folder) },
+        { label: t("folder.delete"), icon: "i-lucide-folder-x", danger: true, action: () => void actions.deleteFolder(at, folder) }
+    ]);
+}
+
+/** "Move to folder" for a collection: each other folder of its database, and out of its folder. */
+function folderEntries(at: TreeSelection): MenuEntry[] {
+    if (at.database === undefined || at.collection === undefined) return [];
+    const current = notes.noteOf(at)?.folder ?? null;
+    const entries: MenuEntry[] = notes.foldersOf(at.connectionId, at.database)
+        .filter(folder => folder !== current)
+        .map(folder => ({ label: t("folder.moveTo", { name: folder }), icon: "i-lucide-folder-input", action: () => void actions.moveToFolder(at, folder) }));
+    if (current) entries.push({ label: t("folder.moveOut", { name: current }), icon: "i-lucide-folder-output", action: () => void actions.moveToFolder(at, null) });
+    return entries.length > 0 ? ["separator", ...entries] : [];
 }
 
 /** The bucket a row stands for, when it is the `.files` of one. */
@@ -233,6 +265,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("validator.edit"), hotkey: "Ctrl + Alt + V", action: () => actions.editValidator(at), disabled: isView(at) },
             "separator",
             { label: t("collection.stats"), action: () => actions.collectionStats(at) },
+            ...folderEntries(at),
             ...noteEntries(at),
             ...tail
         ];
@@ -244,6 +277,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(at) },
             { label: t("view.create"), icon: "i-lucide-file-search", hotkey: "Ctrl + Shift + H", action: () => actions.createView(at) },
             { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(at) },
+            { label: t("folder.add"), icon: "i-lucide-folder-plus", hotkey: "Ctrl + G", action: () => void actions.addFolder(at) },
             paste(at.database),
             "separator",
             { label: t("database.drop"), hotkey: "Del", danger: true, action: () => void actions.dropDatabase(at) },
@@ -511,69 +545,102 @@ defineExpose({
 
                         <template v-if="database.open">
                             <template
-                                v-for="collection in shownCollections(database)"
-                                :key="collection"
+                                v-for="row in rowsOf(profile, database)"
+                                :key="`${row.kind}:${row.name}`"
                             >
+                                <!-- A folder of the database, with its collections below while open. -->
                                 <div
-                                    @click="select({ connectionId: profile.id, database: database.name, collection })"
-                                    @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection })"
-                                    @dblclick="openRow(profile, database, collection)"
-                                    @keydown.enter="openRow(profile, database, collection)"
-                                    :class="isSelected({ connectionId: profile.id, database: database.name, collection }) ? 'tree-row-on' : ''"
+                                    v-if="row.kind === 'folder'"
+                                    @click="notes.toggleFolder(profile.id, database.name, row.name)"
+                                    @contextmenu.prevent="openFolderMenu($event, profile, database, row.name)"
+                                    @keydown.enter.self="notes.toggleFolder(profile.id, database.name, row.name)"
                                     class="tree-row pl-11.5"
-                                    data-testid="collection-row"
+                                    data-testid="folder-row"
                                     role="treeitem"
                                     tabindex="0"
                                 >
                                     <span
-                                        @click.stop="toggleCollection(profile, database, collection)"
-                                        @dblclick.stop
-                                        :class="[
-                                            database.details[collection]?.loading ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-chevron-right',
-                                            database.details[collection]?.open ? 'rotate-90' : '',
-                                            // A view has no indexes to unfold.
-                                            database.types[collection] === 'view' ? 'invisible' : ''
-                                        ]"
-                                        class="size-3.5 shrink-0 text-on-surface-variant"
-                                        data-testid="collection-toggle"
+                                        :class="notes.isOpen(profile.id, database.name, row.name) ? 'rotate-90' : ''"
+                                        class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
                                     />
                                     <span
-                                        :class="[collectionIcon(database, collection), tint({ connectionId: profile.id, database: database.name, collection })]"
-                                        :title="database.types[collection] === 'collection' ? undefined : $t(`collection.type.${database.types[collection] ?? 'collection'}`)"
-                                        class="size-4 shrink-0"
+                                        :class="notes.isOpen(profile.id, database.name, row.name) ? 'i-lucide-folder-open' : 'i-lucide-folder'"
+                                        class="size-4 shrink-0 text-warning"
                                     />
-                                    <span class="truncate text-on-surface-strong">{{ bucketAt(database, collection) ?? collection }}</span>
-                                    <span
-                                        v-if="bucketAt(database, collection) !== undefined"
-                                        class="shrink-0 text-[11px] text-on-surface-variant"
-                                    >GridFS</span>
-                                    <NoteMarks :place="{ connectionId: profile.id, database: database.name, collection }" />
+                                    <span class="truncate text-on-surface-strong">{{ row.name }}</span>
+                                    <span class="grow" />
+                                    <span class="shrink-0 text-[11px] text-on-surface-variant">{{ row.count }}</span>
                                 </div>
-
-                                <!-- Unfolded, a collection shows its indexes. -->
-                                <template v-if="database.details[collection]?.open">
-                                    <div
-                                        v-for="index in database.details[collection]?.indexes"
-                                        :key="String(index.name)"
-                                        @click="select({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
-                                        @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
-                                        @dblclick="actions.indexInfo({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
-                                        :class="isSelected({ connectionId: profile.id, database: database.name, collection, index: String(index.name) }) ? 'tree-row-on' : ''"
-                                        class="tree-row pl-20"
-                                        data-testid="index-row"
-                                        role="treeitem"
-                                        tabindex="0"
+                                <template v-else>
+                                    <template
+                                        v-for="collection in [row.name]"
+                                        :key="collection"
                                     >
-                                        <span class="i-lucide-key-round size-3.5 shrink-0 text-on-surface" />
-                                        <span
-                                            :class="index.hidden === true ? 'opacity-55' : ''"
-                                            class="truncate text-on-surface-strong"
-                                        >{{ index.name }}</span>
-                                        <span
-                                            v-if="index.hidden === true"
-                                            class="shrink-0 text-[11px] italic text-on-surface-variant"
-                                        >{{ $t("index.hiddenMark") }}</span>
-                                    </div>
+                                        <div
+                                            @click="select({ connectionId: profile.id, database: database.name, collection })"
+                                            @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection })"
+                                            @dblclick="openRow(profile, database, collection)"
+                                            @keydown.enter="openRow(profile, database, collection)"
+                                            :class="[isSelected({ connectionId: profile.id, database: database.name, collection }) ? 'tree-row-on' : '', row.kind === 'collection' && row.folder ? 'pl-15.5' : 'pl-11.5']"
+                                            class="tree-row"
+                                            data-testid="collection-row"
+                                            role="treeitem"
+                                            tabindex="0"
+                                        >
+                                            <span
+                                                @click.stop="toggleCollection(profile, database, collection)"
+                                                @dblclick.stop
+                                                :class="[
+                                                    database.details[collection]?.loading ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-chevron-right',
+                                                    database.details[collection]?.open ? 'rotate-90' : '',
+                                                    // A view has no indexes to unfold.
+                                                    database.types[collection] === 'view' ? 'invisible' : ''
+                                                ]"
+                                                class="size-3.5 shrink-0 text-on-surface-variant"
+                                                data-testid="collection-toggle"
+                                            />
+                                            <span
+                                                :class="[collectionIcon(database, collection), tint({ connectionId: profile.id, database: database.name, collection })]"
+                                                :title="database.types[collection] === 'collection' ? undefined : $t(`collection.type.${database.types[collection] ?? 'collection'}`)"
+                                                class="size-4 shrink-0"
+                                            />
+                                            <span class="truncate text-on-surface-strong">{{ bucketAt(database, collection) ?? collection }}</span>
+                                            <span
+                                                v-if="bucketAt(database, collection) !== undefined"
+                                                class="shrink-0 text-[11px] text-on-surface-variant"
+                                            >GridFS</span>
+                                            <NoteMarks :place="{ connectionId: profile.id, database: database.name, collection }" />
+                                        </div>
+
+                                        <!-- Unfolded, a collection shows its indexes. -->
+                                        <template v-if="database.details[collection]?.open">
+                                            <div
+                                                v-for="index in database.details[collection]?.indexes"
+                                                :key="String(index.name)"
+                                                @click="select({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                                @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                                @dblclick="actions.indexInfo({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                                :class="[
+                                                    isSelected({ connectionId: profile.id, database: database.name, collection, index: String(index.name) }) ? 'tree-row-on' : '',
+                                                    row.kind === 'collection' && row.folder ? 'pl-24' : 'pl-20'
+                                                ]"
+                                                class="tree-row"
+                                                data-testid="index-row"
+                                                role="treeitem"
+                                                tabindex="0"
+                                            >
+                                                <span class="i-lucide-key-round size-3.5 shrink-0 text-on-surface" />
+                                                <span
+                                                    :class="index.hidden === true ? 'opacity-55' : ''"
+                                                    class="truncate text-on-surface-strong"
+                                                >{{ index.name }}</span>
+                                                <span
+                                                    v-if="index.hidden === true"
+                                                    class="shrink-0 text-[11px] italic text-on-surface-variant"
+                                                >{{ $t("index.hiddenMark") }}</span>
+                                            </div>
+                                        </template>
+                                    </template>
                                 </template>
                             </template>
                         </template>

@@ -303,6 +303,30 @@ export function useActions() {
         await notes.change(notePlace(at), { readonly }).catch(report);
     }
 
+    /** A folder of the database, to group its collections in the tree; the server knows nothing of it. */
+    async function addFolder(at = target.value) {
+        if (at?.database === undefined) return;
+        const name = await dialogs.ask({ title: t("folder.add"), label: t("folder.name"), action: t("action.create") });
+        if (name) await notes.addFolder(at.connectionId, at.database, name).catch(report);
+    }
+
+    async function renameFolder(at: TreeSelection, folder: string) {
+        if (at.database === undefined) return;
+        const name = await dialogs.ask({ title: t("folder.rename"), label: t("folder.name"), value: folder, action: t("action.rename") });
+        if (name && name !== folder) await notes.renameFolder(at.connectionId, at.database, folder, name).catch(report);
+    }
+
+    /** The folder goes; its collections stay where they are, in the database. */
+    async function deleteFolder(at: TreeSelection, folder: string) {
+        if (at.database === undefined) return;
+        const confirmed = await dialogs.confirm({ title: t("folder.delete.title"), text: t("folder.delete.text", { name: folder }), action: t("action.delete") });
+        if (confirmed) await notes.deleteFolder(at.connectionId, at.database, folder).catch(report);
+    }
+
+    async function moveToFolder(at: TreeSelection, folder: string | null) {
+        await notes.change(notePlace(at), { folder }).catch(report);
+    }
+
     async function refresh(at = target.value) {
         if (at) await connections.loadDatabases(at.connectionId).catch(report);
     }
@@ -360,7 +384,7 @@ export function useActions() {
         target, hasConnection, hasDatabase, hasCollection,
         openShell, browse, aggregation, openSql, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
-        setColor, editComment, removeComment, toggleReadonly, writable,
+        setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, deleteFolder, moveToFolder,
         refresh, connect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };

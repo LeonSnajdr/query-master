@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            insert into tree_node (connection_id, path, color, comment, readonly, folder)\n            values ($1, $2, $3, $4, $5, $6)\n            on conflict (connection_id, path) do update\n                set color = excluded.color, comment = excluded.comment, readonly = excluded.readonly,\n                    folder = excluded.folder\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "bef39c582e966f135fd1b95df99a5302123612cceee4aa4d205230bd3b9f88b4"
+}

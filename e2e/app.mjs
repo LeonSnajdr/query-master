@@ -339,6 +339,40 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.locator("[data-testid=swatch-none]:visible").click();
     });
 
+    await step("folders group collections in the tree; renamed and deleted they keep the collections", async () => {
+        const folder = `f${process.pid}`;
+        await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
+        await chooseMenu("Add folder");
+        await id("prompt-input").fill(folder);
+        await id("prompt-submit").click();
+        const folderRow = page.locator("[data-testid=folder-row]", { hasText: folder });
+        await folderRow.waitFor();
+        assert.match(await folderRow.innerText(), /0\s*$/);
+
+        const capped = page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_capped` });
+        await capped.click({ button: "right" });
+        await chooseMenu(`Move to folder ${folder}`);
+        await page.waitForFunction(name => [...document.querySelectorAll("[data-testid=folder-row]")].some(row => row.textContent.includes(name) && /1\s*$/.test(row.textContent)), folder);
+        // Folded, the folder hides its collection; unfolded it shows it again.
+        await folderRow.click();
+        await capped.waitFor({ state: "detached" });
+        await folderRow.click();
+        await capped.waitFor();
+
+        await folderRow.click({ button: "right" });
+        await chooseMenu("Rename folder");
+        await id("prompt-input").fill(`${folder}_old`);
+        await id("prompt-submit").click();
+        const renamed = page.locator("[data-testid=folder-row]", { hasText: `${folder}_old` });
+        await renamed.waitFor();
+        await capped.waitFor();
+        await renamed.click({ button: "right" });
+        await chooseMenu("Delete folder");
+        await id("confirm-action").click();
+        await renamed.waitFor({ state: "detached" });
+        await capped.waitFor();
+    });
+
     await step("a GridFS bucket shows as one row; its files are listed, renamed and deleted", async () => {
         const bucket = `${COLLECTION}_bucket`;
         await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });

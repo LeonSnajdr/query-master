@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            insert into tree_folder (connection_id, database_name, name) values ($1, $2, $3)\n            on conflict do nothing\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "695a28d4706a33d76e6aeb91416a6ba4ebb8722816e37015169469b8b009f3fe"
+}

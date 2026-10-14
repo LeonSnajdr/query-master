@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "delete from tree_folder where connection_id = $1 and database_name = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "ce243530c80aa8a1f571593c0e2c8bb64e14fe8c3869529f41f8dfc519f0bc71"
+}

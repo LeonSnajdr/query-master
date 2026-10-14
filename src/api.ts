@@ -46,6 +46,14 @@ export interface TreeNote {
     color: string | null;
     comment: string | null;
     readonly: boolean;
+    /** The folder of the database a collection is shown in. */
+    folder: string | null;
+}
+
+/** A folder of a database in the tree. */
+export interface TreeFolder {
+    database: string;
+    name: string;
 }
 
 /** A collection on a connection. */
@@ -129,6 +137,12 @@ export interface Backend {
     /** Notes of `from` and below move to `to`. */
     renameTreeNotes: (connectionId: string, from: string, to: string) => Promise<void>;
     removeTreeNotes: (connectionId: string, path: string) => Promise<void>;
+    listTreeFolders: (connectionId: string) => Promise<TreeFolder[]>;
+    addTreeFolder: (connectionId: string, folder: TreeFolder) => Promise<void>;
+    /** The collections in it stay in it. */
+    renameTreeFolder: (connectionId: string, folder: TreeFolder, name: string) => Promise<void>;
+    /** Its collections show in the database again. */
+    deleteTreeFolder: (connectionId: string, folder: TreeFolder) => Promise<void>;
 }
 
 const tauriBackend: Backend = {
@@ -179,7 +193,11 @@ const tauriBackend: Backend = {
     listTreeNotes: connectionId => invoke("tree_node_list", { connectionId }),
     saveTreeNote: (connectionId, node) => invoke("tree_node_save", { connectionId, node }),
     renameTreeNotes: (connectionId, from, to) => invoke("tree_node_rename", { connectionId, from, to }),
-    removeTreeNotes: (connectionId, path) => invoke("tree_node_remove", { connectionId, path })
+    removeTreeNotes: (connectionId, path) => invoke("tree_node_remove", { connectionId, path }),
+    listTreeFolders: connectionId => invoke("tree_folder_list", { connectionId }),
+    addTreeFolder: (connectionId, folder) => invoke("tree_folder_add", { connectionId, folder }),
+    renameTreeFolder: (connectionId, folder, name) => invoke("tree_folder_rename", { connectionId, folder, name }),
+    deleteTreeFolder: (connectionId, folder) => invoke("tree_folder_delete", { connectionId, folder })
 };
 
 /** The app runs in its window (and not, for work on the interface, in a browser). */

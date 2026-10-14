@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            select database_name as database, name\n            from tree_folder\n            where connection_id = $1\n            order by database_name, name\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "database",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8965f4d21123c15a85e0d5d7203156ff888158e45bb41fb219442df029d844b8"
+}

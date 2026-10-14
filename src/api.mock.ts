@@ -94,11 +94,15 @@ export const mockBackend: Backend = {
     saveTreeNote: async (connectionId, node) => {
         const own = notes.get(connectionId) ?? new Map<string, TreeNote>();
         notes.set(connectionId, own);
-        if (node.color || node.comment || node.readonly) own.set(node.path, node);
+        if (node.color || node.comment || node.readonly || node.folder) own.set(node.path, node);
         else own.delete(node.path);
     },
     renameTreeNotes: async () => undefined,
     removeTreeNotes: async () => undefined,
+    listTreeFolders: async () => [],
+    addTreeFolder: async () => undefined,
+    renameTreeFolder: async () => undefined,
+    deleteTreeFolder: async () => undefined,
     runCursorCommand: async (_id, database, command, limit) => {
         let documents: Doc[] = ORDERS;
         if ("listCollections" in command) documents = (COLLECTIONS[database] ?? []).map(name => ({ name, type: "collection" }));
