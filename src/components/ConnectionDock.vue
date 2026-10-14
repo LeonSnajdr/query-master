@@ -15,6 +15,7 @@ import { useMessages } from "@/composables/messages";
 import type { MenuEntry } from "@/menu";
 import { useConnectionsStore } from "@/stores/connections";
 import type { DatabaseNode, TreeSelection } from "@/stores/connections";
+import { bucketOf, treeCollections } from "@/shell/gridfs";
 import { NOTE_COLORS, useNotesStore } from "@/stores/notes";
 import type { NotePlace } from "@/stores/notes";
 
@@ -31,6 +32,7 @@ const menu = useTemplateRef("menu");
 
 /** Views, time series and the server's own collections each have an icon of their own. */
 function collectionIcon(database: DatabaseNode, collection: string): string {
+    if (bucketAt(database, collection) !== undefined) return "i-lucide-folder-archive";
     const type = database.types[collection];
     if (type === "view") return "i-lucide-eye";
     if (type === "timeseries") return "i-lucide-chart-line";
@@ -77,8 +79,22 @@ function shownDatabases(profile: Profile): DatabaseNode[] {
 }
 
 function shownCollections(database: DatabaseNode): string[] {
-    const all = database.collections ?? [];
+    // A GridFS bucket shows once, as its `.files`.
+    const all = treeCollections(database.collections ?? []);
     return matches(database.name) ? all : all.filter(matches);
+}
+
+/** The bucket a row stands for, when it is the `.files` of one. */
+function bucketAt(database: DatabaseNode, collection: string): string | undefined {
+    return bucketOf(collection, database.collections ?? []);
+}
+
+/** Double click: the documents of a collection, the files of a bucket. */
+function openRow(profile: Profile, database: DatabaseNode, collection: string) {
+    const at = { connectionId: profile.id, database: database.name, collection };
+    const bucket = bucketAt(database, collection);
+    if (bucket === undefined) actions.browse(at);
+    else actions.openGridFs(at, bucket);
 }
 
 function isSelected(at: TreeSelection): boolean {
@@ -186,7 +202,10 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             ...tail
         ];
     } else if (at.collection !== undefined) {
+        const node = connections.sessions[at.connectionId]?.databases.find(item => item.name === at.database);
+        const bucket = node ? bucketAt(node, at.collection) : undefined;
         entries = [
+            ...(bucket === undefined ? [] : [{ label: t("gridfs.open"), icon: "i-lucide-folder-archive", action: () => actions.openGridFs(at, bucket) }]),
             { label: t("tab.browse"), icon: "i-lucide-file-text", hotkey: "Ctrl + Q", action: () => actions.browse(at) },
             "separator",
             { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
@@ -223,6 +242,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(at) },
             { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(at) },
             { label: t("view.create"), icon: "i-lucide-file-search", hotkey: "Ctrl + Shift + H", action: () => actions.createView(at) },
+            { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(at) },
             paste(at.database),
             "separator",
             { label: t("database.drop"), hotkey: "Del", danger: true, action: () => void actions.dropDatabase(at) },
@@ -491,8 +511,8 @@ defineExpose({
                                 <div
                                     @click="select({ connectionId: profile.id, database: database.name, collection })"
                                     @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection })"
-                                    @dblclick="actions.browse({ connectionId: profile.id, database: database.name, collection })"
-                                    @keydown.enter="actions.browse({ connectionId: profile.id, database: database.name, collection })"
+                                    @dblclick="openRow(profile, database, collection)"
+                                    @keydown.enter="openRow(profile, database, collection)"
                                     :class="isSelected({ connectionId: profile.id, database: database.name, collection }) ? 'tree-row-on' : ''"
                                     class="tree-row pl-11.5"
                                     data-testid="collection-row"
@@ -516,7 +536,11 @@ defineExpose({
                                         :title="database.types[collection] === 'collection' ? undefined : $t(`collection.type.${database.types[collection] ?? 'collection'}`)"
                                         class="size-4 shrink-0"
                                     />
-                                    <span class="truncate text-on-surface-strong">{{ collection }}</span>
+                                    <span class="truncate text-on-surface-strong">{{ bucketAt(database, collection) ?? collection }}</span>
+                                    <span
+                                        v-if="bucketAt(database, collection) !== undefined"
+                                        class="shrink-0 text-[11px] text-on-surface-variant"
+                                    >GridFS</span>
                                     <NoteMarks :place="{ connectionId: profile.id, database: database.name, collection }" />
                                 </div>
 

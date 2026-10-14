@@ -7,6 +7,7 @@ import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import type { Doc } from "@/shell/ejson";
 import { toShell } from "@/shell/ejson";
+import { bucketIndexes } from "@/shell/gridfs";
 import { ShellError } from "@/shell/message";
 import { replyError } from "@/shell/plan";
 import { useConnectionsStore } from "@/stores/connections";
@@ -132,6 +133,22 @@ export function useActions() {
 
     function manageRoles(at = target.value) {
         if (at) tabs.openServer(at.connectionId, "roles", at.database ?? "admin");
+    }
+
+    /** The files of a GridFS bucket in a tab of their own. */
+    function openGridFs(at: TreeSelection, bucket: string) {
+        if (at.database !== undefined) tabs.openServer(at.connectionId, "gridfs", at.database, bucket);
+    }
+
+    /** A bucket is two collections with the indexes the drivers expect; files come by upload. */
+    async function createBucket(at = target.value) {
+        if (at?.database === undefined || !writable({ connectionId: at.connectionId, database: at.database })) return;
+        const name = await dialogs.ask({ title: t("gridfs.create.title"), label: t("gridfs.create.label"), value: "fs", action: t("action.create") });
+        if (!name) return;
+        for (const { command: create } of bucketIndexes(name)) {
+            if (!await command(at.connectionId, at.database, create)) return;
+        }
+        openGridFs(at, name);
     }
 
     function indexes(at = target.value) {
@@ -323,7 +340,7 @@ export function useActions() {
 
     return {
         target, hasConnection, hasDatabase, hasCollection,
-        openShell, browse, aggregation, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, indexes,
+        openShell, browse, aggregation, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable,
         refresh, connect, disconnect, viewUri, connectionSettings, deleteConnection,

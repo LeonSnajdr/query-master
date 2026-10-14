@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import GridFsPanel from "@/components/server/GridFsPanel.vue";
 import RolesPanel from "@/components/server/RolesPanel.vue";
 import ServerLog from "@/components/server/ServerLog.vue";
 import ServerStatus from "@/components/server/ServerStatus.vue";
@@ -22,6 +23,10 @@ defineProps<{
     />
     <RolesPanel
         v-else-if="tab.page === 'roles'"
+        :tab
+    />
+    <GridFsPanel
+        v-else-if="tab.page === 'gridfs'"
         :tab
     />
     <ServerStatus

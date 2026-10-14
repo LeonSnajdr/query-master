@@ -111,6 +111,10 @@ export interface Backend {
     exportDocuments: (runId: string, id: string, database: string, command: Doc, path: string, format: TransferFormat, progress: (done: number) => void) => Promise<TransferResult>;
     /** Inserts the documents of the file at `path` into the collection, in batches. */
     importDocuments: (runId: string, id: string, database: string, collection: string, path: string, format: TransferFormat, progress: (done: number) => void) => Promise<TransferResult>;
+    /** Stores the file at `path` in the GridFS bucket; gives the new file's `_id`. */
+    gridfsUpload: (runId: string, id: string, database: string, bucket: string, path: string, progress: (done: number, total: number) => void) => Promise<Json>;
+    /** Writes the file with `fileId` from the bucket to `path`. */
+    gridfsDownload: (runId: string, id: string, database: string, bucket: string, fileId: Json, length: number, path: string, progress: (done: number, total: number) => void) => Promise<void>;
     listTreeNotes: (connectionId: string) => Promise<TreeNote[]>;
     /** A note without color, comment and read-only is forgotten. */
     saveTreeNote: (connectionId: string, node: TreeNote) => Promise<void>;
@@ -152,6 +156,16 @@ const tauriBackend: Backend = {
         const onProgress = new Channel<{ done: number }>();
         onProgress.onmessage = update => progress(update.done);
         return invoke("import_documents", { runId, id, database, collection, path, format, onProgress });
+    },
+    gridfsUpload: (runId, id, database, bucket, path, progress) => {
+        const onProgress = new Channel<{ done: number; total: number }>();
+        onProgress.onmessage = update => progress(update.done, update.total);
+        return invoke("gridfs_upload", { runId, id, database, bucket, path, onProgress });
+    },
+    gridfsDownload: (runId, id, database, bucket, fileId, length, path, progress) => {
+        const onProgress = new Channel<{ done: number; total: number }>();
+        onProgress.onmessage = update => progress(update.done, update.total);
+        return invoke("gridfs_download", { runId, id, database, bucket, fileId, length, path, onProgress });
     },
     listTreeNotes: connectionId => invoke("tree_node_list", { connectionId }),
     saveTreeNote: (connectionId, node) => invoke("tree_node_save", { connectionId, node }),

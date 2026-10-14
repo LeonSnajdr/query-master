@@ -75,6 +75,8 @@ export const mockBackend: Backend = {
     // Files are written by the Rust side; the browser preview exports what the page holds instead.
     exportDocuments: () => Promise.reject({ key: "error.transfer.browser", detail: null }),
     importDocuments: () => Promise.reject({ key: "error.transfer.browser", detail: null }),
+    gridfsUpload: () => Promise.reject({ key: "error.transfer.browser", detail: null }),
+    gridfsDownload: () => Promise.reject({ key: "error.transfer.browser", detail: null }),
     getSetting: async () => setting,
     saveSetting: async (value) => {
         setting = value;

@@ -339,6 +339,44 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.locator("[data-testid=swatch-none]:visible").click();
     });
 
+    await step("a GridFS bucket shows as one row; its files are listed, renamed and deleted", async () => {
+        const bucket = `${COLLECTION}_bucket`;
+        await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
+        await chooseMenu("Create GridFS bucket");
+        await id("prompt-input").fill(bucket);
+        await id("prompt-submit").click();
+        await visible("gridfs-title").waitFor();
+        await page.locator("text=No files in this bucket yet.").first().waitFor();
+        await page.keyboard.press("Control+w");
+
+        // A file as a driver writes it: its entry and one chunk ("abc").
+        await id("dock-shell").click();
+        const test = `db.getSiblingDB("${DATABASE}")`;
+        await runShell(`${test}.getCollection("${bucket}.files").insertOne({ _id: 1, length: 3, chunkSize: 261120, uploadDate: new Date(), filename: "hello.txt" }); ${test}.getCollection("${bucket}.chunks").insertOne({ files_id: 1, n: 0, data: BinData(0, "YWJj") })`);
+        await page.keyboard.press("Control+w");
+
+        const row = page.locator("[data-testid=collection-row]", { hasText: "GridFS" }).filter({ hasText: bucket });
+        await page.locator("[data-testid=connection-row]").first().click({ button: "right" });
+        await chooseMenu("Refresh");
+        await row.waitFor();
+        assert.equal(await page.locator("[data-testid=collection-row]", { hasText: `${bucket}.chunks` }).count(), 0);
+        await row.dblclick();
+        const file = page.locator("[data-testid=gridfs-file]:visible", { hasText: "hello.txt" });
+        await file.waitFor();
+        assert.match(await file.innerText(), /3 B/);
+        await file.click();
+        await visible("gridfs-rename").click();
+        await id("prompt-input").fill("hi.txt");
+        await id("prompt-submit").click();
+        const renamed = page.locator("[data-testid=gridfs-file]:visible", { hasText: "hi.txt" });
+        await renamed.click();
+        await visible("gridfs-delete").click();
+        await id("confirm-action").click();
+        await page.locator("text=No files in this bucket yet.").first().waitFor();
+        await page.keyboard.press("Control+w");
+        await visible("browse-title").waitFor();
+    });
+
     await step("the server status and the server log open as tabs of their own", async () => {
         await id("connection-row").first().click({ button: "right" });
         await chooseMenu("Server status");

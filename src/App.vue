@@ -38,7 +38,7 @@ const tabMenu = useTemplateRef("tabMenu");
 
 const TAB_ICONS = { start: "i-lucide-info", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", server: "i-lucide-activity" } as const;
 
-const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield" } as const;
+const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield", gridfs: "i-lucide-folder-archive" } as const;
 
 function iconOf(tab: WorkTab): string {
     return tab.kind === "server" ? SERVER_ICONS[tab.page ?? "status"] : TAB_ICONS[tab.kind];
@@ -52,7 +52,7 @@ const activeTab = computed({
 
 function titleOf(tab: WorkTab): string {
     if (tab.kind === "start") return t("start.title");
-    if (tab.kind === "server") return t(`server.tab.${tab.page ?? "status"}`, { name: connections.profiles.find(item => item.id === tab.connectionId)?.name ?? "", database: tab.database });
+    if (tab.kind === "server") return t(`server.tab.${tab.page ?? "status"}`, { name: connections.profiles.find(item => item.id === tab.connectionId)?.name ?? "", database: tab.database, bucket: tab.collection ?? "" });
     return tab.kind === "browse" || tab.kind === "aggregate" ? tab.collection ?? "" : tab.database;
 }
 
