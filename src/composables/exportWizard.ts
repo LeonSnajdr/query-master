@@ -7,7 +7,7 @@ import { useMessages } from "@/composables/messages";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
-import { exportJob, rowsFor, switchFormat } from "@/transfer/export";
+import { DEFAULT_CSV, exportJob, rowsFor, switchFormat } from "@/transfer/export";
 import type { ExportFormat, ExportRow, ExportState } from "@/transfer/export";
 
 /** A row's progress while the export runs. */
@@ -18,8 +18,8 @@ export interface RowProgress {
     error?: string;
 }
 
-/** The pages of the wizard: rows and destination, settings of the format, progress. */
-export type WizardStep = "rows" | "settings" | "progress";
+/** The pages of the wizard: rows and destination, settings of the format, columns (CSV), progress. */
+export type WizardStep = "rows" | "settings" | "schema" | "progress";
 
 /** The folder chosen last; the wizard starts with it (for this session). */
 let lastFolder = "";
@@ -34,6 +34,8 @@ const wizard = reactive({
         path: "",
         rows: [],
         json: { notation: "shell", layout: "lines" },
+        csv: { ...DEFAULT_CSV },
+        columns: {},
         database: { connectionId: "", database: "", insertMode: "overwrite", copyIndexes: true }
     } as ExportState,
     progress: [] as RowProgress[],
@@ -77,9 +79,10 @@ export function useExportWizard() {
             Object.assign(wizard.state, {
                 connectionId: at.connectionId,
                 format: "json",
-                target: at.collection === undefined ? "directory" : "file",
+                target: "directory",
                 path: lastFolder,
-                rows: rowsFor("json", collections.map(item => ({ ...item, filter })))
+                rows: rowsFor("json", collections.map(item => ({ ...item, filter }))),
+                columns: {}
             });
             wizard.state.database = { connectionId: at.connectionId, database: "", insertMode: "overwrite", copyIndexes: true };
         } catch (error) {

@@ -17,7 +17,7 @@ use mongodb::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::csv_format::CsvWriter;
+use super::csv_format::{CsvOptions, CsvWriter};
 use super::json_format::{JsonWriter, Layout, Notation};
 use crate::copy::{create_command, describe, index_specs, NAMESPACE_EXISTS};
 use crate::error::{Error, Result};
@@ -39,6 +39,9 @@ pub struct ExportItem {
     /// Extended JSON: a `find` filter (document) or a pipeline (array); none for all documents.
     #[serde(default)]
     pub filter: Option<Value>,
+    /// CSV: the columns, as dotted paths; none for the fields of the first level.
+    #[serde(default)]
+    pub columns: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -70,11 +73,15 @@ pub enum Destination {
     },
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum FileFormat {
     Json { notation: Notation, layout: Layout },
-    Csv,
+    Csv { options: CsvOptions },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -235,12 +242,12 @@ async fn export_text(
     item: &ExportItem,
     target: Option<&PathBuf>,
     clipboard: &mut String,
-    format: FileFormat,
+    format: &FileFormat,
     stop: &AtomicBool,
     progress: &mut impl FnMut(u64),
 ) -> Result<u64> {
     let mut cursor = read(client, item).await?;
-    match (format, target) {
+    match (format.clone(), target) {
         (FileFormat::Json { notation, layout }, Some(folder)) => {
             check_output(&item.output)?;
             let mut file = BufWriter::new(File::create(folder.join(&item.output))?);
@@ -257,25 +264,44 @@ async fn export_text(
             let mut sink = Sink::Text(clipboard);
             write_json(&mut cursor, &mut sink, notation, layout, stop, progress).await
         }
-        (FileFormat::Csv, Some(folder)) => {
+        (FileFormat::Csv { options }, Some(folder)) => {
             check_output(&item.output)?;
-            let mut writer =
-                CsvWriter::new(BufWriter::new(File::create(folder.join(&item.output))?));
-            let mut done = 0;
-            loop {
-                let batch = next_batch(&mut cursor, stop).await?;
-                if batch.is_empty() {
-                    break;
-                }
-                writer.write(&batch)?;
-                done += batch.len() as u64;
-                progress(done);
-            }
+            let file = BufWriter::new(File::create(folder.join(&item.output))?);
+            let mut writer = CsvWriter::with_options(file, options, item.columns.clone());
+            let done = write_csv(&mut cursor, &mut writer, stop, progress).await?;
             writer.finish()?;
             Ok(done)
         }
-        (FileFormat::Csv, None) => Err(Error::FormatNotForClipboard),
+        (FileFormat::Csv { options }, None) => {
+            let mut writer = CsvWriter::with_options(Vec::new(), options, item.columns.clone());
+            let done = write_csv(&mut cursor, &mut writer, stop, progress).await?;
+            let bytes = writer.into_inner()?;
+            if clipboard.len() + bytes.len() > CLIPBOARD_LIMIT {
+                return Err(Error::ClipboardTooLarge);
+            }
+            clipboard.push_str(&String::from_utf8_lossy(&bytes));
+            Ok(done)
+        }
     }
+}
+
+async fn write_csv<W: Write>(
+    cursor: &mut Cursor<Document>,
+    writer: &mut CsvWriter<W>,
+    stop: &AtomicBool,
+    progress: &mut impl FnMut(u64),
+) -> Result<u64> {
+    let mut done = 0;
+    loop {
+        let batch = next_batch(cursor, stop).await?;
+        if batch.is_empty() {
+            break;
+        }
+        writer.write(&batch)?;
+        done += batch.len() as u64;
+        progress(done);
+    }
+    Ok(done)
 }
 
 fn is_namespace_exists(error: &mongodb::error::Error) -> bool {
@@ -423,7 +449,7 @@ pub async fn run(
                     item,
                     Some(path),
                     &mut clipboard,
-                    job.format,
+                    &job.format,
                     stop,
                     &mut step,
                 )
@@ -435,7 +461,7 @@ pub async fn run(
                     item,
                     None,
                     &mut clipboard,
-                    job.format,
+                    &job.format,
                     stop,
                     &mut step,
                 )
@@ -522,6 +548,7 @@ mod tests {
             collection: collection.into(),
             output: output.into(),
             filter,
+            columns: None,
         }
     }
 
@@ -560,7 +587,7 @@ mod tests {
             destination: Destination::Directory {
                 path: folder.clone(),
             },
-            format: json,
+            format: json.clone(),
         };
         let mut states = Vec::new();
         let outcome = run(&client, None, &job, &AtomicBool::new(false), |progress| {
@@ -632,7 +659,7 @@ mod tests {
                 insert_mode,
                 copy_indexes: true,
             },
-            format: json,
+            format: json.clone(),
         };
         for _ in 0..2 {
             run(

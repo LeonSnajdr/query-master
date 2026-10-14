@@ -38,8 +38,6 @@ pub enum Error {
     WritingPipeline,
     #[error("the text is too large for the clipboard")]
     ClipboardTooLarge,
-    #[error("this format can not go to the clipboard")]
-    FormatNotForClipboard,
     #[error("a collection can not be exported into itself")]
     SameTarget,
     #[error("{0}")]
@@ -75,7 +73,6 @@ impl Error {
             Self::OutputName(_) => Some("error.transfer.outputName"),
             Self::WritingPipeline => Some("error.transfer.writingPipeline"),
             Self::ClipboardTooLarge => Some("error.transfer.clipboardTooLarge"),
-            Self::FormatNotForClipboard => Some("error.transfer.notForClipboard"),
             Self::SameTarget => Some("error.transfer.sameTarget"),
             Self::Mongo(_) | Self::Io(_) | Self::Script(_) => None,
         }
@@ -94,7 +91,6 @@ impl Error {
             | Self::ImportShape
             | Self::WritingPipeline
             | Self::ClipboardTooLarge
-            | Self::FormatNotForClipboard
             | Self::SameTarget => None,
             Self::OutputName(name) => Some(name.clone()),
             Self::CollectionMissing(name) => Some(name.clone()),

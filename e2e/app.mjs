@@ -310,6 +310,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
 
         // JSON in the shell's notation, with a filter of the row.
         await openWizard();
+        await shot("export-wizard");
         assert.equal(await id("export-output").inputValue(), `${DATABASE}.${COLLECTION}.json`);
         await wizardSelect(0, "Clipboard");
         await id("export-filter").fill("{ n: { $gte: 2 } }");
@@ -321,9 +322,36 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.match(text, /^\t"_id": ObjectId\("[0-9a-f]{24}"\),\r$/m);
         await id("export-close").click();
 
+        // CSV with a semicolon, and columns chosen on the schema page, one of them typed in.
+        await openWizard();
+        await id("export-tile-csv").click();
+        await wizardSelect(0, "Clipboard");
+        await id("export-filter").fill("{ n: 1 }");
+        await id("export-next").click();
+        await wizardSelect(0, "Semicolon");
+        await shot("export-csv");
+        await id("export-schema").click();
+        const columns = page.locator("[data-testid=schema-column]");
+        await page.locator("[data-testid=schema-column]", { hasText: /^\s*name\s*$/ }).waitFor();
+        for (const name of await columns.allInnerTexts()) {
+            if (name.trim() !== "name") await columns.filter({ hasText: new RegExp(`^\\s*${name.trim()}\\s*$`) }).click();
+        }
+        await id("schema-remove").click();
+        await id("schema-typed").fill("nested.deep");
+        await id("schema-typed").press("Enter");
+        await page.locator("[data-testid=schema-fields] li", { hasText: /^\s*tags\s*$/ }).dblclick();
+        assert.deepEqual((await columns.allInnerTexts()).map(name => name.trim()), ["name", "nested.deep", "tags"]);
+        await shot("export-schema");
+        await id("export-start").click();
+        await page.locator("[data-testid=export-progress-row][data-state=done]").waitFor();
+        const csv = await page.evaluate(() => navigator.clipboard.readText());
+        assert.match(csv, /^name;nested\.deep;tags\r?\none;true;"?\[.*"a".*"b".*\]"?\r?\n$/, csv);
+        await id("export-close").click();
+
         // Into a database: the same server, another collection name.
         await openWizard();
         await id("export-tile-database").click();
+        await shot("export-database");
         await wizardSelect(0, NAME);
         await id("export-target-database").fill(DATABASE);
         await id("export-output").fill(`${COLLECTION}_exported`);

@@ -9,7 +9,8 @@ import { CSV_FILES, JSON_FILES, pickFolder, pickSavePath } from "@/files";
 import type { FileKind } from "@/files";
 import { useConnectionsStore } from "@/stores/connections";
 import { defaultOutput, exportProblems, FILE_TARGETS } from "@/transfer/export";
-import type { ExportFormat, ExportRow, FileTarget, InsertMode, JsonLayout, JsonNotation } from "@/transfer/export";
+import type { CsvSettings, ExportFormat, ExportRow, FileTarget, InsertMode, JsonLayout, JsonNotation } from "@/transfer/export";
+import ColumnSchema from "./ColumnSchema.vue";
 
 /** The export wizard: format tiles, rows of collections, settings, progress. */
 const { t } = useI18n();
@@ -32,7 +33,14 @@ const TILES: { format: ExportFormat; icon: string }[] = [
 ];
 const AVAILABLE: ExportFormat[] = ["json", "csv", "database"];
 
-const title = computed(() => (wizard.step === "settings" ? t("export.title.settings", { format: t(`export.format.${state.value.format}`) }) : t("export.title")));
+const title = computed(() => {
+    if (wizard.step === "settings") return t("export.title.settings", { format: t(`export.format.${state.value.format}`) });
+    if (wizard.step === "schema") return t("export.title.schema");
+    return t("export.title");
+});
+const delimiterOptions = computed(() => ([[",", "comma"], [";", "semicolon"], ["\t", "tab"], [" ", "space"]] as const).map(([value, name]) => ({ value, label: t(`export.csv.delimiter.${name}`) })));
+const quoteOptions = computed(() => ([["\"", "double"], ["'", "single"]] as const).map(([value, name]) => ({ value, label: t(`export.csv.quote.${name}`) })));
+const CSV_FLAGS = ["header", "nullEmpty", "escapeStrings"] as const;
 const targetOptions = computed(() => FILE_TARGETS.map(value => ({ value, label: t(`export.target.${value}`) })));
 const serverOptions = computed(() => connections.saved.map(profile => ({ value: profile.id, label: profile.name })));
 const insertOptions = computed(() => (["overwrite", "newId"] as InsertMode[]).map(value => ({ value, label: t(`export.insert.${value}`) })));
@@ -53,6 +61,8 @@ const server = computed({ get: () => state.value.database.connectionId, set: (va
 const insertMode = computed({ get: () => state.value.database.insertMode, set: (value: InsertMode) => (state.value.database.insertMode = value) });
 const notation = computed({ get: () => state.value.json.notation, set: (value: JsonNotation) => (state.value.json.notation = value) });
 const layout = computed({ get: () => state.value.json.layout, set: (value: JsonLayout) => (state.value.json.layout = value) });
+const delimiter = computed({ get: () => state.value.csv.delimiter, set: (value: CsvSettings["delimiter"]) => (state.value.csv.delimiter = value) });
+const quote = computed({ get: () => state.value.csv.quote, set: (value: CsvSettings["quote"]) => (state.value.csv.quote = value) });
 
 /** The row clicked last; edit and remove act on it. */
 const selected = shallowRef<number>();
@@ -423,12 +433,47 @@ const STATE_ICONS: Record<string, string> = {
                             data-testid="export-layout"
                         />
                     </div>
-                    <p
+                    <div
                         v-else
-                        class="m-0 text-on-surface-variant"
+                        class="form-grid grid-cols-[14rem_1fr]!"
                     >
-                        {{ $t("export.csv.automatic") }}
-                    </p>
+                        <span>{{ $t("export.csv.delimiter") }}:</span>
+                        <SelectField
+                            v-model="delimiter"
+                            :label="$t('export.csv.delimiter')"
+                            :options="delimiterOptions"
+                            data-testid="export-delimiter"
+                        />
+                        <span>{{ $t("export.csv.quote") }}:</span>
+                        <SelectField
+                            v-model="quote"
+                            :label="$t('export.csv.quote')"
+                            :options="quoteOptions"
+                        />
+                        <template
+                            v-for="flag in CSV_FLAGS"
+                            :key="flag"
+                        >
+                            <span>{{ $t(`export.csv.${flag}`) }}:</span>
+                            <SwitchRoot
+                                v-model="state.csv[flag]"
+                                :data-testid="`export-csv-${flag}`"
+                                :label="$t(`export.csv.${flag}`)"
+                            >
+                                <SwitchTrack class="switch-track">
+                                    <SwitchThumb class="switch-thumb" />
+                                </SwitchTrack>
+                            </SwitchRoot>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Page 3 of CSV: the columns of each collection. -->
+                <div
+                    v-else-if="wizard.step === 'schema'"
+                    class="grow min-h-0 px-6 pt-5"
+                >
+                    <ColumnSchema :state="state" />
                 </div>
 
                 <!-- Page 3: how far each row got. -->
@@ -500,15 +545,24 @@ const STATE_ICONS: Record<string, string> = {
                             <ButtonContent>{{ $t(state.format === "database" ? "export.start" : "action.next") }}</ButtonContent>
                         </ButtonRoot>
                     </template>
-                    <template v-else-if="wizard.step === 'settings'">
+                    <template v-else-if="wizard.step === 'settings' || wizard.step === 'schema'">
                         <ButtonRoot
-                            @click="wizard.step = 'rows'"
+                            @click="wizard.step = wizard.step === 'schema' ? 'settings' : 'rows'"
                             class="btn-secondary"
                             data-testid="export-back"
                         >
                             <ButtonContent>{{ $t("action.back") }}</ButtonContent>
                         </ButtonRoot>
                         <ButtonRoot
+                            v-if="wizard.step === 'settings' && state.format === 'csv'"
+                            @click="wizard.step = 'schema'"
+                            class="btn-primary"
+                            data-testid="export-schema"
+                        >
+                            <ButtonContent>{{ $t("action.next") }}</ButtonContent>
+                        </ButtonRoot>
+                        <ButtonRoot
+                            v-else
                             @click="start"
                             class="btn-primary"
                             data-testid="export-start"

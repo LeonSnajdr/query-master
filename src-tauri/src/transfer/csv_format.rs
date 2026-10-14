@@ -1,47 +1,99 @@
-//! CSV: a column per field of the first level. The columns are those of the first batch, in the
-//! order the fields first appear; a field seen only later is reported, not written. Nested values
+//! CSV: a column per chosen field (dotted paths reach into sub documents); without a choice one per
+//! field of the first level, those of the first batch in the order they first appear, and a field
+//! seen only later is reported, not written. Nested values
 //! are written as relaxed extended JSON. Reading guesses numbers and booleans, the rest stays text.
 
 use std::collections::BTreeSet;
 use std::fs::File;
-use std::io::BufWriter;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
 use mongodb::bson::{Bson, Document};
+use serde::Deserialize;
 
 use crate::error::{Error, Result};
 
-pub struct CsvWriter {
-    writer: csv::Writer<BufWriter<File>>,
+/// The settings of the CSV page.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsvOptions {
+    pub delimiter: char,
+    /// What wraps a value holding the delimiter, a quote or a line break.
+    pub quote: char,
+    pub header: bool,
+    /// `null` as an empty cell; otherwise the word `null`.
+    pub null_empty: bool,
+    /// Line breaks in text as `\r` and `\n`, so every document stays on one line.
+    pub escape_strings: bool,
+}
+
+impl Default for CsvOptions {
+    fn default() -> Self {
+        Self {
+            delimiter: ',',
+            quote: '"',
+            header: true,
+            null_empty: true,
+            escape_strings: false,
+        }
+    }
+}
+
+pub struct CsvWriter<W: Write> {
+    writer: csv::Writer<W>,
+    options: CsvOptions,
     columns: Option<Vec<String>>,
+    /// The columns were chosen: fields outside them are left out, not reported.
+    chosen: bool,
     skipped: BTreeSet<String>,
 }
 
-impl CsvWriter {
+impl CsvWriter<BufWriter<File>> {
     pub fn new(file: BufWriter<File>) -> Self {
+        Self::with_options(file, CsvOptions::default(), None)
+    }
+}
+
+impl<W: Write> CsvWriter<W> {
+    /// With `columns` (dotted paths, as `customer.name`) the file has exactly these, in order.
+    pub fn with_options(file: W, options: CsvOptions, columns: Option<Vec<String>>) -> Self {
+        let writer = csv::WriterBuilder::new()
+            .delimiter(u8::try_from(options.delimiter).unwrap_or(b','))
+            .quote(u8::try_from(options.quote).unwrap_or(b'"'))
+            .from_writer(file);
+        let chosen = columns.as_ref().is_some_and(|columns| !columns.is_empty());
         Self {
-            writer: csv::Writer::from_writer(file),
-            columns: None,
+            writer,
+            options,
+            columns: columns.filter(|columns| !columns.is_empty()),
+            chosen,
             skipped: BTreeSet::new(),
         }
     }
 
     pub fn write(&mut self, documents: &[Document]) -> Result<()> {
         if self.columns.is_none() {
-            let columns = columns_of(documents);
-            self.writer.write_record(&columns).map_err(csv_error)?;
-            self.columns = Some(columns);
+            self.columns = Some(columns_of(documents));
         }
         let columns = self.columns.as_ref().expect("set above");
+        if self.options.header {
+            self.writer.write_record(columns).map_err(csv_error)?;
+            // Once, before the first row.
+            self.options.header = false;
+        }
         for document in documents {
-            for key in document.keys() {
-                if !columns.contains(key) {
-                    self.skipped.insert(key.clone());
+            if !self.chosen {
+                for key in document.keys() {
+                    if !columns.contains(key) {
+                        self.skipped.insert(key.clone());
+                    }
                 }
             }
-            let record = columns
-                .iter()
-                .map(|column| document.get(column).map(cell).unwrap_or_default());
+            let record = columns.iter().map(|column| {
+                path_value(document, column)
+                    .map(|value| cell_with(value, &self.options))
+                    .unwrap_or_default()
+            });
             self.writer.write_record(record).map_err(csv_error)?;
         }
         Ok(())
@@ -50,6 +102,13 @@ impl CsvWriter {
     pub fn finish(mut self) -> Result<Vec<String>> {
         self.writer.flush()?;
         Ok(self.skipped.into_iter().collect())
+    }
+
+    /// The writer underneath, flushed: the bytes of a CSV written into memory.
+    pub fn into_inner(self) -> Result<W> {
+        self.writer
+            .into_inner()
+            .map_err(|error| Error::Io(std::io::Error::other(error.to_string())))
     }
 }
 
@@ -68,6 +127,34 @@ fn columns_of(documents: &[Document]) -> Vec<String> {
         }
     }
     columns
+}
+
+/// The value at a dotted path: through sub documents, and through arrays by position.
+fn path_value<'a>(document: &'a Document, path: &str) -> Option<&'a Bson> {
+    if let Some(value) = document.get(path) {
+        return Some(value);
+    }
+    let mut segments = path.split('.');
+    let mut value = document.get(segments.next()?)?;
+    for segment in segments {
+        value = match value {
+            Bson::Document(inner) => inner.get(segment)?,
+            Bson::Array(items) => items.get(segment.parse::<usize>().ok()?)?,
+            _ => return None,
+        };
+    }
+    Some(value)
+}
+
+fn cell_with(value: &Bson, options: &CsvOptions) -> String {
+    match value {
+        Bson::Null if !options.null_empty => "null".into(),
+        Bson::String(text) if options.escape_strings => text
+            .replace('\\', "\\\\")
+            .replace('\r', "\\r")
+            .replace('\n', "\\n"),
+        other => cell(other),
+    }
 }
 
 /// A value as the text of a cell: plain for scalars, JSON for the rest.
@@ -133,6 +220,43 @@ pub fn read(path: &Path) -> Result<Vec<Document>> {
 mod tests {
     use super::*;
     use mongodb::bson::{doc, oid::ObjectId, DateTime};
+
+    #[test]
+    fn writes_the_columns_chosen_with_the_settings_of_the_page() {
+        let path =
+            std::env::temp_dir().join(format!("querymaster-{}-options.csv", std::process::id()));
+        let options = CsvOptions {
+            delimiter: ';',
+            quote: '\'',
+            header: true,
+            null_empty: false,
+            escape_strings: true,
+        };
+        let columns = vec![
+            "name".to_owned(),
+            "customer.city".to_owned(),
+            "tags.1".to_owned(),
+            "gone".to_owned(),
+        ];
+        let mut writer = CsvWriter::with_options(
+            BufWriter::new(File::create(&path).unwrap()),
+            options,
+            Some(columns),
+        );
+        writer
+            .write(&[doc! { "name": "a;b", "customer": { "city": "Ulm" }, "tags": ["x", "y"], "other": 1 }])
+            .unwrap();
+        writer
+            .write(&[doc! { "name": "line\nbreak", "customer": null }])
+            .unwrap();
+        // Chosen columns: fields left out are no surprise and not reported.
+        assert!(writer.finish().unwrap().is_empty());
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "name;customer.city;tags.1;gone\n'a;b';Ulm;y;\nline\\nbreak;;;\n"
+        );
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn writes_cells_and_quotes_what_needs_it() {

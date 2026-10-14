@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exportJob, exportProblems, filterValue, rowsFor, splitPath, switchFormat } from "./export";
+import { DEFAULT_CSV, exportJob, exportProblems, filterValue, rowsFor, splitPath, switchFormat } from "./export";
 import type { ExportState } from "./export";
 
 function state(change: Partial<ExportState> = {}): ExportState {
@@ -10,6 +10,8 @@ function state(change: Partial<ExportState> = {}): ExportState {
         path: "C:\\exports",
         rows: rowsFor("json", [{ database: "shop", collection: "orders" }, { database: "shop", collection: "people" }]),
         json: { notation: "shell", layout: "lines" },
+        csv: DEFAULT_CSV,
+        columns: {},
         database: { connectionId: "", database: "", insertMode: "overwrite", copyIndexes: true },
         ...change
     };
@@ -41,7 +43,7 @@ describe("exportProblems", () => {
         const rows = state().rows;
         rows[1] = { ...rows[1]!, output: "SHOP.orders.JSON", filter: "{ broken" };
         expect(exportProblems(state({ rows }))).toEqual([{ key: "export.problem.sameOutput", row: 1 }, { key: "export.problem.filter", row: 1 }]);
-        expect(exportProblems(state({ format: "csv", target: "clipboard" }))).toEqual([{ key: "export.problem.clipboardJson" }]);
+        expect(exportProblems(state({ format: "csv", target: "clipboard" }))).toEqual([]);
         expect(exportProblems(state({ format: "database" }))).toEqual([{ key: "export.problem.noServer" }, { key: "export.problem.noDatabase" }]);
     });
 });
@@ -56,9 +58,15 @@ describe("exportJob", () => {
         const copy = exportJob(state({ format: "database", database: { connectionId: "c2", database: "backup", insertMode: "newId", copyIndexes: false } }));
         expect(copy.destination).toEqual({ kind: "database", connectionId: "c2", database: "backup", insertMode: "newId", copyIndexes: false });
         expect(copy.items).toEqual([
-            { database: "shop", collection: "orders", output: "shop.orders.json", filter: null },
-            { database: "shop", collection: "people", output: "shop.people.json", filter: null }
+            { database: "shop", collection: "orders", output: "shop.orders.json", filter: null, columns: null },
+            { database: "shop", collection: "people", output: "shop.people.json", filter: null, columns: null }
         ]);
+    });
+
+    it("sends the CSV settings and the columns chosen for a collection", () => {
+        const job = exportJob(state({ format: "csv", csv: { ...DEFAULT_CSV, delimiter: ";" }, columns: { "shop.orders": ["total", "customer.city"] } }));
+        expect(job.format).toEqual({ kind: "csv", options: { delimiter: ";", quote: "\"", header: true, nullEmpty: true, escapeStrings: false } });
+        expect((job.items as { columns: string[] | null }[]).map(item => item.columns)).toEqual([["total", "customer.city"], null]);
     });
 
     it("splits paths of either kind", () => {

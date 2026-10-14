@@ -15,6 +15,22 @@ export type JsonNotation = "shell" | "relaxed" | "canonical";
 export type JsonLayout = "lines" | "comma" | "array";
 export type InsertMode = "overwrite" | "newId";
 
+/** The settings of the CSV page. */
+export interface CsvSettings {
+    delimiter: "," | ";" | "\t" | " ";
+    quote: "\"" | "'";
+    header: boolean;
+    nullEmpty: boolean;
+    escapeStrings: boolean;
+}
+
+export const DEFAULT_CSV: CsvSettings = { delimiter: ",", quote: "\"", header: true, nullEmpty: true, escapeStrings: false };
+
+/** The key of a collection in `ExportState.columns`. */
+export function columnsKey(row: { database: string; collection: string }): string {
+    return `${row.database}.${row.collection}`;
+}
+
 /** A row of the wizard. */
 export interface ExportRow {
     database: string;
@@ -34,6 +50,9 @@ export interface ExportState {
     path: string;
     rows: ExportRow[];
     json: { notation: JsonNotation; layout: JsonLayout };
+    csv: CsvSettings;
+    /** CSV columns (dotted paths) per collection, as `database.collection`; none: the fields of the first level. */
+    columns: Record<string, string[]>;
     database: { connectionId: string; database: string; insertMode: InsertMode; copyIndexes: boolean };
 }
 
@@ -77,7 +96,6 @@ export function exportProblems(state: ExportState): { key: string; row?: number 
     } else if (state.target !== "clipboard" && !state.path.trim()) {
         problems.push({ key: "export.problem.noPath" });
     }
-    if (state.format !== "database" && state.target === "clipboard" && state.format !== "json") problems.push({ key: "export.problem.clipboardJson" });
     const seen = new Set<string>();
     state.rows.forEach((row, index) => {
         const output = row.output.trim();
@@ -118,11 +136,19 @@ export function exportJob(state: ExportState): Doc {
         // A folder; with several rows "File" also means one file per collection.
         destination = { kind: "directory", path: state.target === "file" ? splitPath(state.path.trim()).folder : state.path.trim() };
     }
-    const format: Doc = state.format === "csv" ? { kind: "csv" } : { kind: "json", notation: state.json.notation, layout: state.json.layout };
+    const format: Doc = state.format === "csv"
+        ? { kind: "csv", options: { ...state.csv } }
+        : { kind: "json", notation: state.json.notation, layout: state.json.layout };
     return {
         connectionId: state.connectionId,
         destination,
         format,
-        items: rows.map(row => ({ database: row.database, collection: row.collection, output: row.output.trim(), filter: filterValue(row.filter) ?? null }))
+        items: rows.map(row => ({
+            database: row.database,
+            collection: row.collection,
+            output: row.output.trim(),
+            filter: filterValue(row.filter) ?? null,
+            columns: state.format === "csv" ? state.columns[columnsKey(row)] ?? null : null
+        }))
     };
 }

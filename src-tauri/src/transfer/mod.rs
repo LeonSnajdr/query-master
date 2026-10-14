@@ -105,7 +105,7 @@ enum Writer {
     Json { file: BufWriter<File>, first: bool },
     JsonLines(BufWriter<File>),
     // Boxed: the CSV writer carries a large buffer of its own.
-    Csv(Box<csv_format::CsvWriter>),
+    Csv(Box<csv_format::CsvWriter<BufWriter<File>>>),
 }
 
 impl Writer {
