@@ -259,7 +259,7 @@ function openListMenu(event: MouseEvent, profile?: Profile) {
     const head: MenuEntry[] = [
         { label: t("connection.connect"), icon: "i-lucide-plug", hotkey: "Enter", action: () => profile && void choose(profile), disabled: !profile },
         "separator",
-        { label: t("connection.add"), icon: "i-lucide-plus", hotkey: "Ctrl + F2", action: close(() => actions.newConnection()) },
+        { label: t("connection.add"), icon: "i-lucide-plus", command: "connection.add", action: close(() => actions.newConnection()) },
         { label: t("connection.addFromUri"), icon: "i-lucide-link", action: close(() => void actions.connectFromUri()) }
     ];
     const find: MenuEntry = { label: t("connection.find"), icon: "i-lucide-search", hotkey: "Ctrl + F", action: () => listSearchInput.value?.focus() };
@@ -276,14 +276,14 @@ function openListMenu(event: MouseEvent, profile?: Profile) {
         { label: t("connection.edit"), icon: "i-lucide-pencil", hotkey: "Ctrl + E", action: () => editPicked() },
         { label: t("action.delete"), icon: "i-lucide-x", hotkey: "Del", danger: true, action: () => deletePicked() },
         "separator",
-        { label: t("connection.uri"), hotkey: "Ctrl + Alt + F2", action: () => uriOf(profile) },
+        { label: t("connection.uri"), command: "connection.uri", action: () => uriOf(profile) },
         "separator",
         find,
         ...noteEntries(at)
     ]);
 }
 
-/** Up and down pick, Enter connects, Del deletes, Ctrl+E edits, Ctrl+F searches, Ctrl+Alt+F2 shows the string. */
+/** Up and down pick, Enter connects, Del deletes, Ctrl+E edits, Ctrl+F searches, the key of "View connection URI" shows it. */
 function onListKey(event: KeyboardEvent) {
     const at = listed.value.findIndex(profile => profile.id === picked.value);
     const control = event.ctrlKey || event.metaKey;
@@ -292,7 +292,9 @@ function onListKey(event: KeyboardEvent) {
         editPicked();
     } else if (control && !event.altKey && key === "f") {
         listSearchInput.value?.focus();
-    } else if (control && event.altKey && event.key === "F2") {
+    } else if (keymap.matches(event, "connection.uri")) {
+        // For the picked entry of the list, not for the row of the tree the window's key acts on.
+        event.stopPropagation();
         if (pickedProfile.value) uriOf(pickedProfile.value);
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         const next = listed.value[Math.min(listed.value.length - 1, Math.max(0, at + (event.key === "ArrowDown" ? 1 : -1)))];
@@ -379,11 +381,11 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
                 ? []
                 : [
                     { label: t("connection.settings"), action: () => actions.connectionSettings(at) },
-                    { label: t("connection.uri"), hotkey: "Ctrl + Alt + F2", action: () => void actions.viewUri(at) },
+                    { label: t("connection.uri"), command: "connection.uri", action: () => void actions.viewUri(at) },
                     "separator"
                 ] satisfies MenuEntry[]),
             { label: t("connection.reconnect"), icon: "i-lucide-refresh-cw", action: () => void actions.reconnect(at) },
-            { label: t("connection.disconnect"), hotkey: "Ctrl + Alt + D", action: () => void actions.disconnect(at) }
+            { label: t("connection.disconnect"), command: "connection.disconnect", action: () => void actions.disconnect(at) }
         ];
     } else if (at.index !== undefined) {
         entries = [
