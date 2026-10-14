@@ -113,6 +113,8 @@ function folderEntries(at: TreeSelection): MenuEntry[] {
         .filter(folder => folder !== current)
         .map(folder => ({ label: t("folder.moveTo", { name: folder }), icon: "i-lucide-folder-input", action: () => void actions.moveToFolder(at, folder) }));
     if (current) entries.push({ label: t("folder.moveOut", { name: current }), icon: "i-lucide-folder-output", action: () => void actions.moveToFolder(at, null) });
+    // Many folders would make a long menu: they get one of their own.
+    if (entries.length > 1) return ["separator", { label: t("folder.menu"), icon: "i-lucide-folder", children: entries }];
     return entries.length > 0 ? ["separator", ...entries] : [];
 }
 
@@ -249,12 +251,18 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("collection.copy"), icon: "i-lucide-copy", hotkey: "Ctrl + C", action: () => copying.copy({ connectionId: at.connectionId, database: at.database!, collection: at.collection! }) },
             paste(at.database!),
-            ...TRANSFER_FORMATS.map(({ format }): MenuEntry => ({
-                label: t(`collection.export.${format}`),
-                icon: "i-lucide-upload",
-                action: () => void transfer.exportCollection({ connectionId: at.connectionId, database: at.database! }, at.collection!, format)
-            })),
-            { label: t("collection.import"), icon: "i-lucide-download", action: () => void transfer.importCollection({ connectionId: at.connectionId, database: at.database! }, at.collection!), disabled: isView(at) },
+            {
+                label: t("collection.transfer"),
+                icon: "i-lucide-arrow-up-down",
+                children: [
+                    ...TRANSFER_FORMATS.map(({ format }): MenuEntry => ({
+                        label: t(`collection.export.${format}`),
+                        icon: "i-lucide-upload",
+                        action: () => void transfer.exportCollection({ connectionId: at.connectionId, database: at.database! }, at.collection!, format)
+                    })),
+                    { label: t("collection.import"), icon: "i-lucide-download", action: () => void transfer.importCollection({ connectionId: at.connectionId, database: at.database! }, at.collection!), disabled: isView(at) }
+                ]
+            },
             "separator",
             { label: t("collection.rename"), action: () => void actions.renameCollection(at) },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", hotkey: "Del", danger: true, action: () => void actions.dropCollection(at) },
