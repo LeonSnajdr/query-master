@@ -240,6 +240,15 @@ export const useTabsStore = defineStore("tabs", () => {
         for (const tab of tabs.value.filter(item => item.connectionId === connectionId)) close(tab.id);
     }
 
+    /** Puts a tab at another place in the row. */
+    function move(id: string, index: number): void {
+        const from = tabs.value.findIndex(tab => tab.id === id);
+        const to = Math.max(0, Math.min(index, tabs.value.length - 1));
+        if (from === -1 || from === to) return;
+        const [tab] = tabs.value.splice(from, 1);
+        tabs.value.splice(to, 0, tab!);
+    }
+
     /** Makes the tab after (1) or before (-1) the active one the active one. */
     function step(direction: -1 | 1): void {
         const index = tabs.value.findIndex(tab => tab.id === activeId.value);
@@ -556,7 +565,7 @@ export const useTabsStore = defineStore("tabs", () => {
 
     return {
         tabs, activeId, active, historyOf, clearHistory,
-        openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, step,
+        openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, move, step,
         run, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, sourceCollection, editable, locked, lockedByTree, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument
     };
