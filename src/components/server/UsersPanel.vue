@@ -1,0 +1,236 @@
+<script setup lang="ts">
+import { ButtonContent, ButtonRoot } from "@vuetify/v0";
+import { computed, onMounted, ref, shallowRef } from "vue";
+import { useI18n } from "vue-i18n";
+import { backend, errorMessage } from "@/api";
+import CodeEditor from "@/components/CodeEditor.vue";
+import IconButton from "@/components/IconButton.vue";
+import RoleRows from "@/components/server/RoleRows.vue";
+import { useDialogs } from "@/composables/dialogs";
+import { useMessages } from "@/composables/messages";
+import { isDoc, toShell } from "@/shell/ejson";
+import type { Doc } from "@/shell/ejson";
+import { parseValue } from "@/shell/parse";
+import { BUILTIN_ROLES, roleLabel, userCommand, userFormErrors, userFormOf } from "@/shell/users";
+import type { UserForm } from "@/shell/users";
+import { useConnectionsStore } from "@/stores/connections";
+import type { WorkTab } from "@/stores/tabs";
+
+/**
+ * The users of a database: a list, and a form to create, change or drop one. A password goes to
+ * the server only; it is neither kept nor written to the history.
+ */
+const props = defineProps<{
+    tab: WorkTab;
+}>();
+
+const { t } = useI18n();
+const { say, report } = useMessages();
+const dialogs = useDialogs();
+const connections = useConnectionsStore();
+
+const users = shallowRef<Doc[]>([]);
+const roleNames = shallowRef<string[]>([]);
+/** The user the form shows; `undefined` for a new one. */
+const selected = shallowRef<string>();
+const form = ref<UserForm>({ user: "", password: "", roles: [] });
+const customData = shallowRef("{}");
+const error = shallowRef<string>();
+const busy = shallowRef(false);
+
+const existing = computed(() => selected.value !== undefined);
+const databases = computed(() => connections.sessions[props.tab.connectionId]?.databases.map(database => database.name) ?? []);
+const problems = computed(() => userFormErrors(form.value, existing.value));
+
+async function load() {
+    try {
+        const reply = await backend.runCommand(props.tab.connectionId, props.tab.database, { usersInfo: 1 });
+        users.value = (Array.isArray(reply.users) ? reply.users.filter(isDoc) : []).sort((a, b) => String(a.user).localeCompare(String(b.user)));
+        const roles = await backend.runCommand(props.tab.connectionId, props.tab.database, { rolesInfo: 1, showBuiltinRoles: true });
+        const own = Array.isArray(roles.roles) ? roles.roles.filter(isDoc).map(role => String(role.role)) : [];
+        roleNames.value = [...new Set([...own, ...BUILTIN_ROLES.map(role => role.role)])].sort((a, b) => a.localeCompare(b));
+        error.value = undefined;
+    } catch (cause) {
+        error.value = say(errorMessage(cause));
+    }
+}
+
+function choose(user?: Doc) {
+    selected.value = user ? String(user.user) : undefined;
+    form.value = user ? userFormOf(user) : { user: "", password: "", roles: [{ role: "read", db: "" }] };
+    customData.value = form.value.customData ? toShell(form.value.customData) : "{}";
+    error.value = undefined;
+}
+
+async function save() {
+    if (problems.value.length > 0) return;
+    busy.value = true;
+    try {
+        const data = customData.value.trim() ? parseValue(customData.value) : {};
+        if (!isDoc(data)) throw new Error(`${t("users.customData")}: ${t("document.error.notDocument")}`);
+        await backend.runCommand(props.tab.connectionId, props.tab.database, userCommand({ ...form.value, customData: data }, props.tab.database, existing.value));
+        const name = form.value.user.trim();
+        await load();
+        choose(users.value.find(user => user.user === name));
+    } catch (cause) {
+        error.value = say(errorMessage(cause));
+    } finally {
+        // The password is gone from the form as soon as the server has it.
+        form.value.password = "";
+        busy.value = false;
+    }
+}
+
+async function drop() {
+    const name = selected.value;
+    if (name === undefined) return;
+    const confirmed = await dialogs.confirm({ title: t("users.drop.title"), text: t("users.drop.text", { name, database: props.tab.database }), action: t("action.drop") });
+    if (!confirmed) return;
+    try {
+        await backend.runCommand(props.tab.connectionId, props.tab.database, { dropUser: name });
+        await load();
+        choose();
+    } catch (cause) {
+        report(cause);
+    }
+}
+
+onMounted(async () => {
+    await load();
+    choose(users.value[0]);
+});
+</script>
+
+<template>
+    <div class="h-full flex min-h-0">
+        <aside class="w-60 shrink-0 flex flex-col border-r border-divider">
+            <div class="h-9 shrink-0 flex items-center gap-0.5 px-3">
+                <IconButton
+                    @click="choose()"
+                    :label="$t('users.new')"
+                    data-testid="user-new"
+                    icon="i-lucide-user-plus"
+                    tint="text-success"
+                >
+                    {{ $t("users.new") }}
+                </IconButton>
+                <span class="grow" />
+                <IconButton
+                    @click="load"
+                    :label="$t('action.refresh')"
+                    icon="i-lucide-refresh-cw"
+                />
+            </div>
+            <ul
+                :aria-label="$t('users.list')"
+                class="grow min-h-0 overflow-y-auto m-0 p-0 list-none"
+            >
+                <li
+                    v-for="user in users"
+                    :key="String(user.user)"
+                >
+                    <button
+                        @click="choose(user)"
+                        :class="selected === user.user ? 'bg-primary/20 text-on-surface-strong' : 'hover:bg-on-surface/5'"
+                        class="w-full px-3 py-1 flex items-center gap-2 text-left"
+                        data-testid="user-item"
+                        type="button"
+                    >
+                        <span class="i-lucide-user size-4 shrink-0" />
+                        <span class="truncate">{{ user.user }}</span>
+                    </button>
+                </li>
+                <li
+                    v-if="users.length === 0"
+                    class="px-3 py-2 text-on-surface-variant"
+                >
+                    {{ $t("users.none") }}
+                </li>
+            </ul>
+        </aside>
+
+        <form
+            @submit.prevent="save"
+            class="grow min-w-0 overflow-y-auto px-6 py-4 flex flex-col gap-4 max-w-200"
+        >
+            <h2 class="m-0 text-[17px] font-normal text-on-surface-strong">
+                {{ existing ? $t("users.edit", { name: selected }) : $t("users.create", { database: tab.database }) }}
+            </h2>
+            <div class="form-grid">
+                <span>{{ $t("users.name") }}:</span>
+                <input
+                    v-model="form.user"
+                    :disabled="existing"
+                    autocomplete="off"
+                    class="field disabled:opacity-60"
+                    data-testid="user-name"
+                    spellcheck="false"
+                />
+                <span>{{ $t(existing ? "users.newPassword" : "users.password") }}:</span>
+                <input
+                    v-model="form.password"
+                    :placeholder="existing ? $t('users.password.unchanged') : ''"
+                    autocomplete="new-password"
+                    class="field"
+                    data-testid="user-password"
+                    type="password"
+                />
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+                <span>{{ $t("users.roles") }}</span>
+                <RoleRows
+                    v-model="form.roles"
+                    :databases
+                    :roleNames
+                />
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+                <span>{{ $t("users.customData") }}</span>
+                <div class="h-24 rounded-sm bg-background border border-divider">
+                    <CodeEditor
+                        v-model="customData"
+                        :label="$t('users.customData')"
+                    />
+                </div>
+            </div>
+
+            <p
+                v-if="existing && users.find(user => user.user === selected)"
+                class="m-0 text-on-surface-variant"
+            >
+                {{ $t("users.mechanisms", { mechanisms: (users.find(user => user.user === selected)?.mechanisms as string[] | undefined)?.join(", ") ?? "–" }) }}
+                · {{ form.roles.map(roleLabel).join(", ") }}
+            </p>
+
+            <p
+                v-if="error"
+                class="m-0 text-sm text-error break-words"
+                data-testid="user-error"
+                role="alert"
+            >
+                {{ error }}
+            </p>
+
+            <div class="flex gap-2">
+                <ButtonRoot
+                    @click="save"
+                    :disabled="busy || problems.length > 0"
+                    class="btn-primary"
+                    data-testid="user-save"
+                >
+                    <ButtonContent>{{ $t(existing ? "action.save" : "action.create") }}</ButtonContent>
+                </ButtonRoot>
+                <ButtonRoot
+                    v-if="existing"
+                    @click="drop"
+                    class="btn-secondary"
+                    data-testid="user-drop"
+                >
+                    <ButtonContent>{{ $t("users.drop") }}</ButtonContent>
+                </ButtonRoot>
+            </div>
+        </form>
+    </div>
+</template>

@@ -301,6 +301,54 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("browse-title").waitFor();
     });
 
+    await step("a role and a user with it are created, changed and dropped", async () => {
+        const role = `${COLLECTION}_role`;
+        const user = `${COLLECTION}_user`;
+        await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
+        await chooseMenu("Manage roles");
+        await visible("role-new").click();
+        await visible("role-name-field").fill(role);
+        await visible("privilege-actions").fill("find, listCollections");
+        await visible("role-save").click();
+        await page.locator("[data-testid=role-item]:visible", { hasText: role }).waitFor();
+        await shot("roles");
+        await page.keyboard.press("Control+w");
+
+        await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
+        await chooseMenu("Manage users");
+        await visible("user-new").click();
+        await visible("user-name").fill(user);
+        await visible("user-password").fill(`pw-${Math.random().toString(36).slice(2)}`);
+        await page.locator("[data-testid=role-name]:visible").first().fill(role);
+        await visible("user-save").click();
+        const item = page.locator("[data-testid=user-item]:visible", { hasText: user });
+        await item.waitFor();
+        await shot("users");
+        // The password is gone from the form once the server has it.
+        assert.equal(await visible("user-password").inputValue(), "");
+
+        // A second role is granted without touching the password.
+        await visible("role-add").click();
+        await page.locator("[data-testid=role-name]:visible").nth(1).fill("read");
+        await visible("user-save").click();
+        await page.locator("[data-testid=role-row]:visible").nth(1).waitFor();
+        assert.equal(await page.locator("[data-testid=role-name]:visible").nth(1).inputValue(), "read");
+
+        await visible("user-drop").click();
+        await id("confirm-action").click();
+        await item.waitFor({ state: "detached" });
+        await page.keyboard.press("Control+w");
+
+        await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
+        await chooseMenu("Manage roles");
+        await page.locator("[data-testid=role-item]:visible", { hasText: role }).click();
+        await visible("role-drop").click();
+        await id("confirm-action").click();
+        await page.locator("[data-testid=role-item]:visible", { hasText: role }).waitFor({ state: "detached" });
+        await page.keyboard.press("Control+w");
+        await visible("browse-title").waitFor();
+    });
+
     await step("filter and sort narrow and order the result", async () => {
         const rows = panel.locator("[data-testid=stage-row]");
         await write(rows.nth(0), "{ n: { $gte: 2 } }");
@@ -408,6 +456,9 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
             await id("dock-shell").click();
             const drops = ["_view", "_capped", "_copy", ""].map(suffix => `db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}${suffix}").drop()`);
             await runShell(drops.join("; ")).catch(() => undefined);
+            // A user or role a failed step left behind.
+            await runShell(`db.getSiblingDB("${DATABASE}").runCommand({ dropUser: "${COLLECTION}_user" })`).catch(() => undefined);
+            await runShell(`db.getSiblingDB("${DATABASE}").runCommand({ dropRole: "${COLLECTION}_role" })`).catch(() => undefined);
         }
         await id("connection-list").click();
         const item = page.locator("[data-testid=connection-item]:visible", { hasText: NAME });

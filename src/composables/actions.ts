@@ -111,6 +111,15 @@ export function useActions() {
         if (at) tabs.openServer(at.connectionId, "log");
     }
 
+    /** Users and roles belong to a database; without one chosen, to dmin. */
+    function manageUsers(at = target.value) {
+        if (at) tabs.openServer(at.connectionId, "users", at.database ?? "admin");
+    }
+
+    function manageRoles(at = target.value) {
+        if (at) tabs.openServer(at.connectionId, "roles", at.database ?? "admin");
+    }
+
     function indexes(at = target.value) {
         if (at?.database !== undefined && at.collection !== undefined) inspect(at, at.database, `db.getCollection(${JSON.stringify(at.collection)}).getIndexes()`);
     }
@@ -263,7 +272,7 @@ export function useActions() {
 
     return {
         target, hasConnection, hasDatabase, hasCollection,
-        openShell, browse, aggregation, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, indexes,
+        openShell, browse, aggregation, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         refresh, connect, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()

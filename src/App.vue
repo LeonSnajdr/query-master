@@ -37,6 +37,12 @@ const tabMenu = useTemplateRef("tabMenu");
 
 const TAB_ICONS = { start: "i-lucide-info", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", server: "i-lucide-activity" } as const;
 
+const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield" } as const;
+
+function iconOf(tab: WorkTab): string {
+    return tab.kind === "server" ? SERVER_ICONS[tab.page ?? "status"] : TAB_ICONS[tab.kind];
+}
+
 /** TabsRoot wants a value; an empty one while no tab is open. */
 const activeTab = computed({
     get: () => tabs.activeId ?? "",
@@ -45,7 +51,7 @@ const activeTab = computed({
 
 function titleOf(tab: WorkTab): string {
     if (tab.kind === "start") return t("start.title");
-    if (tab.kind === "server") return t(`server.tab.${tab.page ?? "status"}`, { name: connections.profiles.find(item => item.id === tab.connectionId)?.name ?? "" });
+    if (tab.kind === "server") return t(`server.tab.${tab.page ?? "status"}`, { name: connections.profiles.find(item => item.id === tab.connectionId)?.name ?? "", database: tab.database });
     return tab.kind === "browse" ? tab.collection ?? "" : tab.database;
 }
 
@@ -95,6 +101,8 @@ useHotkey("ctrl+i", () => actions.createIndex(), everywhere);
 useHotkey("ctrl+alt+i", () => actions.recreateIndex(), everywhere);
 useHotkey("ctrl+shift+i", () => actions.duplicateIndex(), everywhere);
 useHotkey("ctrl+alt+d", () => void actions.disconnect(), everywhere);
+useHotkey("ctrl+alt+u", () => actions.manageUsers(), everywhere);
+useHotkey("ctrl+alt+r", () => actions.manageRoles(), everywhere);
 useHotkey("ctrl+w", () => withActive(tab => tabs.close(tab.id)), everywhere);
 useHotkey("ctrl+shift+w", () => withActive(tab => tabs.closeOthers(tab.id)), everywhere);
 useHotkey("ctrl+shift+t", () => withActive(tab => tabs.duplicate(tab)), everywhere);
@@ -192,7 +200,7 @@ onMounted(async () => {
                                     class="min-w-0 h-full inline-flex items-center gap-1.5 text-[13px] text-left"
                                 >
                                     <span
-                                        :class="tab.running ? 'i-lucide-loader-circle animate-spin' : TAB_ICONS[tab.kind]"
+                                        :class="tab.running ? 'i-lucide-loader-circle animate-spin' : iconOf(tab)"
                                         class="size-4 shrink-0"
                                     />
                                     <span class="truncate">{{ titleOf(tab) }}</span>

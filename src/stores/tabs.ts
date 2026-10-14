@@ -23,7 +23,7 @@ export type ResultView = "tree" | "table" | "json";
 /** The start page, a collection with its query fields, a shell, or a page about the server. */
 export type TabKind = "start" | "browse" | "shell" | "server";
 /** What a server tab shows. */
-export type ServerPage = "status" | "log";
+export type ServerPage = "status" | "log" | "users" | "roles";
 export type StageName = "filter" | "projection" | "sort" | "skip" | "limit";
 /** The stages a browse tab can show, in the order they apply. */
 export const STAGE_NAMES: StageName[] = ["filter", "projection", "sort", "skip", "limit"];
@@ -164,14 +164,17 @@ export const useTabsStore = defineStore("tabs", () => {
         return create("shell", { connectionId: target.connectionId, database: target.database, text });
     }
 
-    /** The status or the log of a server; a tab that shows it already comes to the front. */
-    function openServer(connectionId: string, page: ServerPage): WorkTab {
-        const existing = tabs.value.find(tab => tab.kind === "server" && tab.connectionId === connectionId && tab.page === page);
+    /**
+     * The status or the log of a server, or the users or roles of a database; a tab that shows it
+     * already comes to the front.
+     */
+    function openServer(connectionId: string, page: ServerPage, database = "admin"): WorkTab {
+        const existing = tabs.value.find(tab => tab.kind === "server" && tab.connectionId === connectionId && tab.page === page && tab.database === database);
         if (existing) {
             activeId.value = existing.id;
             return existing;
         }
-        return create("server", { connectionId, database: "admin", page });
+        return create("server", { connectionId, database, page });
     }
 
     function duplicate(tab: WorkTab): void {
