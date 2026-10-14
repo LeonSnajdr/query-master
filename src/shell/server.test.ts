@@ -87,7 +87,7 @@ describe("runningOperation", () => {
             seconds: 3,
             client: "1.2.3.4:5",
             description: "conn7",
-            command: "{\"find\":\"orders\"}"
+            command: "{ find: \"orders\" }"
         });
     });
 });

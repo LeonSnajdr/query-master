@@ -20,6 +20,8 @@ page.on("console", message => message.type() === "error" && failures.push(`conso
 
 const id = name => page.locator(`[data-testid="${name}"]`);
 const visible = name => page.locator(`[data-testid="${name}"]:visible`);
+// With QUERYMASTER_SHOTS set to a folder, steps leave screenshots there to look at.
+const shot = async name => process.env.QUERYMASTER_SHOTS && await page.screenshot({ path: `${process.env.QUERYMASTER_SHOTS}/${name}.png` });
 const steps = [];
 async function step(name, action) {
     try {
@@ -280,12 +282,16 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await connectionsShown.waitFor();
         assert.match(await connectionsShown.innerText(), /^\d/);
         await visible("running-operations").waitFor();
+        // A second sample gives the rates per second.
+        if (process.env.QUERYMASTER_SHOTS) await page.waitForTimeout(3500);
+        await shot("server-status");
         await page.keyboard.press("Control+w");
 
         await id("connection-row").first().click({ button: "right" });
         await chooseMenu("Server log");
         const lines = page.locator("[data-testid=log-line]:visible");
         await lines.first().waitFor();
+        await shot("server-log");
         await visible("log-search").fill("connection");
         await lines.first().waitFor();
         await visible("log-search").fill("no line holds this text 4711");

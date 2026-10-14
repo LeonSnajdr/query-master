@@ -37,7 +37,7 @@ export default defineConfig({
         "stat-note": "min-h-4 text-[11.5px] text-on-surface-variant",
         // Plain tables of the server pages.
         "plain-table": "w-full border-collapse text-[12.5px]",
-        "plain-head": "py-0.5 pr-3 text-left font-normal text-on-surface-variant whitespace-nowrap",
+        "plain-head": "sticky top-0 z-1 bg-background py-0.5 pr-3 text-left font-normal text-on-surface-variant whitespace-nowrap",
         "plain-cell": "py-0.5 pr-3 border-t border-divider align-top"
     },
     preflights: [

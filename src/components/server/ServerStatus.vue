@@ -6,6 +6,7 @@ import { backend, errorMessage } from "@/api";
 import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
+import { preview } from "@/shell/ejson";
 import type { Doc } from "@/shell/ejson";
 import { formatUptime, OPERATIONS, runningOperation, summarize } from "@/shell/server";
 import type { RunningOperation, StatusSample } from "@/shell/server";
@@ -70,7 +71,7 @@ async function kill(operation: RunningOperation) {
     }
     const confirmed = await dialogs.confirm({
         title: t("server.kill.title"),
-        text: t("server.kill.text", { op: operation.op, namespace: operation.namespace || "-", opid: JSON.stringify(operation.opid) }),
+        text: t("server.kill.text", { op: operation.op, namespace: operation.namespace || "-", opid: preview(operation.opid) }),
         action: t("server.kill")
     });
     if (!confirmed) return;
@@ -235,7 +236,7 @@ onMounted(() => {
                             class="border-t border-divider align-top"
                         >
                             <td class="py-0.5 pr-2 font-mono tabular-nums">
-                                {{ JSON.stringify(operation.opid) }}
+                                {{ preview(operation.opid) }}
                             </td>
                             <td class="pr-2">
                                 {{ operation.op }}

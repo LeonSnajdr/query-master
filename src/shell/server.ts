@@ -1,4 +1,4 @@
-import { isDoc, toNumber } from "@/shell/ejson";
+import { isDoc, preview, toNumber } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 
 /** Operation counters of `serverStatus.opcounters`, in this order. */
@@ -149,7 +149,7 @@ export interface RunningOperation {
     seconds: number;
     client: string;
     description: string;
-    /** The command, shortened to one line. */
+    /** The command in shell notation, shortened to one line. */
     command: string;
 }
 
@@ -161,6 +161,6 @@ export function runningOperation(entry: Doc): RunningOperation {
         seconds: number(entry, "secs_running"),
         client: text(entry, "client") || text(entry, "client_s"),
         description: text(entry, "desc"),
-        command: isDoc(entry.command) ? JSON.stringify(entry.command).slice(0, 200) : ""
+        command: isDoc(entry.command) ? preview(entry.command, 200) : ""
     };
 }
