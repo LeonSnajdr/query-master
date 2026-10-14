@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            delete from tree_node\n            where connection_id = $1\n              and (path = $2 or substr(path, 1, length($2) + 1) = $2 || '/')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "5e0d9176298811dae5ac95b4c2554baeec1e7c7548374a29661c05801d31c894"
+}

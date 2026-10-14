@@ -6,6 +6,7 @@ import type { Profile } from "@/api";
 import ContextMenu from "@/components/ContextMenu.vue";
 import DropMenu from "@/components/DropMenu.vue";
 import IconButton from "@/components/IconButton.vue";
+import NoteMarks from "@/components/NoteMarks.vue";
 import { useActions } from "@/composables/actions";
 import { useCopy } from "@/composables/copy";
 import { useDialogs } from "@/composables/dialogs";
@@ -13,6 +14,8 @@ import { useMessages } from "@/composables/messages";
 import type { MenuEntry } from "@/menu";
 import { useConnectionsStore } from "@/stores/connections";
 import type { DatabaseNode, TreeSelection } from "@/stores/connections";
+import { NOTE_COLORS, useNotesStore } from "@/stores/notes";
+import type { NotePlace } from "@/stores/notes";
 
 /** The dock at the left: saved connections, the toolbar, and the tree of what is connected. */
 const { t } = useI18n();
@@ -21,7 +24,28 @@ const dialogs = useDialogs();
 const actions = useActions();
 const copying = useCopy();
 const connections = useConnectionsStore();
+const notes = useNotesStore();
 const menu = useTemplateRef("menu");
+
+/** The icon of a row takes the color noted for it. */
+function tint(place: NotePlace): string {
+    const color = notes.noteOf(place)?.color;
+    return color ? `note-fg-${color}` : "text-on-surface";
+}
+
+/** Color, comment and read-only of a row, for its context menu. */
+function noteEntries(at: TreeSelection): MenuEntry[] {
+    const place = { connectionId: at.connectionId, database: at.database, collection: at.collection };
+    const note = notes.noteOf(place);
+    const entries: MenuEntry[] = [
+        "separator",
+        { label: t("note.color"), swatches: NOTE_COLORS, current: note?.color ?? null, choose: color => void actions.setColor(at, color) },
+        { label: t(note?.comment ? "note.comment.edit" : "note.comment.add"), icon: "i-lucide-message-square-text", action: () => void actions.editComment(at) }
+    ];
+    if (note?.comment) entries.push({ label: t("note.comment.remove"), action: () => void actions.removeComment(at) });
+    entries.push({ label: t("note.readonly"), icon: "i-lucide-lock", checked: note?.readonly === true, action: () => void actions.toggleReadonly(at) });
+    return entries;
+}
 
 const listOpen = shallowRef(false);
 const searching = shallowRef(false);
@@ -166,6 +190,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("validator.edit"), hotkey: "Ctrl + Alt + V", action: () => actions.editValidator(at) },
             "separator",
             { label: t("collection.stats"), action: () => actions.collectionStats(at) },
+            ...noteEntries(at),
             ...tail
         ];
     } else if (at.database !== undefined) {
@@ -184,6 +209,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("users.manage"), icon: "i-lucide-users", hotkey: "Ctrl + Alt + U", action: () => actions.manageUsers(at) },
             { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(at) },
+            ...noteEntries(at),
             ...tail
         ];
     } else {
@@ -201,6 +227,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("connection.settings"), action: () => actions.connectionSettings(at) },
             { label: t("connection.uri"), hotkey: "Ctrl + Alt + F2", action: () => void actions.viewUri(at) },
+            ...noteEntries(at),
             "separator",
             { label: t("connection.disconnect"), hotkey: "Ctrl + Alt + D", action: () => void actions.disconnect(at) }
         ];
@@ -383,8 +410,12 @@ defineExpose({
                         :class="connections.sessions[profile.id]?.open ? 'rotate-90' : ''"
                         class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
                     />
-                    <span class="i-lucide-server size-4 shrink-0 text-on-surface" />
+                    <span
+                        :class="tint({ connectionId: profile.id })"
+                        class="i-lucide-server size-4 shrink-0"
+                    />
                     <span class="truncate text-on-surface-strong">{{ profile.name }}</span>
+                    <NoteMarks :place="{ connectionId: profile.id }" />
                     <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>
                     <span class="grow" />
                     <span
@@ -415,8 +446,12 @@ defineExpose({
                                 class="size-3.5 shrink-0 text-on-surface-variant"
                                 data-testid="database-toggle"
                             />
-                            <span class="i-lucide-database size-4 shrink-0 text-on-surface" />
+                            <span
+                                :class="tint({ connectionId: profile.id, database: database.name })"
+                                class="i-lucide-database size-4 shrink-0"
+                            />
                             <span class="truncate text-on-surface-strong">{{ database.name }}</span>
+                            <NoteMarks :place="{ connectionId: profile.id, database: database.name }" />
                             <span class="grow" />
                             <span
                                 v-if="database.collections"
@@ -450,8 +485,12 @@ defineExpose({
                                         class="size-3.5 shrink-0 text-on-surface-variant"
                                         data-testid="collection-toggle"
                                     />
-                                    <span class="i-lucide-file-text size-4 shrink-0 text-on-surface" />
+                                    <span
+                                        :class="tint({ connectionId: profile.id, database: database.name, collection })"
+                                        class="i-lucide-file-text size-4 shrink-0"
+                                    />
                                     <span class="truncate text-on-surface-strong">{{ collection }}</span>
+                                    <NoteMarks :place="{ connectionId: profile.id, database: database.name, collection }" />
                                 </div>
 
                                 <!-- Unfolded, a collection shows its indexes. -->

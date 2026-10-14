@@ -1,4 +1,4 @@
-import type { Backend, Profile, Setting } from "./api";
+import type { Backend, Profile, Setting, TreeNote } from "./api";
 import { toNumber } from "./shell/ejson";
 import type { Doc, Json } from "./shell/ejson";
 
@@ -14,6 +14,7 @@ const COLLECTIONS: Record<string, string[]> = {
 };
 
 const history = new Map<string, string[]>();
+const notes = new Map<string, Map<string, TreeNote>>();
 let setting: Setting = { language: null, theme: null };
 
 const STATUS = ["open", "paid", "shipped", "cancelled"];
@@ -82,6 +83,16 @@ export const mockBackend: Backend = {
     clearHistory: async (connectionId) => {
         history.delete(connectionId);
     },
+    // Notes on the tree live as long as the page.
+    listTreeNotes: async connectionId => [...(notes.get(connectionId)?.values() ?? [])],
+    saveTreeNote: async (connectionId, node) => {
+        const own = notes.get(connectionId) ?? new Map<string, TreeNote>();
+        notes.set(connectionId, own);
+        if (node.color || node.comment || node.readonly) own.set(node.path, node);
+        else own.delete(node.path);
+    },
+    renameTreeNotes: async () => undefined,
+    removeTreeNotes: async () => undefined,
     runCursorCommand: async (_id, database, command, limit) => {
         let documents: Doc[] = ORDERS;
         if ("listCollections" in command) documents = (COLLECTIONS[database] ?? []).map(name => ({ name, type: "collection" }));

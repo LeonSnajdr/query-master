@@ -344,7 +344,7 @@ provideResultContext({ editable, selected, fold, commit: (target, text) => void 
             <span class="toolbar-rule" />
             <IconButton
                 @click="addDocument"
-                :disabled="collection === undefined || tab.readonly"
+                :disabled="collection === undefined || tabs.locked(tab)"
                 :label="$t('document.add')"
                 data-testid="document-add"
                 icon="i-lucide-file-plus-2"
@@ -399,7 +399,7 @@ provideResultContext({ editable, selected, fold, commit: (target, text) => void 
             </IconButton>
             <IconButton
                 @click="importDocuments"
-                :disabled="collection === undefined || tab.readonly"
+                :disabled="collection === undefined || tabs.locked(tab)"
                 :label="$t('result.import')"
                 icon="i-lucide-download"
                 tint="text-success"

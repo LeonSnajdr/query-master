@@ -12,6 +12,7 @@ import type { Plan } from "@/shell/plan";
 import { aggregateStatement, keepsDocuments, newStage, previewStages } from "@/shell/pipeline";
 import type { PipelineStage } from "@/shell/pipeline";
 import { useConnectionsStore } from "./connections";
+import { useNotesStore } from "./notes";
 
 /** Sizes offered for a page of results. */
 export const PAGE_SIZES = [10, 20, 50, 100, 200, 500];
@@ -118,6 +119,7 @@ export function browseStatement(tab: WorkTab): string {
 
 export const useTabsStore = defineStore("tabs", () => {
     const connections = useConnectionsStore();
+    const notes = useNotesStore();
     // Results hold arbitrarily deep JSON: the list is typed by hand instead of unwrapped by Vue.
     const tabs = ref([]) as Ref<WorkTab[]>;
     const activeId = ref<string>();
@@ -257,12 +259,31 @@ export const useTabsStore = defineStore("tabs", () => {
         history.set(connectionId, []);
     }
 
-    function guardWrite(tab: WorkTab, write: boolean): void {
-        if (write && tab.readonly) throw new ShellError("error.plan.readonly");
+    /** The row of the tree the tab is on, or one above it, is marked read-only. */
+    function lockedByTree(tab: WorkTab, database = tab.database, collection = tab.collection): boolean {
+        return notes.isReadonly({ connectionId: tab.connectionId, database, collection });
+    }
+
+    /** Writes are refused: by the tab's own lock or by a mark in the tree. */
+    function locked(tab: WorkTab): boolean {
+        return tab.readonly || lockedByTree(tab);
+    }
+
+    /** Refuses a write the tab's lock or the tree forbids; `collection` is the one written to. */
+    function guardWrite(tab: WorkTab, write: boolean, database = tab.database, collection = tab.collection): void {
+        if (!write) return;
+        if (tab.readonly) throw new ShellError("error.plan.readonly");
+        if (lockedByTree(tab, database, collection)) throw new ShellError("error.plan.readonlyTree", { name: collection === undefined ? database : `${database}.${collection}` });
+    }
+
+    /** The collection a command names first (`insert: "orders"`), if it names one. */
+    function commandCollection(plan: Plan): string | undefined {
+        const first = Object.values(plan.command)[0];
+        return typeof first === "string" ? first : undefined;
     }
 
     async function fetch(tab: WorkTab, plan: Plan, offset: number, statement: string): Promise<void> {
-        guardWrite(tab, isWrite(plan));
+        guardWrite(tab, isWrite(plan), plan.database, commandCollection(plan));
         const started = performance.now();
         let items: Json[];
         let hasMore = false;
@@ -311,7 +332,9 @@ export const useTabsStore = defineStore("tabs", () => {
         tab.runId = `${tab.id}-${Date.now()}`;
         tab.output = undefined;
         try {
-            const outcome = await backend.runScript(tab.connectionId, tab.runId, tab.database, source, tab.readonly);
+            // A script may write anywhere on the connection: any read-only mark on it makes the run read-only.
+            const marked = Object.values(notes.notes[tab.connectionId] ?? {}).some(note => note.readonly);
+            const outcome = await backend.runScript(tab.connectionId, tab.runId, tab.database, source, tab.readonly || marked);
             tab.output = outcome.output;
             tab.plan = undefined;
             tab.result = markRaw({
@@ -448,7 +471,7 @@ export const useTabsStore = defineStore("tabs", () => {
         const database = tab.plan?.database ?? tab.database;
         if (collection === undefined) return false;
         const done = await guarded(tab, async () => {
-            guardWrite(tab, true);
+            guardWrite(tab, true, database, collection);
             const failure = replyError(await backend.runCommand(tab.connectionId, database, command(collection)));
             if (failure) throw new ReplyError(failure);
         });
@@ -484,13 +507,15 @@ export const useTabsStore = defineStore("tabs", () => {
 
     /** Whether the documents shown can be changed: they have an `_id` and a collection they come from. */
     function editable(tab: WorkTab): boolean {
-        return !tab.readonly && sourceCollection(tab) !== undefined && (tab.result?.items ?? []).every(item => isDoc(item) && "_id" in item);
+        const collection = sourceCollection(tab);
+        return !tab.readonly && collection !== undefined && !lockedByTree(tab, tab.plan?.database ?? tab.database, collection)
+            && (tab.result?.items ?? []).every(item => isDoc(item) && "_id" in item);
     }
 
     return {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, openAggregate, openServer, duplicate, close, closeOthers, closeAll, closeConnection, step,
-        run, stop, runBrowse, runAggregate, runTab, showPage, refresh, count, sourceCollection, editable, resultText,
+        run, stop, runBrowse, runAggregate, runTab, showPage, refresh, count, sourceCollection, editable, locked, lockedByTree, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField
     };
 });

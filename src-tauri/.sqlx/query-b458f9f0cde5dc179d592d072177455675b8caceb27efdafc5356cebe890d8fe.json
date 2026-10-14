@@ -1,0 +1,38 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            select path, color, comment, readonly as \"readonly: bool\"\n            from tree_node\n            where connection_id = $1\n            order by path\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "path",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "color",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "comment",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "readonly: bool",
+        "ordinal": 3,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "b458f9f0cde5dc179d592d072177455675b8caceb27efdafc5356cebe890d8fe"
+}

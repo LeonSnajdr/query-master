@@ -4,6 +4,7 @@ import { backend } from "@/api";
 import type { Profile, ProfileInput } from "@/api";
 import { isDoc, scalar } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
+import { useNotesStore } from "@/stores/notes";
 
 /** What the tree knows about a collection once it was unfolded. */
 export interface CollectionDetail {
@@ -134,6 +135,8 @@ export const useConnectionsStore = defineStore("connections", () => {
         try {
             const info = await backend.connect(id);
             sessions[id] = { version: info.version, databases: [], open: true };
+            // Read-only marks must be known before anything can be written.
+            await useNotesStore().load(id);
             await loadDatabases(id);
         } finally {
             connecting.delete(id);

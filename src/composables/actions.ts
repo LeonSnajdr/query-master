@@ -7,9 +7,11 @@ import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import type { Doc } from "@/shell/ejson";
 import { toShell } from "@/shell/ejson";
+import { ShellError } from "@/shell/message";
 import { replyError } from "@/shell/plan";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
+import { useNotesStore } from "@/stores/notes";
 import { isQueryTab, useTabsStore } from "@/stores/tabs";
 
 /** The script behind "Collections statistics"; views have no storage and are left out. */
@@ -37,6 +39,7 @@ export function useActions() {
     const notifications = useNotifications();
     const dialogs = useDialogs();
     const connections = useConnectionsStore();
+    const notes = useNotesStore();
     const tabs = useTabsStore();
 
     const target = computed<TreeSelection | undefined>(() => {
@@ -48,6 +51,17 @@ export function useActions() {
     const hasConnection = computed(() => target.value !== undefined && connections.sessions[target.value.connectionId] !== undefined);
     const hasDatabase = computed(() => hasConnection.value && target.value?.database !== undefined);
     const hasCollection = computed(() => hasDatabase.value && target.value?.collection !== undefined);
+
+    /**
+     * Whether the row may be changed; a row marked read-only in the tree, or one below such a row,
+     * may not, and a toast says so.
+     */
+    function writable(at: TreeSelection): boolean {
+        if (!notes.isReadonly(at)) return true;
+        const name = [at.database, at.collection].filter(part => part !== undefined).join(".");
+        report(new ShellError("error.plan.readonlyTree", { name: name || (connections.profiles.find(profile => profile.id === at.connectionId)?.name ?? "") }));
+        return false;
+    }
 
     /** Runs a command and reloads the tree; errors go to a toast. */
     async function command(connectionId: string, database: string, document: Doc): Promise<boolean> {
@@ -125,22 +139,26 @@ export function useActions() {
     }
 
     function createCollection(at = target.value) {
-        if (at?.database !== undefined) dialogs.editCollection({ mode: "collection", connectionId: at.connectionId, database: at.database });
+        if (at?.database !== undefined && writable({ connectionId: at.connectionId, database: at.database })) {
+            dialogs.editCollection({ mode: "collection", connectionId: at.connectionId, database: at.database });
+        }
     }
 
     function createView(at = target.value) {
-        if (at?.database !== undefined) dialogs.editCollection({ mode: "view", connectionId: at.connectionId, database: at.database, collection: at.collection });
+        if (at?.database !== undefined && writable({ connectionId: at.connectionId, database: at.database })) {
+            dialogs.editCollection({ mode: "view", connectionId: at.connectionId, database: at.database, collection: at.collection });
+        }
     }
 
     function editValidator(at = target.value) {
-        if (at?.database !== undefined && at.collection !== undefined) {
+        if (at?.database !== undefined && at.collection !== undefined && writable(at)) {
             dialogs.editCollection({ mode: "validator", connectionId: at.connectionId, database: at.database, collection: at.collection });
         }
     }
 
     /** A database comes into being with its first collection. */
     async function createDatabase(at = target.value) {
-        if (!at) return;
+        if (!at || !writable({ connectionId: at.connectionId })) return;
         const database = await dialogs.ask({ title: t("database.create.title"), label: t("database.name"), action: t("action.next") });
         if (!database) return;
         const name = await dialogs.ask({ title: t("database.create.collection", { database }), label: t("collection.name"), action: t("action.create") });
@@ -148,31 +166,38 @@ export function useActions() {
     }
 
     async function renameCollection(at = target.value) {
-        if (at?.database === undefined || at.collection === undefined) return;
+        if (at?.database === undefined || at.collection === undefined || !writable(at)) return;
         const name = await dialogs.ask({ title: t("collection.rename.title"), label: t("collection.name"), value: at.collection, action: t("action.rename") });
         if (!name || name === at.collection) return;
         const done = await command(at.connectionId, "admin", { renameCollection: `${at.database}.${at.collection}`, to: `${at.database}.${name}` });
-        if (done) connections.selected = { ...at, collection: name };
+        if (!done) return;
+        connections.selected = { ...at, collection: name };
+        // The color, comment and read-only mark go with the collection.
+        await notes.rename(at.connectionId, `${at.database}/${at.collection}`, `${at.database}/${name}`).catch(report);
     }
 
     async function dropCollection(at = target.value) {
-        if (at?.database === undefined || at.collection === undefined) return;
+        if (at?.database === undefined || at.collection === undefined || !writable(at)) return;
         const confirmed = await dialogs.confirm({
             title: t("collection.drop.title"),
             text: t("collection.drop.text", { name: at.collection, database: at.database }),
             action: t("action.drop")
         });
-        if (confirmed && await command(at.connectionId, at.database, { drop: at.collection })) connections.selected = { connectionId: at.connectionId, database: at.database };
+        if (!confirmed || !await command(at.connectionId, at.database, { drop: at.collection })) return;
+        connections.selected = { connectionId: at.connectionId, database: at.database };
+        await notes.remove(at.connectionId, `${at.database}/${at.collection}`).catch(report);
     }
 
     async function dropDatabase(at = target.value) {
-        if (at?.database === undefined) return;
+        if (at?.database === undefined || !writable({ connectionId: at.connectionId, database: at.database })) return;
         const confirmed = await dialogs.confirm({ title: t("database.drop.title"), text: t("database.drop.text", { name: at.database }), action: t("action.drop") });
-        if (confirmed && await command(at.connectionId, at.database, { dropDatabase: 1 })) connections.selected = { connectionId: at.connectionId };
+        if (!confirmed || !await command(at.connectionId, at.database, { dropDatabase: 1 })) return;
+        connections.selected = { connectionId: at.connectionId };
+        await notes.remove(at.connectionId, at.database).catch(report);
     }
 
     function createIndex(at = target.value) {
-        if (at?.database !== undefined && at.collection !== undefined) {
+        if (at?.database !== undefined && at.collection !== undefined && writable(at)) {
             dialogs.editIndex({ connectionId: at.connectionId, database: at.database, collection: at.collection });
         }
     }
@@ -187,7 +212,7 @@ export function useActions() {
     /** The dialog filled with an existing index, to create one like it. */
     function duplicateIndex(at = target.value) {
         const index = indexOf(at);
-        if (index && at?.database !== undefined && at.collection !== undefined) {
+        if (index && at?.database !== undefined && at.collection !== undefined && writable(at)) {
             dialogs.editIndex({ connectionId: at.connectionId, database: at.database, collection: at.collection, index });
         }
     }
@@ -195,7 +220,7 @@ export function useActions() {
     /** The dialog filled with an index; saving drops it and creates it as the dialog says. */
     function recreateIndex(at = target.value) {
         const index = indexOf(at);
-        if (index && at?.database !== undefined && at.collection !== undefined && at.index !== "_id_") {
+        if (index && at?.database !== undefined && at.collection !== undefined && at.index !== "_id_" && writable(at)) {
             dialogs.editIndex({ connectionId: at.connectionId, database: at.database, collection: at.collection, index, recreate: true });
         }
     }
@@ -208,7 +233,7 @@ export function useActions() {
     /** A hidden index is kept up to date but not used by queries (MongoDB 4.4 and later). */
     async function toggleIndexHidden(at = target.value) {
         const index = indexOf(at);
-        if (!index || at?.database === undefined || at.collection === undefined || at.index === undefined) return;
+        if (!index || at?.database === undefined || at.collection === undefined || at.index === undefined || !writable(at)) return;
         const hidden = index.hidden !== true;
         if (await command(at.connectionId, at.database, { collMod: at.collection, index: { name: at.index, hidden } })) {
             await connections.loadIndexes(at.connectionId, at.database, at.collection).catch(report);
@@ -217,7 +242,7 @@ export function useActions() {
     }
 
     async function dropIndex(at = target.value) {
-        if (at?.database === undefined || at.collection === undefined || at.index === undefined) return;
+        if (at?.database === undefined || at.collection === undefined || at.index === undefined || !writable(at)) return;
         const confirmed = await dialogs.confirm({
             title: t("index.drop.title"),
             text: t("index.drop.text", { name: at.index, collection: at.collection }),
@@ -226,6 +251,32 @@ export function useActions() {
         if (confirmed && await command(at.connectionId, at.database, { dropIndexes: at.collection, index: at.index })) {
             connections.selected = { connectionId: at.connectionId, database: at.database, collection: at.collection };
         }
+    }
+
+    /** The row the notes are about: indexes carry none, their collection does. */
+    function notePlace(at: TreeSelection) {
+        return { connectionId: at.connectionId, database: at.database, collection: at.collection };
+    }
+
+    async function setColor(at: TreeSelection, color: string | null) {
+        await notes.change(notePlace(at), { color }).catch(report);
+    }
+
+    async function editComment(at = target.value) {
+        if (!at) return;
+        const current = notes.noteOf(notePlace(at))?.comment ?? "";
+        const comment = await dialogs.ask({ title: t("note.comment.title"), label: t("note.comment.label"), value: current, action: t("action.save") });
+        if (comment !== undefined) await notes.change(notePlace(at), { comment }).catch(report);
+    }
+
+    async function removeComment(at = target.value) {
+        if (at) await notes.change(notePlace(at), { comment: null }).catch(report);
+    }
+
+    async function toggleReadonly(at = target.value) {
+        if (!at) return;
+        const readonly = notes.noteOf(notePlace(at))?.readonly !== true;
+        await notes.change(notePlace(at), { readonly }).catch(report);
     }
 
     async function refresh(at = target.value) {
@@ -274,6 +325,7 @@ export function useActions() {
         target, hasConnection, hasDatabase, hasCollection,
         openShell, browse, aggregation, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
+        setColor, editComment, removeComment, toggleReadonly, writable,
         refresh, connect, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };

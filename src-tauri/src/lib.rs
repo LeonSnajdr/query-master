@@ -8,6 +8,7 @@ mod mongo;
 mod runs;
 mod script;
 mod setting;
+mod tree;
 
 use sqlx::SqlitePool;
 use tauri::{Manager, RunEvent};
@@ -33,6 +34,10 @@ pub fn run() {
             history::commands::history_list,
             history::commands::history_add,
             history::commands::history_clear,
+            tree::commands::tree_node_list,
+            tree::commands::tree_node_save,
+            tree::commands::tree_node_rename,
+            tree::commands::tree_node_remove,
             mongo::test_connection,
             mongo::connect,
             mongo::disconnect,

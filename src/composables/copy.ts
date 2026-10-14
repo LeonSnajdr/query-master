@@ -5,7 +5,9 @@ import { backend } from "@/api";
 import type { Place } from "@/api";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
+import { ShellError } from "@/shell/message";
 import { useConnectionsStore } from "@/stores/connections";
+import { useNotesStore } from "@/stores/notes";
 
 /** The collection "Copy collection" picked; pasted on a database, possibly of another connection. */
 const copied = shallowRef<Place>();
@@ -26,6 +28,7 @@ export function useCopy() {
     const notifications = useNotifications();
     const dialogs = useDialogs();
     const connections = useConnectionsStore();
+    const notes = useNotesStore();
 
     function copy(place: Place) {
         copied.value = { ...place };
@@ -52,6 +55,10 @@ export function useCopy() {
     async function paste(connectionId: string, database: string) {
         const source = copied.value;
         if (!source || running.runId) return;
+        if (notes.isReadonly({ connectionId, database })) {
+            report(new ShellError("error.plan.readonlyTree", { name: database }));
+            return;
+        }
         const choice = await chooseName(connectionId, database, source.collection);
         if (!choice) return;
         const target: Place = { connectionId, database, collection: choice.name };

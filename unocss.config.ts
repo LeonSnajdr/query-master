@@ -1,6 +1,24 @@
 import { defineConfig, presetIcons, presetWind4 } from "unocss";
 
+/** The colors of notes on rows of the tree (`src/stores/notes.ts`); readable on dark and light themes. */
+const NOTE_COLORS: Record<string, string> = {
+    red: "#e5534b",
+    orange: "#e8913a",
+    yellow: "#d4b02f",
+    green: "#57ab5a",
+    teal: "#39a9a5",
+    blue: "#4f8fe6",
+    purple: "#a371f7",
+    gray: "#8b949e"
+};
+
 export default defineConfig({
+    // Built from a color name at runtime, so never seen in the sources as a whole.
+    safelist: Object.keys(NOTE_COLORS).flatMap(color => [`note-${color}`, `note-fg-${color}`]),
+    rules: [
+        [/^note-(\w+)$/, ([, color]) => (color && NOTE_COLORS[color] ? { "background-color": NOTE_COLORS[color] } : undefined)],
+        [/^note-fg-(\w+)$/, ([, color]) => (color && NOTE_COLORS[color] ? { color: NOTE_COLORS[color] } : undefined)]
+    ],
     presets: [
         presetWind4(),
         presetIcons({

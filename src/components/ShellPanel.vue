@@ -5,6 +5,7 @@ import CodeEditor from "@/components/CodeEditor.vue";
 import DropMenu from "@/components/DropMenu.vue";
 import IconButton from "@/components/IconButton.vue";
 import QueryHistory from "@/components/QueryHistory.vue";
+import ReadonlyToggle from "@/components/ReadonlyToggle.vue";
 import ResultsPanel from "@/components/results/ResultsPanel.vue";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
@@ -157,14 +158,7 @@ function openInBuilder() {
                 :connectionId="tab.connectionId"
             />
             <span class="toolbar-rule" />
-            <!-- eslint-disable-next-line vue/no-mutating-props -- `tab` is the store's own object, not a prop -->
-            <IconButton
-                @click="tab.readonly = !tab.readonly"
-                :active="tab.readonly"
-                :icon="tab.readonly ? 'i-lucide-lock' : 'i-lucide-lock-open'"
-                :label="$t('query.readonly')"
-                data-testid="query-readonly"
-            />
+            <ReadonlyToggle :tabId />
             <span class="toolbar-rule" />
             <IconButton
                 @click="openInBuilder"

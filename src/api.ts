@@ -33,6 +33,15 @@ export interface ScriptResult {
     output: string;
 }
 
+/** What the app notes on a row of the tree. */
+export interface TreeNote {
+    /** Empty for the connection, `database`, or `database/collection`. */
+    path: string;
+    color: string | null;
+    comment: string | null;
+    readonly: boolean;
+}
+
 /** A collection on a connection. */
 export interface Place {
     connectionId: string;
@@ -89,6 +98,12 @@ export interface Backend {
     listHistory: (connectionId: string) => Promise<string[]>;
     addHistory: (connectionId: string, database: string, statement: string) => Promise<void>;
     clearHistory: (connectionId: string) => Promise<void>;
+    listTreeNotes: (connectionId: string) => Promise<TreeNote[]>;
+    /** A note without color, comment and read-only is forgotten. */
+    saveTreeNote: (connectionId: string, node: TreeNote) => Promise<void>;
+    /** Notes of `from` and below move to `to`. */
+    renameTreeNotes: (connectionId: string, from: string, to: string) => Promise<void>;
+    removeTreeNotes: (connectionId: string, path: string) => Promise<void>;
 }
 
 const tauriBackend: Backend = {
@@ -114,11 +129,15 @@ const tauriBackend: Backend = {
     saveSetting: setting => invoke("setting_save", { setting }),
     listHistory: connectionId => invoke("history_list", { connectionId }),
     addHistory: (connectionId, database, statement) => invoke("history_add", { connectionId, database, statement }),
-    clearHistory: connectionId => invoke("history_clear", { connectionId })
+    clearHistory: connectionId => invoke("history_clear", { connectionId }),
+    listTreeNotes: connectionId => invoke("tree_node_list", { connectionId }),
+    saveTreeNote: (connectionId, node) => invoke("tree_node_save", { connectionId, node }),
+    renameTreeNotes: (connectionId, from, to) => invoke("tree_node_rename", { connectionId, from, to }),
+    removeTreeNotes: (connectionId, path) => invoke("tree_node_remove", { connectionId, path })
 };
 
 /** The app runs in its window (and not, for work on the interface, in a browser). */
-export const inApp = "__TAURI_INTERNALS__" in window;
+export const inApp = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 // In a browser there is no Rust side: the dev server then shows made-up data.
 export const backend: Backend = !inApp && import.meta.env.DEV ? mockBackend : tauriBackend;

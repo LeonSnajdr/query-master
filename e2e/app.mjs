@@ -275,6 +275,44 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.getByText(`Copied to ${COLLECTION}_copy: 3 documents, 0 indexes.`).first().waitFor();
     });
 
+    await step("a collection marked read-only in the tree refuses changes until the mark is gone", async () => {
+        const row = page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_copy` });
+        await row.click({ button: "right" });
+        await page.locator("[data-testid=swatch-blue]:visible").click();
+        await row.click({ button: "right" });
+        await chooseMenu("Set comment");
+        await id("prompt-input").fill("archive");
+        await id("prompt-submit").click();
+        await row.locator("[data-testid=note-comment]", { hasText: "archive" }).waitFor();
+        await row.click({ button: "right" });
+        await chooseMenu("Read-only");
+        await row.locator("[data-testid=note-readonly]").waitFor();
+        await row.click({ button: "right" });
+        await shot("tree-notes");
+        await page.keyboard.press("Escape");
+
+        // Neither the tree nor a tab on the collection may change it now.
+        await row.click({ button: "right" });
+        await chooseMenu("Drop collection");
+        await page.getByText("is marked read-only in the connection tree").first().waitFor();
+        assert.equal(await page.locator("dialog[open]").count(), 0);
+        await row.dblclick();
+        await visible("browse-title").waitFor();
+        const lock = visible("query-readonly");
+        assert.equal(await lock.getAttribute("aria-pressed"), "true");
+        assert.ok(await lock.isDisabled());
+        await page.keyboard.press("Control+w");
+
+        await row.click({ button: "right" });
+        await chooseMenu("Read-only");
+        await row.locator("[data-testid=note-readonly]").waitFor({ state: "detached" });
+        await row.click({ button: "right" });
+        await chooseMenu("Remove comment");
+        await row.locator("[data-testid=note-comment]").waitFor({ state: "detached" });
+        await row.click({ button: "right" });
+        await page.locator("[data-testid=swatch-none]:visible").click();
+    });
+
     await step("the server status and the server log open as tabs of their own", async () => {
         await id("connection-row").first().click({ button: "right" });
         await chooseMenu("Server status");
@@ -502,8 +540,11 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         if (await id("connection-row").count() > 0) {
             await id("connection-row").first().click();
             await id("dock-shell").click();
-            const drops = ["_view", "_capped", "_copy", ""].map(suffix => `db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}${suffix}").drop()`);
-            await runShell(drops.join("; ")).catch(() => undefined);
+            // Also what an earlier run left behind when it broke off: every e2e_ collection of the test database.
+            const test = `db.getSiblingDB("${DATABASE}")`;
+            await runShell(`${test}.getCollectionNames().filter(name => name.startsWith("e2e_")).forEach(name => ${test}.getCollection(name).drop())`).catch(() => undefined);
+            const left = await runShell(`${test}.getCollectionNames().filter(name => name.startsWith("e2e_")).length`);
+            assert.match(await left.locator("[data-testid=query-result]").innerText(), /^\s*1?\s*0\b/);
             // A user or role a failed step left behind.
             await runShell(`db.getSiblingDB("${DATABASE}").runCommand({ dropUser: "${COLLECTION}_user" })`).catch(() => undefined);
             await runShell(`db.getSiblingDB("${DATABASE}").runCommand({ dropRole: "${COLLECTION}_role" })`).catch(() => undefined);
