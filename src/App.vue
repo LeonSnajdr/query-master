@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ButtonRoot, SplitterHandle, SplitterPanel, SplitterRoot, TabsItem, TabsList, TabsRoot } from "@vuetify/v0";
-import { computed, onMounted, useTemplateRef } from "vue";
+import { computed, onMounted, shallowRef, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { inApp } from "@/api";
 import AppMenuBar from "@/components/AppMenuBar.vue";
@@ -87,6 +87,40 @@ function openTabMenu(event: MouseEvent, tab: WorkTab) {
         { label: t("tab.close.all"), action: () => tabs.closeAll() }
     ];
     void tabMenu.value?.open(event, entries);
+}
+
+/** The tab being dragged to another place in the row. */
+const draggedId = shallowRef<string>();
+/** How far the pointer moves before a press on a tab becomes a drag. */
+const DRAG_DISTANCE = 4;
+
+/** Dragging a tab sideways moves it in the row, past the middle of each tab it crosses. */
+function startTabDrag(event: PointerEvent, tab: WorkTab): void {
+    if (event.button !== 0) return;
+    const list = (event.currentTarget as HTMLElement).parentElement!;
+    const start = event.clientX;
+    const move = (moved: PointerEvent) => {
+        if (!draggedId.value) {
+            if (Math.abs(moved.clientX - start) < DRAG_DISTANCE) return;
+            draggedId.value = tab.id;
+            tabs.activeId = tab.id;
+        }
+        const others = [...list.querySelectorAll<HTMLElement>("[data-tab-id]")].filter(item => item.dataset.tabId !== tab.id);
+        const index = others.filter((item) => {
+            const box = item.getBoundingClientRect();
+            return box.left + box.width / 2 < moved.clientX;
+        }).length;
+        tabs.move(tab.id, index);
+    };
+    const end = () => {
+        draggedId.value = undefined;
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
 }
 
 function setView(view: ResultView) {
@@ -217,8 +251,11 @@ onMounted(async () => {
                                 :key="tab.id"
                                 @auxclick.middle="tabs.close(tab.id)"
                                 @contextmenu="openTabMenu($event, tab)"
+                                @pointerdown="startTabDrag($event, tab)"
+                                :data-dragged="tab.id === draggedId || undefined"
                                 :data-selected="tab.id === tabs.activeId || undefined"
-                                class="group h-8.5 max-w-64 shrink-0 flex items-center pl-2.5 pr-1 text-on-surface hover:text-on-surface-strong data-[selected]:bg-background data-[selected]:text-on-surface-strong"
+                                :data-tab-id="tab.id"
+                                class="group data-[dragged]:opacity-70 data-[dragged]:cursor-grabbing h-8.5 max-w-64 shrink-0 flex items-center pl-2.5 pr-1 text-on-surface hover:text-on-surface-strong data-[selected]:bg-background data-[selected]:text-on-surface-strong"
                                 data-testid="tab"
                             >
                                 <TabsItem
@@ -233,6 +270,7 @@ onMounted(async () => {
                                 </TabsItem>
                                 <ButtonRoot
                                     @click="tabs.close(tab.id)"
+                                    @pointerdown.stop
                                     :ariaLabel="$t('tab.close', { name: titleOf(tab) })"
                                     :title="$t('tab.close', { name: titleOf(tab) })"
                                     class="size-5 ml-1 shrink-0 inline-flex items-center justify-center rounded-sm hover:bg-on-surface/15"

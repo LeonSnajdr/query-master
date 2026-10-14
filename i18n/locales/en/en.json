@@ -135,6 +135,7 @@
   "connection.list.hint": "Open connections list",
   "connection.log": "Server log",
   "connection.members": "Members",
+  "connection.mine": "My connections",
   "connection.mode": "Connect to",
   "connection.mode.replicaSet": "Replica set",
   "connection.mode.single": "Single server",

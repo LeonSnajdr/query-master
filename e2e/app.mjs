@@ -733,7 +733,8 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await chooseMenu("Disconnect");
         await id("connection-list").click();
         const limitedItem = page.locator("[data-testid=connection-item]:visible", { hasText: limitedName });
-        await limitedItem.locator("button[aria-label=Delete]").click();
+        await limitedItem.click();
+        await id("connection-delete").click();
         await id("confirm-action").click();
         await page.locator("[data-testid=recent-connection]", { hasText: limitedName }).waitFor({ state: "detached" });
         // The tree as the later steps expect it: the test database open.
@@ -1113,7 +1114,8 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await id("connection-list").click();
         const item = page.locator("[data-testid=connection-item]:visible", { hasText: NAME });
         if (await item.count() > 0) {
-            await item.locator("button[aria-label=Delete]").click();
+            await item.click();
+            await id("connection-delete").click();
             await id("confirm-action").click();
             await page.locator("[data-testid=recent-connection]", { hasText: NAME }).waitFor({ state: "detached" });
         } else await page.keyboard.press("Escape");
