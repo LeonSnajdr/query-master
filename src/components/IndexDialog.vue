@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogRoot, DialogTitle, SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
-import { computed, nextTick, ref, shallowRef, useId, watch } from "vue";
+import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
+import { namesAsChoices } from "@/choice";
 import CodeEditor from "@/components/CodeEditor.vue";
 import IconButton from "@/components/IconButton.vue";
-import SelectField from "@/components/SelectField.vue";
+import ChoiceField from "@/components/ChoiceField.vue";
 import { useMessages } from "@/composables/messages";
 import type { IndexRequest } from "@/composables/dialogs";
 import type { Environment } from "@/shell/complete";
@@ -29,7 +30,6 @@ const LOCALES = ["", "simple", "de", "en", "en_US", "es", "fr", "it", "nl", "pl"
 const { t } = useI18n();
 const { say } = useMessages();
 const connections = useConnectionsStore();
-const listId = useId();
 
 const form = ref<IndexForm>(emptyIndexForm());
 const partialFilter = shallowRef("{}");
@@ -38,7 +38,7 @@ const error = shallowRef<string>();
 
 const kindOptions = computed(() => INDEX_KINDS.map(value => ({ value, label: t(`indexDialog.kind.${value}`) })));
 const localeOptions = computed(() => LOCALES.map(value => ({ value, label: value || t("collectionDialog.locale.none") })));
-const fields = computed(() => (props.request ? connections.fieldsOf(props.request.connectionId, props.request.database, props.request.collection) : []));
+const fields = computed(() => namesAsChoices(props.request ? connections.fieldsOf(props.request.connectionId, props.request.database, props.request.collection) : []));
 const environment = computed<Environment | undefined>(() => {
     const request = props.request;
     if (!request) return undefined;
@@ -129,14 +129,6 @@ async function save() {
                     {{ title }}
                 </DialogTitle>
 
-                <datalist :id="listId">
-                    <option
-                        v-for="field in fields"
-                        :key="field"
-                        :value="field"
-                    />
-                </datalist>
-
                 <div class="flex flex-col gap-1.5">
                     <span>{{ $t("indexDialog.fields") }}</span>
                     <div
@@ -145,17 +137,19 @@ async function save() {
                         class="flex items-center gap-1.5"
                         data-testid="index-field-row"
                     >
-                        <input
-                            v-model="row.field"
-                            :aria-label="$t('indexDialog.field')"
-                            :list="listId"
-                            :placeholder="$t('indexDialog.field')"
-                            class="field grow font-mono"
-                            data-testid="index-field"
-                            spellcheck="false"
-                        />
+                        <div class="grow min-w-0">
+                            <ChoiceField
+                                v-model="row.field"
+                                :label="$t('indexDialog.field')"
+                                :options="fields"
+                                :placeholder="$t('indexDialog.field')"
+                                class="font-mono"
+                                data-testid="index-field"
+                                free
+                            />
+                        </div>
                         <div class="w-36">
-                            <SelectField
+                            <ChoiceField
                                 v-model="row.kind"
                                 :label="$t('indexDialog.kind')"
                                 :options="kindOptions"
@@ -223,7 +217,7 @@ async function save() {
                         inputmode="numeric"
                     />
                     <span>{{ $t("collectionDialog.locale") }}:</span>
-                    <SelectField
+                    <ChoiceField
                         v-model="form.locale"
                         :label="$t('collectionDialog.locale')"
                         :options="localeOptions"

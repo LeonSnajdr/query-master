@@ -49,17 +49,44 @@ export function collectionRows(
     folders: string[],
     open: (folder: string) => boolean
 ): CollectionRow[] {
-    const folderOf = (collection: string) => {
-        const folder = notes?.[`${database}/${collection}`]?.folder ?? undefined;
+    return grouped(collections, collection => `${database}/${collection}`, notes, folders, open, "collection");
+}
+
+/** A row of the databases of a connection: a folder, or a database (in a folder or not). */
+export type DatabaseRow
+    = | { kind: "folder"; name: string; count: number }
+        | { kind: "database"; name: string; folder?: string };
+
+/** The databases of a connection as the tree shows them, grouped in the folders of the connection. */
+export function databaseRows(
+    databases: string[],
+    notes: Record<string, TreeNote> | undefined,
+    folders: string[],
+    open: (folder: string) => boolean
+): DatabaseRow[] {
+    return grouped(databases, database => database, notes, folders, open, "database");
+}
+
+/** Each folder (also an empty one) with what lies in it while open, then what lies in none. */
+function grouped<Kind extends "collection" | "database">(
+    names: string[],
+    pathOf: (name: string) => string,
+    notes: Record<string, TreeNote> | undefined,
+    folders: string[],
+    open: (folder: string) => boolean,
+    kind: Kind
+): ({ kind: "folder"; name: string; count: number } | { kind: Kind; name: string; folder?: string })[] {
+    const folderOf = (name: string) => {
+        const folder = notes?.[pathOf(name)]?.folder ?? undefined;
         return folder && folders.includes(folder) ? folder : undefined;
     };
-    const rows: CollectionRow[] = [];
+    const rows: ({ kind: "folder"; name: string; count: number } | { kind: Kind; name: string; folder?: string })[] = [];
     for (const folder of [...folders].sort((a, b) => a.localeCompare(b))) {
-        const inside = collections.filter(collection => folderOf(collection) === folder);
+        const inside = names.filter(name => folderOf(name) === folder);
         rows.push({ kind: "folder", name: folder, count: inside.length });
-        if (open(folder)) rows.push(...inside.map(name => ({ kind: "collection" as const, name, folder })));
+        if (open(folder)) rows.push(...inside.map(name => ({ kind, name, folder })));
     }
-    rows.push(...collections.filter(collection => folderOf(collection) === undefined).map(name => ({ kind: "collection" as const, name })));
+    rows.push(...names.filter(name => folderOf(name) === undefined).map(name => ({ kind, name })));
     return rows;
 }
 
@@ -69,7 +96,7 @@ export function collectionRows(
  */
 export const useNotesStore = defineStore("notes", () => {
     const notes = reactive<Record<string, Record<string, TreeNote>>>({});
-    /** Folders per connection. */
+    /** Folders per connection: of a database for its collections, of the connection (database "") for databases. */
     const folders = reactive<Record<string, TreeFolder[]>>({});
     /** Folders unfolded in the tree, as `connection/database/folder`; open when made. */
     const openFolders = reactive(new Set<string>());

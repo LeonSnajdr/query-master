@@ -4,7 +4,7 @@ import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { isDoc, scalar, typeOf } from "@/shell/ejson";
 import type { Json, ValueType } from "@/shell/ejson";
-import { displayText, useResultContext } from "./result-context";
+import { dateFormat, dateText, displayText, foldReaches, useResultContext } from "./result-context";
 
 /** A line of the result tree: a document, or a field with what lies below it. */
 const props = withDefaults(defineProps<{
@@ -45,18 +45,30 @@ const COLORS: Partial<Record<ValueType, string>> = {
     timestamp: "text-code-call"
 };
 
-const { t, te } = useI18n();
+const { t, te, locale } = useI18n();
 const context = useResultContext();
-const open = shallowRef(props.expanded);
+// A line that appears while "Expand node recursively" unfolds the node above it unfolds as well.
+const deep = context.fold.value.path !== undefined && foldReaches(context.fold.value, props.index, props.path);
+const open = shallowRef(deep ? context.fold.value.open : props.expanded);
 const shown = shallowRef(CHUNK);
 const root = computed(() => props.name === undefined);
 const leaf = computed(() => scalar(props.value));
 const type = computed(() => typeOf(props.value));
+/** The path of a line below this one. */
+function childPath(key: string): string {
+    return props.path ? `${props.path}.${key}` : key;
+}
+
+/** Fields and elements; pinned fields come first, in the order they were pinned. */
 const children = computed<[string, Json][]>(() => {
     if (leaf.value) return [];
     if (Array.isArray(props.value)) return props.value.map((item, index) => [String(index), item]);
-    return Object.entries(props.value as Record<string, Json>);
+    const entries = Object.entries(props.value as Record<string, Json>);
+    const pinned = context.pinned.value;
+    const first = pinned.flatMap(path => entries.filter(([key]) => childPath(key) === path));
+    return first.length === 0 ? entries : [...first, ...entries.filter(entry => !first.includes(entry))];
 });
+const isPinned = computed(() => !root.value && context.pinned.value.includes(props.path));
 const count = computed(() => {
     const size = children.value.length;
     return Array.isArray(props.value) ? `[${t("result.count.elements", { count: size }, size)}]` : `{${t("result.count.elements", { count: size }, size)}}`;
@@ -71,8 +83,12 @@ const target = computed(() => ({ index: props.index, path: props.path, value: pr
 const selected = computed(() => context.selected.value === props.index);
 
 watch(context.fold, (fold) => {
-    if (fold.index === undefined || fold.index === props.index) open.value = fold.open;
+    if (foldReaches(fold, props.index, props.path)) open.value = fold.open;
 });
+
+const dates = computed(() => dateFormat(locale.value));
+/** Dates as the table shows them; everything else as `displayText`. */
+const text = computed(() => (type.value === "date" ? dateText(props.value, dates.value) : undefined) ?? displayText(props.value));
 
 // Editing in place: scalar fields of documents that can be written back.
 const editing = shallowRef(false);
@@ -101,7 +117,7 @@ function commit() {
 <template>
     <div role="treeitem">
         <div
-            @click="context.choose(index, $event)"
+            @click="context.choose(index, $event, path)"
             @contextmenu="context.menu($event, target)"
             @dblclick="startEdit"
             :class="root && selected ? 'outline outline-1 -outline-offset-1 outline-primary/70 bg-on-surface/4' : root && context.marked.value.has(index) && context.marked.value.size > 1 ? 'bg-primary/15' : 'hover:bg-on-surface/4'"
@@ -131,6 +147,12 @@ function commit() {
             </ButtonRoot>
             <span class="ml-1 font-semibold text-on-surface-strong">{{ title }}</span>
             <span
+                v-if="isPinned"
+                :title="$t('result.pinned')"
+                class="i-lucide-pin size-3 ml-1 shrink-0 text-on-surface-variant"
+                data-testid="tree-pin"
+            />
+            <span
                 v-if="!root"
                 class="mx-1.5 text-on-surface-variant"
             >:</span>
@@ -153,7 +175,7 @@ function commit() {
                     :class="COLORS[type]"
                     class="truncate"
                     data-testid="tree-value"
-                >{{ displayText(value) }}</span>
+                >{{ text }}</span>
                 <span
                     v-else
                     :class="root ? 'ml-1.5' : ''"
@@ -173,7 +195,7 @@ function commit() {
                 :index
                 :name="key"
                 :number
-                :path="path ? `${path}.${key}` : key"
+                :path="childPath(key)"
                 :value="item"
             />
             <ButtonRoot

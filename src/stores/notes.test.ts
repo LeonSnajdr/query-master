@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectionRows, notePath, pathsAbove, readonlyIn } from "./notes";
+import { collectionRows, databaseRows, notePath, pathsAbove, readonlyIn } from "./notes";
 
 const note = (path: string, readonly: boolean, folder: string | null = null) => ({ path, color: null, comment: null, readonly, folder });
 
@@ -36,5 +36,19 @@ describe("collectionRows", () => {
             { kind: "collection", name: "d" }
         ]);
         expect(collectionRows(["a"], "shop", notes, ["old"], () => false)).toEqual([{ kind: "folder", name: "old", count: 1 }]);
+    });
+});
+
+describe("databaseRows", () => {
+    it("groups the databases of a connection, apart from the folders of a database", () => {
+        // `shop/old` is a collection in a folder of `shop`, not a database in a folder.
+        const notes = { "shop": note("shop", false, "work"), "crm": note("crm", false, "work"), "shop/old": note("shop/old", false, "work") };
+        expect(databaseRows(["crm", "logs", "shop"], notes, ["work"], () => true)).toEqual([
+            { kind: "folder", name: "work", count: 2 },
+            { kind: "database", name: "crm", folder: "work" },
+            { kind: "database", name: "shop", folder: "work" },
+            { kind: "database", name: "logs" }
+        ]);
+        expect(databaseRows(["shop"], notes, [], () => true)).toEqual([{ kind: "database", name: "shop" }]);
     });
 });

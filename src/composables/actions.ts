@@ -317,24 +317,27 @@ export function useActions() {
         await notes.change(notePlace(at), { readonly }).catch(report);
     }
 
-    /** A folder of the database, to group its collections in the tree; the server knows nothing of it. */
+    /**
+     * A folder to group rows in the tree; the server knows nothing of it. On a connection it groups
+     * databases, on a database (or a collection in it) the collections of that database.
+     */
     async function addFolder(at = target.value) {
-        if (at?.database === undefined) return;
+        if (!at) return;
         const name = await dialogs.ask({ title: t("folder.add"), label: t("folder.name"), action: t("action.create") });
-        if (name) await notes.addFolder(at.connectionId, at.database, name).catch(report);
+        if (name) await notes.addFolder(at.connectionId, at.database ?? "", name).catch(report);
     }
 
+    /** `at.database` is the database of a folder of collections, absent for a folder of databases. */
     async function renameFolder(at: TreeSelection, folder: string) {
-        if (at.database === undefined) return;
         const name = await dialogs.ask({ title: t("folder.rename"), label: t("folder.name"), value: folder, action: t("action.rename") });
-        if (name && name !== folder) await notes.renameFolder(at.connectionId, at.database, folder, name).catch(report);
+        if (name && name !== folder) await notes.renameFolder(at.connectionId, at.database ?? "", folder, name).catch(report);
     }
 
-    /** The folder goes; its collections stay where they are, in the database. */
+    /** The folder goes; what lay in it stays where it is, in the database or the connection. */
     async function deleteFolder(at: TreeSelection, folder: string) {
-        if (at.database === undefined) return;
-        const confirmed = await dialogs.confirm({ title: t("folder.delete.title"), text: t("folder.delete.text", { name: folder }), action: t("action.delete") });
-        if (confirmed) await notes.deleteFolder(at.connectionId, at.database, folder).catch(report);
+        const text = t(at.database === undefined ? "folder.delete.databases" : "folder.delete.text", { name: folder });
+        const confirmed = await dialogs.confirm({ title: t("folder.delete.title"), text, action: t("action.delete") });
+        if (confirmed) await notes.deleteFolder(at.connectionId, at.database ?? "", folder).catch(report);
     }
 
     async function moveToFolder(at: TreeSelection, folder: string | null) {

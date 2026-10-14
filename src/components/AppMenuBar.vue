@@ -6,6 +6,7 @@ import DropMenu from "@/components/DropMenu.vue";
 import { useActions } from "@/composables/actions";
 import { useDialogs } from "@/composables/dialogs";
 import { useAppearance } from "@/composables/appearance";
+import { useFocusAreas } from "@/composables/focus";
 import { appWindow } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { THEMES } from "@/plugins/vuetify";
@@ -23,6 +24,7 @@ const actions = useActions();
 const dialogs = useDialogs();
 const tabs = useTabsStore();
 const { theme, language, setTheme, setLanguage } = useAppearance();
+const focus = useFocusAreas();
 
 const hasTab = computed(() => tabs.active !== undefined);
 const hasQueryTab = computed(() => isQueryTab(tabs.active));
@@ -61,14 +63,19 @@ const menus = computed<{ name: string; entries: MenuEntry[] }[]>(() => [
         name: t("menu.edit"),
         entries: [
             { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(), disabled: !actions.hasConnection.value },
+            { label: t("folder.add"), icon: "i-lucide-folder-plus", hotkey: "Ctrl + G", action: () => void actions.addFolder(), disabled: !actions.hasConnection.value },
             "separator",
             { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(), disabled: !actions.hasDatabase.value },
             { label: t("view.create"), icon: "i-lucide-file-search", hotkey: "Ctrl + Shift + H", action: () => actions.createView(), disabled: !actions.hasDatabase.value },
+            { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(), disabled: !actions.hasDatabase.value },
             { label: t("collection.rename"), action: () => void actions.renameCollection(), disabled: !actions.hasCollection.value },
             { label: t("validator.edit"), hotkey: "Ctrl + Alt + V", action: () => actions.editValidator(), disabled: !actions.hasCollection.value },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", danger: true, action: () => void actions.dropCollection(), disabled: !actions.hasCollection.value },
             "separator",
             { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(), disabled: !actions.hasCollection.value },
+            "separator",
+            { label: t("users.manage"), icon: "i-lucide-users", hotkey: "Ctrl + Alt + U", action: () => actions.manageUsers(), disabled: !actions.hasConnection.value },
+            { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(), disabled: !actions.hasConnection.value },
             "separator",
             { label: t("settings.open"), icon: "i-lucide-settings", hotkey: "Ctrl + Alt + P", action: () => dialogs.openSettings() }
         ]
@@ -76,6 +83,10 @@ const menus = computed<{ name: string; entries: MenuEntry[] }[]>(() => [
     {
         name: t("menu.view"),
         entries: [
+            { label: t("focus.tree"), hotkey: "F4", action: () => focus.focusTree() },
+            { label: t("focus.editor"), hotkey: "F6", action: () => focus.focusEditor(), disabled: !hasQueryTab.value },
+            { label: t("focus.results"), hotkey: "F7", action: () => focus.focusResults(), disabled: !hasQueryTab.value },
+            "separator",
             view("tree", "Alt + 1"),
             view("table", "Alt + 2"),
             view("json", "Alt + 3"),
@@ -94,7 +105,10 @@ const menus = computed<{ name: string; entries: MenuEntry[] }[]>(() => [
     {
         name: t("menu.help"),
         entries: [
-            { label: t("start.title"), icon: "i-lucide-info", action: () => tabs.openStart() }
+            { label: t("help.shortcuts"), icon: "i-lucide-keyboard", hotkey: "F12", action: () => dialogs.openHelp("shortcuts") },
+            { label: t("start.title"), icon: "i-lucide-house", action: () => tabs.openStart() },
+            "separator",
+            { label: t("help.about"), icon: "i-lucide-info", action: () => dialogs.openHelp("about") }
         ]
     }
 ]);

@@ -3,7 +3,7 @@ import { ButtonContent, ButtonRoot } from "@vuetify/v0";
 import { computed, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import IconButton from "@/components/IconButton.vue";
-import SelectField from "@/components/SelectField.vue";
+import ChoiceField from "@/components/ChoiceField.vue";
 import { useConnectionsStore } from "@/stores/connections";
 import { columnsKey } from "@/transfer/export";
 import type { ExportState } from "@/transfer/export";
@@ -99,7 +99,7 @@ function reset() {
     >
         <div class="form-grid grid-cols-[10rem_1fr]!">
             <span>{{ $t("export.schema.collection") }}:</span>
-            <SelectField
+            <ChoiceField
                 v-model="current"
                 :label="$t('export.schema.collection')"
                 :options="collectionOptions"

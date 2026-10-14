@@ -4,7 +4,7 @@ import { computed, nextTick, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
-import SelectField from "@/components/SelectField.vue";
+import ChoiceField from "@/components/ChoiceField.vue";
 import { useMessages } from "@/composables/messages";
 import type { CollectionRequest } from "@/composables/dialogs";
 import { isDoc, toShell } from "@/shell/ejson";
@@ -247,7 +247,7 @@ async function save() {
                                     spellcheck="false"
                                 />
                                 <span>{{ $t("collectionDialog.granularity") }}:</span>
-                                <SelectField
+                                <ChoiceField
                                     v-model="granularity"
                                     :label="$t('collectionDialog.granularity')"
                                     :options="option(GRANULARITIES, 'collectionDialog.granularity')"
@@ -261,13 +261,13 @@ async function save() {
                         >
                             <div class="form-grid">
                                 <span>{{ $t("collectionDialog.level") }}:</span>
-                                <SelectField
+                                <ChoiceField
                                     v-model="level"
                                     :label="$t('collectionDialog.level')"
                                     :options="option(LEVELS, 'collectionDialog.level')"
                                 />
                                 <span>{{ $t("collectionDialog.action") }}:</span>
-                                <SelectField
+                                <ChoiceField
                                     v-model="action"
                                     :label="$t('collectionDialog.action')"
                                     :options="option(ACTIONS, 'collectionDialog.action')"
@@ -288,7 +288,7 @@ async function save() {
                         >
                             <div class="form-grid">
                                 <span>{{ $t("collectionDialog.viewOn") }}:</span>
-                                <SelectField
+                                <ChoiceField
                                     v-model="viewOn"
                                     :label="$t('collectionDialog.viewOn')"
                                     :options="sourceOptions"
@@ -308,7 +308,7 @@ async function save() {
                             value="collation"
                         >
                             <span>{{ $t("collectionDialog.locale") }}:</span>
-                            <SelectField
+                            <ChoiceField
                                 v-model="locale"
                                 :label="$t('collectionDialog.locale')"
                                 :options="localeOptions"

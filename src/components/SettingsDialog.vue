@@ -4,7 +4,7 @@ import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { LOCALES } from "../../i18n/i18n.config";
 import type { AppLocale } from "../../i18n/i18n.config";
-import SelectField from "@/components/SelectField.vue";
+import ChoiceField from "@/components/ChoiceField.vue";
 import { RESULT_VIEWS, useAppearance } from "@/composables/appearance";
 import type { StartView } from "@/composables/appearance";
 import { THEMES } from "@/plugins/vuetify";
@@ -44,20 +44,20 @@ const fontSizeOptions = FONT_SIZES.map(value => ({ value, label: `${value} px` }
                 </DialogTitle>
                 <div class="form-grid grid-cols-[11rem_1fr]!">
                     <span>{{ $t("settings.language") }}:</span>
-                    <SelectField
+                    <ChoiceField
                         v-model="languageModel"
                         :label="$t('settings.language')"
                         :options="languageOptions"
                     />
                     <span>{{ $t("settings.theme") }}:</span>
-                    <SelectField
+                    <ChoiceField
                         v-model="themeModel"
                         :label="$t('settings.theme')"
                         :options="themeOptions"
                     />
                     <span class="pt-3 border-t border-divider">{{ $t("settings.pageSize") }}:</span>
                     <span class="pt-3 border-t border-divider">
-                        <SelectField
+                        <ChoiceField
                             v-model="pageSize"
                             :label="$t('settings.pageSize')"
                             :options="pageSizeOptions"
@@ -65,14 +65,14 @@ const fontSizeOptions = FONT_SIZES.map(value => ({ value, label: `${value} px` }
                         />
                     </span>
                     <span>{{ $t("settings.view") }}:</span>
-                    <SelectField
+                    <ChoiceField
                         v-model="resultView"
                         :label="$t('settings.view')"
                         :options="viewOptions"
                         data-testid="settings-view"
                     />
                     <span>{{ $t("settings.fontSize") }}:</span>
-                    <SelectField
+                    <ChoiceField
                         v-model="fontSize"
                         :label="$t('settings.fontSize')"
                         :options="fontSizeOptions"

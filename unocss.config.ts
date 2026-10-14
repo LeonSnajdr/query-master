@@ -31,8 +31,16 @@ export default defineConfig({
         "flyout-gap": "[margin:0.125rem_0_0]!",
         // Drop-down and context menus.
         "menu-panel": "flyout-gap rounded-sm bg-dock text-on-surface border border-divider shadow-[0_6px_20px_rgb(0_0_0/0.4)]",
-        // The list of a select: right under the field, as wide, joined to its border.
-        "select-list": "[margin:0]! p-0 py-0.5 w-[anchor-size(width)] max-h-72 overflow-y-auto rounded-b-sm bg-background text-on-surface border border-primary border-t-divider shadow-[0_6px_16px_rgb(0_0_0/0.35)]",
+        // The list of a choice field: a panel like the menus, set off below the field from its left edge
+        // (above it, or leftwards, at the window edges); as wide as its entries, at least as the field, at most 24rem.
+        "choice-list": "[margin:0.25rem_0]! [position-area:bottom_span-right]! [position-try-fallbacks:flip-block,flip-inline,flip-block_flip-inline]! p-1 w-max min-w-[max(anchor-size(width),10rem)] max-w-96 max-h-80 overflow-y-auto rounded-sm bg-dock text-on-surface border border-divider shadow-[0_6px_20px_rgb(0_0_0/0.4)]",
+        // One entry of that list: a check for the current value, `data-highlighted` for the one the
+        // arrow keys or the mouse are on, as in the menus.
+        "choice-option": "h-6.5 px-2 flex items-center gap-2 rounded-sm text-[13px] whitespace-nowrap cursor-default text-on-surface-strong hover:bg-primary/15 data-[highlighted]:bg-primary/25 data-[disabled]:opacity-40",
+        // A field that opens a choice: lighter border on hover, the primary one while open.
+        // The mark of a name that does not exist yet and will be created.
+        "badge-new": "px-1.5 rounded-sm bg-success/15 text-success text-[11px] leading-4",
+        "choice-field": "[&:hover:not(:focus):not([data-state=open])]:border-on-surface-variant/70 data-[state=open]:border-primary",
         "toolbar-rule": "w-px h-4.5 mx-1.5 shrink-0 bg-divider",
         // Rows of the connection tree; the selected one carries a frame, as a focused one does.
         "tree-row": "h-[19px] mr-4.5 flex items-center gap-1.5 pr-2 whitespace-nowrap border border-transparent outline-none hover:bg-on-surface/5 focus-visible:border-primary/60",

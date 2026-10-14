@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ButtonRoot, SplitterHandle, SplitterPanel, SplitterRoot, TabsItem, TabsList, TabsRoot, useHotkey } from "@vuetify/v0";
-import { computed, onMounted, useTemplateRef } from "vue";
+import { computed, onMounted, shallowRef, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { inApp } from "@/api";
 import AppMenuBar from "@/components/AppMenuBar.vue";
@@ -18,6 +18,7 @@ import StartPage from "@/components/StartPage.vue";
 import { useActions } from "@/composables/actions";
 import { useDialogs } from "@/composables/dialogs";
 import { watchAppearance } from "@/composables/appearance";
+import { useFocusAreas } from "@/composables/focus";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
 import { appWindow } from "@/files";
@@ -36,10 +37,11 @@ const actions = useActions();
 const dialogs = useDialogs();
 const connections = useConnectionsStore();
 const tabs = useTabsStore();
+const focus = useFocusAreas();
 const dock = useTemplateRef("dock");
 const tabMenu = useTemplateRef("tabMenu");
 
-const TAB_ICONS = { start: "i-lucide-info", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", sql: "i-lucide-file-code-2", server: "i-lucide-activity" } as const;
+const TAB_ICONS = { start: "i-lucide-house", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", sql: "i-lucide-file-code-2", server: "i-lucide-activity" } as const;
 
 const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield", gridfs: "i-lucide-folder-archive" } as const;
 
@@ -67,6 +69,8 @@ const status = computed(() => {
     const session = id === undefined ? undefined : connections.sessions[id];
     return profile && session ? t("status.server", { name: profile.name, version: session.version }) : t("connection.none");
 });
+/** The field chosen in the result of the tab in front at the bottom. */
+const fieldPath = computed(() => (isQueryTab(tabs.active) ? tabs.active.fieldPath : undefined));
 const seconds = computed(() => ((tabs.active?.result?.milliseconds ?? 0) / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }));
 
 function openTabMenu(event: MouseEvent, tab: WorkTab) {
@@ -81,6 +85,40 @@ function openTabMenu(event: MouseEvent, tab: WorkTab) {
         { label: t("tab.close.all"), action: () => tabs.closeAll() }
     ];
     void tabMenu.value?.open(event, entries);
+}
+
+/** The tab being dragged to another place in the row. */
+const draggedId = shallowRef<string>();
+/** How far the pointer moves before a press on a tab becomes a drag. */
+const DRAG_DISTANCE = 4;
+
+/** Dragging a tab sideways moves it in the row, past the middle of each tab it crosses. */
+function startTabDrag(event: PointerEvent, tab: WorkTab): void {
+    if (event.button !== 0) return;
+    const list = (event.currentTarget as HTMLElement).parentElement!;
+    const start = event.clientX;
+    const move = (moved: PointerEvent) => {
+        if (!draggedId.value) {
+            if (Math.abs(moved.clientX - start) < DRAG_DISTANCE) return;
+            draggedId.value = tab.id;
+            tabs.activeId = tab.id;
+        }
+        const others = [...list.querySelectorAll<HTMLElement>("[data-tab-id]")].filter(item => item.dataset.tabId !== tab.id);
+        const index = others.filter((item) => {
+            const box = item.getBoundingClientRect();
+            return box.left + box.width / 2 < moved.clientX;
+        }).length;
+        tabs.move(tab.id, index);
+    };
+    const end = () => {
+        draggedId.value = undefined;
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
 }
 
 function setView(view: ResultView) {
@@ -122,6 +160,10 @@ useHotkey("ctrl+shift+tab", () => tabs.step(-1), everywhere);
 useHotkey("alt+1", () => setView("tree"), everywhere);
 useHotkey("alt+2", () => setView("table"), everywhere);
 useHotkey("alt+3", () => setView("json"), everywhere);
+useHotkey("f4", () => focus.focusTree(), everywhere);
+useHotkey("f6", () => focus.focusEditor(), everywhere);
+useHotkey("f7", () => focus.focusResults(), everywhere);
+useHotkey("f12", () => dialogs.openHelp("shortcuts"), everywhere);
 // Without these the web view would reload the app.
 useHotkey("ctrl+r", () => withActive(tab => isQueryTab(tab) && void tabs.refresh(tab)), everywhere);
 useHotkey("f5", () => withActive(tab => isQueryTab(tab) && void tabs.runTab(tab)));
@@ -151,8 +193,9 @@ onMounted(async () => {
             class="grow min-h-0"
             orientation="horizontal"
         >
+            <!-- As wide (about 320 of 1280 pixels): the toolbar of the dock fits. -->
             <SplitterPanel
-                :defaultSize="20"
+                :defaultSize="25"
                 :maxSize="50"
                 :minSize="12"
                 class="min-w-0 flex flex-col bg-dock"
@@ -181,7 +224,7 @@ onMounted(async () => {
                 <span class="i-lucide-ellipsis-vertical size-3.5" />
             </SplitterHandle>
             <SplitterPanel
-                :defaultSize="80"
+                :defaultSize="75"
                 class="min-w-0 flex flex-col"
             >
                 <div
@@ -202,8 +245,11 @@ onMounted(async () => {
                                 :key="tab.id"
                                 @auxclick.middle="tabs.close(tab.id)"
                                 @contextmenu="openTabMenu($event, tab)"
+                                @pointerdown="startTabDrag($event, tab)"
+                                :data-dragged="tab.id === draggedId || undefined"
                                 :data-selected="tab.id === tabs.activeId || undefined"
-                                class="group h-8.5 max-w-64 shrink-0 flex items-center pl-2.5 pr-1 text-on-surface hover:text-on-surface-strong data-[selected]:bg-background data-[selected]:text-on-surface-strong"
+                                :data-tab-id="tab.id"
+                                class="group data-[dragged]:opacity-70 data-[dragged]:cursor-grabbing h-8.5 max-w-64 shrink-0 flex items-center pl-2.5 pr-1 text-on-surface hover:text-on-surface-strong data-[selected]:bg-background data-[selected]:text-on-surface-strong"
                                 data-testid="tab"
                             >
                                 <TabsItem
@@ -218,6 +264,7 @@ onMounted(async () => {
                                 </TabsItem>
                                 <ButtonRoot
                                     @click="tabs.close(tab.id)"
+                                    @pointerdown.stop
                                     :ariaLabel="$t('tab.close', { name: titleOf(tab) })"
                                     :title="$t('tab.close', { name: titleOf(tab) })"
                                     class="size-5 ml-1 shrink-0 inline-flex items-center justify-center rounded-sm hover:bg-on-surface/15"
@@ -295,6 +342,15 @@ onMounted(async () => {
                 class="italic truncate"
                 data-testid="status-server"
             >{{ status }}</span>
+            <span
+                v-if="fieldPath"
+                class="min-w-0 flex items-center gap-1.5"
+                data-testid="status-path"
+            >
+                <span class="i-lucide-house size-3.5 shrink-0 text-on-surface-variant" />
+                <span class="text-on-surface-variant">»</span>
+                <span class="truncate">{{ fieldPath }}</span>
+            </span>
             <span class="grow" />
             <span
                 class="tabular-nums text-on-surface-variant"

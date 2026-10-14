@@ -10,8 +10,11 @@ import { ShellError } from "@/shell/message";
 import { useConnectionsStore } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
 
-/** The collection "Copy collection" picked; pasted on a database, possibly of another connection. */
-const copied = shallowRef<Place>();
+/**
+ * The collections "Copy collection" or "Copy collections" picked; pasted on a database, possibly of
+ * another connection. Views come last, so that their sources are there before them.
+ */
+const copied = shallowRef<Place[]>();
 
 /** Copying collections and pasting them into a database, with progress and a way to stop. */
 export function useCopy() {
@@ -24,8 +27,27 @@ export function useCopy() {
     const task = useTask();
 
     function copy(place: Place) {
-        copied.value = { ...place };
+        copied.value = [{ ...place }];
         notifications.send({ subject: t("copy.picked", { name: place.collection }), timeout: 3000 });
+    }
+
+    /** Every collection and view of a database; the server's own (`system.*`) can not be created anew. */
+    async function copyAll(connectionId: string, database: string) {
+        try {
+            await connections.loadCollections(connectionId, database);
+        } catch (error) {
+            report(error);
+            return;
+        }
+        const types = connections.sessions[connectionId]?.databases.find(item => item.name === database)?.types ?? {};
+        const names = connections.collectionsOf(connectionId, database).filter(name => !name.startsWith("system."));
+        if (names.length === 0) {
+            notifications.send({ subject: t("copy.nothing", { database }), timeout: 3000 });
+            return;
+        }
+        const ordered = [...names.filter(name => types[name] !== "view"), ...names.filter(name => types[name] === "view")];
+        copied.value = ordered.map(collection => ({ connectionId, database, collection }));
+        notifications.send({ subject: t("copy.pickedMany", { count: ordered.length, database }, ordered.length), timeout: 3000 });
     }
 
     /** The name the copy gets in `database`, and whether it replaces a collection of that name. */
@@ -37,6 +59,7 @@ export function useCopy() {
             title: t("copy.exists.title"),
             label: t("copy.exists.label", { name, database }),
             value: `${name}_copy`,
+            suggestions: taken,
             action: t("action.paste")
         });
         if (!chosen) return undefined;
@@ -45,34 +68,42 @@ export function useCopy() {
         return replace ? { name: chosen, replace: true } : undefined;
     }
 
+    /** Copies what was picked into `database`, one collection after another; a name taken is asked for. */
     async function paste(connectionId: string, database: string) {
-        const source = copied.value;
-        if (!source || task.running.runId) return;
+        const sources = copied.value;
+        if (!sources || sources.length === 0 || task.running.runId) return;
         if (notes.isReadonly({ connectionId, database })) {
             report(new ShellError("error.plan.readonlyTree", { name: database }));
             return;
         }
-        const choice = await chooseName(connectionId, database, source.collection);
-        if (!choice) return;
-        const target: Place = { connectionId, database, collection: choice.name };
+        let done = 0;
         try {
-            const result = await task.track(
-                t("copy.running.title"),
-                t("copy.running.text", { source: `${source.database}.${source.collection}`, target: `${database}.${choice.name}` }),
-                (runId, progress) => backend.copyCollection(runId, source, target, choice.replace, update => progress(update.copied, update.total))
-            );
-            notifications.send({
-                subject: result.view
-                    ? t("copy.doneView", { name: choice.name })
-                    : t("copy.done", { name: choice.name, documents: result.documents.toLocaleString(), indexes: result.indexes }),
-                timeout: 4000
-            });
+            for (const source of sources) {
+                const choice = await chooseName(connectionId, database, source.collection);
+                if (!choice) continue;
+                const target: Place = { connectionId, database, collection: choice.name };
+                const result = await task.track(
+                    t("copy.running.title"),
+                    t("copy.running.text", { source: `${source.database}.${source.collection}`, target: `${database}.${choice.name}` }),
+                    (runId, progress) => backend.copyCollection(runId, source, target, choice.replace, update => progress(update.copied, update.total))
+                );
+                done += 1;
+                if (sources.length > 1) continue;
+                notifications.send({
+                    subject: result.view
+                        ? t("copy.doneView", { name: choice.name })
+                        : t("copy.done", { name: choice.name, documents: result.documents.toLocaleString(), indexes: result.indexes }),
+                    timeout: 4000
+                });
+            }
+            if (sources.length > 1) notifications.send({ subject: t("copy.doneMany", { count: done, database }, done), timeout: 4000 });
         } catch (error) {
+            // A failed or stopped copy ends the run; what was copied before stays.
             report(error);
         } finally {
             await connections.loadDatabases(connectionId).catch(report);
         }
     }
 
-    return { copied, running: task.running, copy, paste };
+    return { copied, running: task.running, copy, copyAll, paste };
 }
