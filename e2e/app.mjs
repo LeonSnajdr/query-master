@@ -653,6 +653,23 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.keyboard.press("Escape");
     });
 
+    await step("a connection from a typed string is used and gone with disconnect, saved nowhere", async () => {
+        const recent = await id("recent-connection").count();
+        await page.locator("[data-testid=tab]", { hasText: "Startup page" }).click();
+        await id("start-from-uri").click();
+        await id("prompt-input").fill(uri);
+        await id("prompt-submit").click();
+        await page.waitForFunction(() => document.querySelectorAll("[data-testid=connection-row]").length === 2);
+        const row = id("connection-row").last();
+        assert.doesNotMatch(await row.innerText(), /@/, "the credentials show in the tree");
+        assert.equal(await id("recent-connection").count(), recent);
+        await row.click({ button: "right" });
+        assert.equal(await page.locator("[data-testid=menu-item]:visible", { hasText: "Open connection settings" }).count(), 0);
+        await chooseMenu("Disconnect");
+        await page.waitForFunction(() => document.querySelectorAll("[data-testid=connection-row]").length === 1);
+        assert.equal(await id("recent-connection").count(), recent);
+    });
+
     await step("the settings give new tabs their page size and view", async () => {
         const choose = async (field, label) => {
             await page.locator("dialog[open] [data-testid=select-field]").nth(field).click();

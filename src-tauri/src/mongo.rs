@@ -106,6 +106,37 @@ pub async fn connect(
     Ok(info)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UriConnection {
+    pub version: String,
+    /// The connection string without credentials and options, to show.
+    pub address: String,
+}
+
+/// Connects with a connection string that is not saved ("Connect from URI"). The session lives
+/// under `id`, which the frontend chooses, until `disconnect`; nothing is written anywhere.
+#[tauri::command]
+pub async fn connect_uri(
+    clients: State<'_, Clients>,
+    id: String,
+    uri: String,
+) -> Result<UriConnection> {
+    let uri = uri.trim();
+    if !(uri.starts_with("mongodb://") || uri.starts_with("mongodb+srv://")) {
+        return Err(Error::UriScheme);
+    }
+    let (client, info) = open(uri).await?;
+    let previous = clients.lock().insert(id, client);
+    if let Some(previous) = previous {
+        previous.shutdown().immediate(true).await;
+    }
+    Ok(UriConnection {
+        version: info.version,
+        address: connection::address_of(uri),
+    })
+}
+
 #[tauri::command]
 pub async fn disconnect(clients: State<'_, Clients>, id: String) -> Result<()> {
     let client = clients.lock().remove(&id);

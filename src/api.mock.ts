@@ -58,6 +58,7 @@ export const mockBackend: Backend = {
     },
     testConnection: async () => ({ version: "8.0.4" }),
     connect: async () => ({ version: "8.0.4" }),
+    connectUri: async (_id, uri) => ({ version: "8.0.4", address: uri.replace(/\/\/[^@/]*@/, "//").split("?")[0]! }),
     disconnect: async () => undefined,
     runCommand: async (_id, _database, command): Promise<Doc> => {
         if ("listDatabases" in command) return { databases: Object.keys(COLLECTIONS).map(name => ({ name })), ok: 1 };

@@ -42,6 +42,7 @@ pub fn run() {
             tree::commands::tree_node_remove,
             mongo::test_connection,
             mongo::connect,
+            mongo::connect_uri,
             mongo::disconnect,
             mongo::run_command,
             mongo::run_cursor_command,

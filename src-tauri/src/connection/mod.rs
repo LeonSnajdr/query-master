@@ -37,7 +37,7 @@ pub struct SaveConnection {
 }
 
 /// `mongodb://user:secret@host:27017/db?x=1` becomes `mongodb://host:27017/db`.
-fn address_of(uri: &str) -> String {
+pub(crate) fn address_of(uri: &str) -> String {
     let (scheme, rest) = uri.split_once("://").unwrap_or(("mongodb", uri));
     let rest = rest.split('?').next().unwrap_or(rest);
     // Credentials end at the last `@` of the authority (a password may hold an encoded `/` only).

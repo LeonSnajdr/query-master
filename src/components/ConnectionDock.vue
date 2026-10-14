@@ -269,9 +269,14 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void actions.refresh(at) },
             { label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", hotkey: "Ctrl + Shift + U", action: () => connections.collapseAll() },
             "separator",
-            { label: t("connection.settings"), action: () => actions.connectionSettings(at) },
-            { label: t("connection.uri"), hotkey: "Ctrl + Alt + F2", action: () => void actions.viewUri(at) },
-            ...noteEntries(at),
+            // A connection from a typed string has no settings, stored string or notes to show.
+            ...(connections.isTransient(at.connectionId)
+                ? []
+                : [
+                    { label: t("connection.settings"), action: () => actions.connectionSettings(at) },
+                    { label: t("connection.uri"), hotkey: "Ctrl + Alt + F2", action: () => void actions.viewUri(at) },
+                    ...noteEntries(at)
+                ] satisfies MenuEntry[]),
             "separator",
             { label: t("connection.disconnect"), hotkey: "Ctrl + Alt + D", action: () => void actions.disconnect(at) }
         ];
@@ -302,13 +307,13 @@ defineExpose({
                     positionArea="bottom span-right"
                 >
                     <p
-                        v-if="connections.profiles.length === 0"
+                        v-if="connections.saved.length === 0"
                         class="m-0 px-3 py-3 text-[13px] text-on-surface-variant"
                     >
                         {{ $t("connection.empty") }}
                     </p>
                     <div
-                        v-for="profile in connections.profiles"
+                        v-for="profile in connections.saved"
                         :key="profile.id"
                         class="group flex items-center hover:bg-primary/25"
                         data-testid="connection-item"

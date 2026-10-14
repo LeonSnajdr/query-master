@@ -307,6 +307,17 @@ export function useActions() {
         connections.selected = { connectionId: profile.id };
     }
 
+    /** Connects with a string that is typed in and not saved "Connect from URI". */
+    async function connectFromUri() {
+        const uri = await dialogs.ask({ title: t("connection.fromUri.title"), label: t("connection.fromUri.label"), value: "mongodb://", action: t("connection.connect"), code: true });
+        if (!uri) return;
+        try {
+            connections.selected = { connectionId: await connections.connectUri(uri) };
+        } catch (error) {
+            report(error);
+        }
+    }
+
     async function disconnect(at = target.value) {
         if (!at) return;
         tabs.closeConnection(at.connectionId);
@@ -343,7 +354,7 @@ export function useActions() {
         openShell, browse, aggregation, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable,
-        refresh, connect, disconnect, viewUri, connectionSettings, deleteConnection,
+        refresh, connect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };
 }

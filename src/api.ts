@@ -94,6 +94,8 @@ export interface Backend {
     deleteConnection: (id: string) => Promise<void>;
     testConnection: (uri: string) => Promise<ServerInfo>;
     connect: (id: string) => Promise<ServerInfo>;
+    /** Connects with a string that is not saved; the session lives under `id` until `disconnect`. */
+    connectUri: (id: string, uri: string) => Promise<ServerInfo & { address: string }>;
     disconnect: (id: string) => Promise<void>;
     runCommand: (id: string, database: string, command: Doc) => Promise<Doc>;
     /** Reads at most `limit` documents from the cursor the command opens. */
@@ -136,6 +138,7 @@ const tauriBackend: Backend = {
     deleteConnection: id => invoke("connection_delete", { id }),
     testConnection: uri => invoke("test_connection", { uri }),
     connect: id => invoke("connect", { id }),
+    connectUri: (id, uri) => invoke("connect_uri", { id, uri }),
     disconnect: id => invoke("disconnect", { id }),
     runCommand: (id, database, command) => invoke("run_command", { id, database, command }),
     runCursorCommand: (id, database, command, limit) => invoke("run_cursor_command", { id, database, command, limit }),

@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { reactive, ref } from "vue";
+import { computed, reactive, ref } from "vue";
 import { backend } from "@/api";
 import type { Profile, ProfileInput } from "@/api";
 import { isDoc, scalar } from "@/shell/ejson";
@@ -73,8 +73,34 @@ export const useConnectionsStore = defineStore("connections", () => {
     /** The row of the tree the toolbar and the menus act on. */
     const selected = ref<TreeSelection>();
 
+    /** Connections made from a string that is not saved; they go with `disconnect`. */
+    const transient: Profile[] = [];
+
     async function load(): Promise<void> {
-        profiles.value = await backend.listConnections();
+        profiles.value = [...await backend.listConnections(), ...transient];
+    }
+
+    /** The saved connections, without those from a typed string. */
+    const saved = computed(() => profiles.value.filter(profile => !isTransient(profile.id)));
+
+    function isTransient(id: string): boolean {
+        return transient.some(profile => profile.id === id);
+    }
+
+    /** "Connect from URI": connects without saving anything; the tree shows the address. */
+    async function connectUri(uri: string): Promise<string> {
+        const id = crypto.randomUUID();
+        connecting.add(id);
+        try {
+            const info = await backend.connectUri(id, uri);
+            transient.push({ id, name: info.address.replace(/^mongodb(\+srv)?:\/\//, ""), address: info.address });
+            await load();
+            sessions[id] = { version: info.version, databases: [], open: true };
+            await loadDatabases(id);
+            return id;
+        } finally {
+            connecting.delete(id);
+        }
     }
 
     async function save(input: ProfileInput): Promise<Profile> {
@@ -152,6 +178,12 @@ export const useConnectionsStore = defineStore("connections", () => {
         if (selected.value?.connectionId === id) selected.value = undefined;
         for (const key of [...fields.keys()]) if (key.startsWith(`${id}/`)) fields.delete(key);
         await backend.disconnect(id);
+        // Nothing was saved for it: once closed, it is gone.
+        const index = transient.findIndex(profile => profile.id === id);
+        if (index !== -1) {
+            transient.splice(index, 1);
+            profiles.value = profiles.value.filter(profile => profile.id !== id);
+        }
     }
 
     /** The collections of a database as far as known, loading them if they are not. */
@@ -190,5 +222,5 @@ export const useConnectionsStore = defineStore("connections", () => {
         return fields.get(key) ?? [];
     }
 
-    return { profiles, sessions, connecting, selected, load, save, remove, connect, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, collapseAll };
+    return { profiles, saved, sessions, connecting, selected, load, save, remove, connect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, collapseAll };
 });
