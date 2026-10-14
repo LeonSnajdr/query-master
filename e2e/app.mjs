@@ -195,6 +195,24 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await panel.locator("[data-testid=view-tree]").click();
     });
 
+    await step("the table steps into an array and back", async () => {
+        const rows = panel.locator("[data-testid=stage-row]");
+        await write(rows.nth(0), "{ }");
+        await panel.locator("[data-testid=query-run]").click();
+        await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 3"));
+        await panel.locator("[data-testid=view-table]").click();
+        // The column head carries the type of the values.
+        await panel.locator("[data-testid=table-column]", { hasText: "tags" }).filter({ hasText: "array" }).waitFor();
+        await panel.locator("[data-testid=table-cell]", { hasText: "[2 elements]" }).dblclick();
+        await panel.locator("[data-testid=table-column]", { hasText: "0 - tags.0" }).waitFor();
+        await panel.locator("[data-testid=table-step-back]").click();
+        await panel.locator("[data-testid=table-column]", { hasText: "tags" }).first().waitFor();
+        await panel.locator("[data-testid=view-tree]").click();
+        await write(rows.nth(0), "{ n: { $gte: 2 } }");
+        await panel.locator("[data-testid=query-run]").click();
+        await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 2"));
+    });
+
     await step("a value is changed in place in the tree", async () => {
         const value = panel.locator("[data-testid=tree-row]", { hasText: /^\s*1\s*name/ }).locator("[data-testid=tree-value]");
         await value.dblclick();

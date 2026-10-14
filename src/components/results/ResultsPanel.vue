@@ -251,7 +251,7 @@ async function lastPage() {
     }
 }
 
-function openMenu(event: MouseEvent, target: ResultTarget) {
+function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = []) {
     selected.value = target.index;
     const document = documentAt(target.index);
     const field = target.path !== "";
@@ -266,6 +266,7 @@ function openMenu(event: MouseEvent, target: ResultTarget) {
         { label: t("copy.value"), icon: "i-lucide-copy", action: () => void copy(toShell(target.value)) },
         { label: t("copy.path"), action: () => void copy(target.path), disabled: !field },
         { label: t("copy.document"), action: () => void copy(toShell(document ?? target.value)) },
+        ...(extra.length > 0 ? ["separator" as const, ...extra] : []),
         "separator",
         { label: t("result.expand.document"), hotkey: "Ctrl + J", action: () => setFold(true, target.index) },
         { label: t("result.collapse.document"), hotkey: "Ctrl + Shift + J", action: () => setFold(false, target.index) },
@@ -492,6 +493,7 @@ provideResultContext({ editable, selected, fold, commit: (target, text) => void 
             </div>
             <ResultTable
                 v-else-if="tab.view === 'table'"
+                :key="tab.id"
                 :offset="result.offset"
                 :rows
             />

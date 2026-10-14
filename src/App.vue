@@ -112,6 +112,7 @@ onMounted(async () => {
         const shop = connections.sessions[profile.id]?.databases.find(database => database.name === "shop");
         if (shop) shop.open = true;
         actions.browse({ connectionId: profile.id, database: "shop", collection: "orders" });
+        if (tabs.active && location.search.includes("table")) tabs.active.view = "table";
         if (location.search.includes("shell")) actions.openShell({ connectionId: profile.id, database: "shop", collection: "orders" });
     }
 });

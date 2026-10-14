@@ -2,6 +2,7 @@ import { createContext } from "@vuetify/v0";
 import type { Ref } from "vue";
 import { isDoc, scalar } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
+import type { MenuEntry } from "@/menu";
 
 /** A value in a result: the document it belongs to and the dotted path to it (empty for the document). */
 export interface ResultTarget {
@@ -21,7 +22,8 @@ export interface ResultContext {
     fold: Ref<{ version: number; open: boolean; index?: number }>;
     /** Writes a value typed in place; the text is in shell notation. */
     commit: (target: ResultTarget, text: string) => void;
-    menu: (event: MouseEvent, target: ResultTarget) => void;
+    /** Opens the context menu of a value; a view adds its own entries with `extra`. */
+    menu: (event: MouseEvent, target: ResultTarget, extra?: MenuEntry[]) => void;
     /** Opens the document to view or edit (double click on a row). */
     open: (index: number) => void;
 }

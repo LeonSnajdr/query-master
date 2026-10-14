@@ -1,10 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, shallowRef, useTemplateRef } from "vue";
+import { ButtonContent, ButtonRoot } from "@vuetify/v0";
+import { computed, nextTick, ref, shallowRef, useTemplateRef } from "vue";
+import { useI18n } from "vue-i18n";
+import type { MenuEntry } from "@/menu";
 import { isDoc, preview, scalar, typeOf } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
 import { displayText, useResultContext } from "./result-context";
 
-/** Documents as rows, their top-level fields as columns. */
+/**
+ * Documents as rows, their fields as columns: the type under each column name,
+ * embedded fields shown as columns of their own on request, and "step into" an array or a sub
+ * document, whose elements then become the columns.
+ */
 const props = defineProps<{
     /** The documents shown, each with its index on the page. */
     rows: { item: Json; index: number }[];
@@ -13,51 +20,145 @@ const props = defineProps<{
 }>();
 
 /** More columns than this are of no use side by side. */
-const MAX_COLUMNS = 80;
+const MAX_COLUMNS = 120;
 
+const { t, locale } = useI18n();
 const context = useResultContext();
 
-/** A wrapped scalar (`{ $oid: … }`) is a value, not a row with fields. */
-function fieldsOf(item: Json): Record<string, Json> | undefined {
-    return isDoc(item) && !scalar(item) ? item : undefined;
+/** The path stepped into, segment by segment; empty at the top of the documents. */
+const stack = ref<string[]>([]);
+/** Columns (relative to `stack`) whose embedded fields are shown as columns. */
+const embedded = ref(new Set<string>());
+const pinned = ref<string[]>([]);
+const hidden = ref(new Set<string>());
+const current = shallowRef<{ index: number; column: string }>();
+
+/** The children of a value: elements of an array, fields of a document, none for a scalar. */
+function children(value: Json | undefined): [string, Json][] {
+    if (Array.isArray(value)) return value.map((item, index) => [String(index), item]);
+    if (isDoc(value) && !scalar(value)) return Object.entries(value);
+    return [];
 }
 
+function at(value: Json | undefined, segments: string[]): Json | undefined {
+    let reached = value;
+    for (const segment of segments) reached = children(reached).find(([key]) => key === segment)?.[1];
+    return reached;
+}
+
+const levels = computed(() => props.rows.map(row => ({ index: row.index, value: at(row.item, stack.value) })));
+
 const columns = computed(() => {
-    const names = new Set<string>();
-    for (const row of props.rows) {
-        for (const key of Object.keys(fieldsOf(row.item) ?? {})) names.add(key);
+    const names: string[] = [];
+    const seen = new Set<string>();
+    const add = (prefix: string, value: Json | undefined) => {
+        for (const [key, item] of children(value)) {
+            const column = prefix ? `${prefix}.${key}` : key;
+            if (embedded.value.has(column) && children(item).length > 0) add(column, item);
+            else if (!seen.has(column) && !embedded.value.has(column)) {
+                seen.add(column);
+                names.push(column);
+            }
+        }
+    };
+    for (const level of levels.value) add("", level.value);
+    // Unfolded columns without anything to unfold in some row still show as themselves.
+    for (const column of embedded.value) {
+        if (!names.some(name => name.startsWith(`${column}.`)) && !seen.has(column)) names.push(column);
     }
-    return [...names].slice(0, MAX_COLUMNS);
+    const order = [...pinned.value.filter(name => names.includes(name)), ...names.filter(name => !pinned.value.includes(name))];
+    return order.filter(name => !hidden.value.has(name)).slice(0, MAX_COLUMNS);
 });
 
-function cell(item: Json, column: string): Json | undefined {
-    return fieldsOf(item)?.[column];
+function cell(value: Json | undefined, column: string): Json | undefined {
+    return at(value, column.split("."));
 }
 
 function cellAt(index: number, column: string): Json | undefined {
-    const row = props.rows.find(item => item.index === index);
-    return row ? cell(row.item, column) : undefined;
+    return cell(levels.value.find(level => level.index === index)?.value, column);
+}
+
+/** The dotted path of a cell from the root of its document. */
+function fullPath(column: string): string {
+    return [...stack.value, column].join(".");
+}
+
+/** Inside a stepped-into value the column says where it comes from: `0 - Sources.0`. */
+function label(column: string): string {
+    return stack.value.length === 0 ? column : `${column} - ${fullPath(column)}`;
+}
+
+const dateFormat = computed(() => new Intl.DateTimeFormat(locale.value, {
+    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit"
+}));
+
+function typeLabel(column: string): string {
+    const value = levels.value.map(level => cell(level.value, column)).find(item => item !== undefined);
+    if (value === undefined) return "";
+    const type = typeOf(value);
+    return type === "date" ? t("result.type.datetime") : t(`result.type.${type}`);
 }
 
 function cellText(value: Json | undefined): string {
-    if (value === undefined) return "";
+    if (value === undefined) return t("result.notSet");
+    const type = typeOf(value);
+    if (type === "date" && isDoc(value)) {
+        const milliseconds = Number((value.$date as { $numberLong?: string } | undefined)?.$numberLong ?? value.$date);
+        //: date and time side by side, without the comma some locales put between.
+        return Number.isNaN(milliseconds) ? displayText(value) : dateFormat.value.format(milliseconds).replace(", ", " ");
+    }
+    // Numbers as digits; the type stands in the column head.
+    if ((type === "long" || type === "decimal") && isDoc(value)) return String(value.$numberLong ?? value.$numberDecimal);
+    if (type === "array" || type === "object") {
+        const count = children(value).length;
+        const text = t("result.count.elements", { count }, count);
+        return type === "array" ? `[${text}]` : `{${text}}`;
+    }
     return scalar(value) ? displayText(value) : preview(value, 60);
 }
 
 function cellClass(value: Json | undefined): string {
-    if (value === undefined) return "";
+    if (value === undefined) return "italic text-on-surface-variant/60";
     switch (typeOf(value)) {
         case "int":
         case "long":
         case "double":
-        case "decimal": return "text-right text-code-number";
+        case "decimal": return "text-code-number";
         case "string": return "text-code-string";
         case "objectId": return "text-code-type";
         case "bool": return "text-code-keyword";
-        case "null": return "text-code-comment";
-        case "date": return "text-code-call";
+        case "null": return "text-code-type";
+        case "date": return "text-code-type";
         default: return "text-on-surface";
     }
+}
+
+function stepInto(column: string): void {
+    stack.value = [...stack.value, ...column.split(".")];
+    embedded.value = new Set();
+    pinned.value = [];
+    hidden.value = new Set();
+    current.value = undefined;
+}
+
+function stepBack(): void {
+    stack.value = stack.value.slice(0, -1);
+    embedded.value = new Set();
+    current.value = undefined;
+}
+
+function restore(): void {
+    stack.value = [];
+    embedded.value = new Set();
+    pinned.value = [];
+    hidden.value = new Set();
+}
+
+function toggle<T>(set: Set<T>, value: T, on: boolean): Set<T> {
+    const next = new Set(set);
+    if (on) next.add(value);
+    else next.delete(value);
+    return next;
 }
 
 // Editing in place: one cell at a time.
@@ -65,10 +166,14 @@ const editing = shallowRef<{ index: number; column: string }>();
 const draft = shallowRef("");
 const input = useTemplateRef<HTMLInputElement[]>("input");
 
-async function startEdit(index: number, column: string) {
+async function activate(index: number, column: string) {
     const value = cellAt(index, column);
+    if (children(value).length > 0) {
+        stepInto(column);
+        return;
+    }
     const leaf = value === undefined ? undefined : scalar(value);
-    if (!context.editable.value || column === "_id" || (value !== undefined && !leaf)) {
+    if (!context.editable.value || fullPath(column) === "_id") {
         context.open(index);
         return;
     }
@@ -84,54 +189,103 @@ function commit() {
     editing.value = undefined;
     const value = cellAt(at.index, at.column);
     if (draft.value.trim() !== "" && draft.value !== (value === undefined ? "" : scalar(value)?.text)) {
-        context.commit({ index: at.index, path: at.column, value: value ?? null }, draft.value);
+        context.commit({ index: at.index, path: fullPath(at.column), value: value ?? null }, draft.value);
     }
+}
+
+function select(index: number, column: string) {
+    current.value = { index, column };
+    context.selected.value = index;
+}
+
+function openMenu(event: MouseEvent, index: number, column: string) {
+    select(index, column);
+    const value = cellAt(index, column);
+    const nested = children(value).length > 0;
+    const unfoldable = columns.value.filter(name => levels.value.some(level => children(cell(level.value, name)).length > 0));
+    const extra: MenuEntry[] = [
+        { label: t("table.embedded.show"), hotkey: "Ctrl + J", disabled: !nested, action: () => (embedded.value = toggle(embedded.value, column, true)) },
+        { label: t("table.embedded.showAll"), hotkey: "Ctrl + Shift + J", disabled: unfoldable.length === 0, action: () => (embedded.value = new Set([...embedded.value, ...unfoldable])) },
+        { label: t("table.embedded.hideAll"), hotkey: "Ctrl + Alt + J", disabled: embedded.value.size === 0, action: () => (embedded.value = new Set()) },
+        "separator",
+        { label: t("table.stepInto"), icon: "i-lucide-corner-down-right", hotkey: "Ctrl + Enter", disabled: !nested, action: () => stepInto(column) },
+        ...(stack.value.length > 0 ? [{ label: t("table.stepBack"), icon: "i-lucide-arrow-left", action: stepBack }] : []),
+        pinned.value.includes(column)
+            ? { label: t("table.unpin"), icon: "i-lucide-pin-off", action: () => (pinned.value = pinned.value.filter(name => name !== column)) }
+            : { label: t("table.pin"), icon: "i-lucide-pin", hotkey: "Ctrl + P", action: () => (pinned.value = [...pinned.value, column]) },
+        "separator",
+        { label: t("table.hide"), hotkey: "Ctrl + K", action: () => (hidden.value = toggle(hidden.value, column, true)) },
+        { label: t("table.hideOthers"), hotkey: "Ctrl + Alt + K", action: () => (hidden.value = new Set(columns.value.filter(name => name !== column))) },
+        { label: t("table.showAll"), icon: "i-lucide-eye", hotkey: "Ctrl + Shift + K", disabled: hidden.value.size === 0, action: () => (hidden.value = new Set()) },
+        { label: t("table.restore"), action: restore }
+    ];
+    context.menu(event, { index, path: fullPath(column), value: value ?? null }, extra);
 }
 </script>
 
 <template>
-    <table
-        class="border-separate border-spacing-0 font-mono text-[13px]"
-        data-testid="result-table"
-    >
-        <thead>
-            <tr>
-                <th class="sticky top-0 left-0 z-2 w-11 px-2 h-6.5 bg-dock border-b border-r border-divider text-right font-normal text-on-surface-variant">
-                    #
-                </th>
-                <th
-                    v-for="column in columns"
-                    :key="column"
-                    class="sticky top-0 z-1 px-2.5 h-6.5 bg-dock border-b border-r border-divider text-left font-semibold text-on-surface-strong whitespace-nowrap"
-                >
-                    {{ column }}
-                </th>
-                <th
-                    v-if="columns.length === 0"
-                    class="sticky top-0 z-1 px-2.5 h-6.5 bg-dock border-b border-divider"
-                />
-            </tr>
-        </thead>
-        <tbody>
-            <tr
-                v-for="{ item, index } in rows"
-                :key="index"
-                @click="context.selected.value = index"
-                :class="context.selected.value === index ? 'bg-primary/14' : 'hover:bg-on-surface/4'"
-                data-testid="table-row"
+    <div>
+        <div
+            v-if="stack.length > 0"
+            class="h-7 flex items-center gap-2 px-2"
+        >
+            <ButtonRoot
+                @click="stepBack"
+                class="h-6 px-1.5 inline-flex items-center gap-1 rounded-sm text-[13px] text-on-surface-strong hover:bg-on-surface/10"
+                data-testid="table-step-back"
             >
-                <td class="sticky left-0 px-2 h-6 bg-background border-b border-r border-divider text-right text-on-surface-variant tabular-nums select-none">
-                    {{ offset + index + 1 }}
-                </td>
-                <template v-if="columns.length > 0">
+                <span class="i-lucide-arrow-left size-3.5" />
+                <ButtonContent>{{ $t("table.stepBack") }}</ButtonContent>
+            </ButtonRoot>
+            <span class="font-mono text-[12px] text-on-surface-variant">{{ stack.join(".") }}</span>
+        </div>
+        <table
+            class="border-separate border-spacing-0 font-sans text-[12.5px]"
+            data-testid="result-table"
+        >
+            <thead>
+                <tr>
+                    <th class="sticky top-0 left-0 z-3 w-9 bg-background" />
+                    <th
+                        v-for="column in columns"
+                        :key="column"
+                        :class="pinned.includes(column) ? 'bg-dock' : 'bg-background'"
+                        class="sticky top-0 z-1 px-2 pt-1 pb-0.5 text-left font-normal whitespace-nowrap align-bottom"
+                        data-testid="table-column"
+                    >
+                        <span class="flex items-center gap-1 font-semibold text-on-surface-strong">
+                            <span
+                                v-if="pinned.includes(column)"
+                                class="i-lucide-pin size-3 text-on-surface-variant"
+                            />
+                            {{ label(column) }}
+                        </span>
+                        <span class="block text-[10.5px] leading-3 text-on-surface-variant/60">{{ typeLabel(column) }}</span>
+                    </th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr
+                    v-for="{ value, index } in levels"
+                    :key="index"
+                    :class="context.selected.value === index ? 'bg-on-surface/5' : 'hover:bg-on-surface/4'"
+                    data-testid="table-row"
+                >
+                    <td class="sticky left-0 z-2 w-9 pr-2 h-[19px] bg-background text-right text-[11px] text-on-surface-variant/70 tabular-nums select-none">
+                        {{ offset + index + 1 }}
+                    </td>
                     <td
                         v-for="column in columns"
                         :key="column"
-                        @contextmenu="context.menu($event, { index, path: column, value: cell(item, column) ?? null })"
-                        @dblclick="startEdit(index, column)"
-                        :class="cellClass(cell(item, column))"
-                        :title="cell(item, column) === undefined ? undefined : preview(cell(item, column)!, 1000)"
-                        class="max-w-80 px-2.5 h-6 border-b border-r border-divider truncate whitespace-nowrap"
+                        @click="select(index, column)"
+                        @contextmenu="openMenu($event, index, column)"
+                        @dblclick="activate(index, column)"
+                        :class="[
+                            cellClass(cell(value, column)),
+                            current?.index === index && current.column === column ? 'outline outline-1 -outline-offset-1 outline-primary' : ''
+                        ]"
+                        :title="cell(value, column) === undefined ? undefined : preview(cell(value, column)!, 1000)"
+                        class="max-w-64 px-2 h-[19px] truncate whitespace-nowrap"
                         data-testid="table-cell"
                     >
                         <input
@@ -142,22 +296,16 @@ function commit() {
                             @keydown.enter.prevent="commit"
                             @keydown.esc.stop="editing = undefined"
                             :aria-label="column"
-                            class="w-full min-w-32 h-5 px-1 bg-surface-variant border border-primary outline-none text-on-surface-strong"
+                            class="w-full min-w-32 h-[17px] px-1 bg-surface-variant border border-primary outline-none font-mono text-on-surface-strong"
                             data-testid="table-edit"
                             spellcheck="false"
                         />
                         <template v-else>
-                            {{ cellText(cell(item, column)) }}
+                            {{ cellText(cell(value, column)) }}
                         </template>
                     </td>
-                </template>
-                <td
-                    v-else
-                    class="px-2.5 h-6 border-b border-divider whitespace-nowrap"
-                >
-                    {{ preview(item, 200) }}
-                </td>
-            </tr>
-        </tbody>
-    </table>
+                </tr>
+            </tbody>
+        </table>
+    </div>
 </template>
