@@ -111,6 +111,7 @@ useHotkey("ctrl+alt+u", () => actions.manageUsers(), everywhere);
 useHotkey("ctrl+shift+u", () => connections.collapseAll(), everywhere);
 useHotkey("ctrl+alt+p", () => dialogs.openSettings(), everywhere);
 useHotkey("ctrl+g", () => void actions.addFolder(), everywhere);
+useHotkey("ctrl+shift+s", () => void actions.exportWizard(), everywhere);
 useHotkey("ctrl+alt+r", () => actions.manageRoles(), everywhere);
 useHotkey("ctrl+w", () => withActive(tab => tabs.close(tab.id)), everywhere);
 useHotkey("ctrl+shift+w", () => withActive(tab => tabs.closeOthers(tab.id)), everywhere);

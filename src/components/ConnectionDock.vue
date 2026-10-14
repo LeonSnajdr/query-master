@@ -9,7 +9,7 @@ import IconButton from "@/components/IconButton.vue";
 import NoteMarks from "@/components/NoteMarks.vue";
 import { useActions } from "@/composables/actions";
 import { useCopy } from "@/composables/copy";
-import { TRANSFER_FORMATS, useTransfer } from "@/composables/transfer";
+import { useTransfer } from "@/composables/transfer";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import type { MenuEntry } from "@/menu";
@@ -251,18 +251,8 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("collection.copy"), icon: "i-lucide-copy", hotkey: "Ctrl + C", action: () => copying.copy({ connectionId: at.connectionId, database: at.database!, collection: at.collection! }) },
             paste(at.database!),
-            {
-                label: t("collection.transfer"),
-                icon: "i-lucide-arrow-up-down",
-                children: [
-                    ...TRANSFER_FORMATS.map(({ format }): MenuEntry => ({
-                        label: t(`collection.export.${format}`),
-                        icon: "i-lucide-upload",
-                        action: () => void transfer.exportCollection({ connectionId: at.connectionId, database: at.database! }, at.collection!, format)
-                    })),
-                    { label: t("collection.import"), icon: "i-lucide-download", action: () => void transfer.importCollection({ connectionId: at.connectionId, database: at.database! }, at.collection!), disabled: isView(at) }
-                ]
-            },
+            { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + Shift + S", action: () => void actions.exportWizard(at) },
+            { label: t("collection.import"), icon: "i-lucide-download", action: () => void transfer.importCollection({ connectionId: at.connectionId, database: at.database! }, at.collection!), disabled: isView(at) },
             "separator",
             { label: t("collection.rename"), action: () => void actions.renameCollection(at) },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", hotkey: "Del", danger: true, action: () => void actions.dropCollection(at) },
@@ -292,15 +282,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("database.stats"), action: () => actions.databaseStats(at) },
             { label: t("database.collectionsStats"), action: () => actions.collectionsStats(at) },
-            {
-                label: t("database.export"),
-                icon: "i-lucide-folder-up",
-                children: TRANSFER_FORMATS.map(({ format }): MenuEntry => ({
-                    label: t(`database.export.${format}`),
-                    icon: "i-lucide-upload",
-                    action: () => void transfer.exportDatabase({ connectionId: at.connectionId, database: at.database! }, format)
-                }))
-            },
+            { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + Shift + S", action: () => void actions.exportWizard(at) },
             "separator",
             { label: t("users.manage"), icon: "i-lucide-users", hotkey: "Ctrl + Alt + U", action: () => actions.manageUsers(at) },
             { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(at) },
@@ -317,6 +299,8 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("connection.log"), icon: "i-lucide-scroll-text", action: () => actions.serverLog(at) },
             { label: t("users.manage"), icon: "i-lucide-users", hotkey: "Ctrl + Alt + U", action: () => actions.manageUsers(at) },
             { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(at) },
+            "separator",
+            { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + Shift + S", action: () => void actions.exportWizard(at) },
             "separator",
             { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void actions.refresh(at) },
             { label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", hotkey: "Ctrl + Shift + U", action: () => connections.collapseAll() },

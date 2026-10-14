@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { backend } from "@/api";
 import type { Profile } from "@/api";
 import { useDialogs } from "@/composables/dialogs";
+import { useExportWizard } from "@/composables/exportWizard";
 import { useMessages } from "@/composables/messages";
 import type { Doc } from "@/shell/ejson";
 import { toShell } from "@/shell/ejson";
@@ -42,6 +43,7 @@ export function useActions() {
     const connections = useConnectionsStore();
     const notes = useNotesStore();
     const tabs = useTabsStore();
+    const wizardOf = useExportWizard();
 
     const target = computed<TreeSelection | undefined>(() => {
         if (connections.selected) return connections.selected;
@@ -101,6 +103,11 @@ export function useActions() {
         if (!at) return;
         const database = at.database ?? connections.sessions[at.connectionId]?.databases[0]?.name ?? "test";
         tabs.openSql({ connectionId: at.connectionId, database, collection: at.collection });
+    }
+
+    /** The export wizard with the rows of the selection: the server's, a database's or one collection. */
+    async function exportWizard(at = target.value, filter?: string) {
+        if (at) await wizardOf.openExport(at, filter);
     }
 
     /** A shell that runs one statement right away (statistics, server status …). */
@@ -382,7 +389,7 @@ export function useActions() {
 
     return {
         target, hasConnection, hasDatabase, hasCollection,
-        openShell, browse, aggregation, openSql, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
+        openShell, browse, aggregation, openSql, exportWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, deleteFolder, moveToFolder,
         refresh, connect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,

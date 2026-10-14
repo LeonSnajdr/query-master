@@ -85,6 +85,23 @@ export interface TransferResult {
     skippedFields: string[];
 }
 
+/** How far a row of the export got. */
+export interface ExportProgress {
+    item: number;
+    done: number;
+    state: "running" | "done" | "failed" | "stopped";
+    /** `{ key, detail }`, for `errorMessage`. */
+    error: unknown;
+}
+
+export interface ExportOutcome {
+    documents: number;
+    failed: number;
+    stopped: boolean;
+    /** The text for the clipboard, when that was the destination. */
+    clipboard: string | null;
+}
+
 export interface ServerInfo {
     version: string;
 }
@@ -125,6 +142,8 @@ export interface Backend {
     clearHistory: (connectionId: string) => Promise<void>;
     /** Streams what the cursor command gives into the file at `path`, on the Rust side. */
     exportDocuments: (runId: string, id: string, database: string, command: Doc, path: string, format: TransferFormat, progress: (done: number) => void) => Promise<TransferResult>;
+    /** The export of the wizard (`exportJob` in `src/transfer/export.ts`); progress per row. */
+    exportRun: (runId: string, job: Doc, progress: (update: ExportProgress) => void) => Promise<ExportOutcome>;
     /** Inserts the documents of the file at `path` into the collection, in batches. */
     importDocuments: (runId: string, id: string, database: string, collection: string, path: string, format: TransferFormat, progress: (done: number) => void) => Promise<TransferResult>;
     /** Stores the file at `path` in the GridFS bucket; gives the new file's `_id`. */
@@ -174,6 +193,11 @@ const tauriBackend: Backend = {
         const onProgress = new Channel<{ done: number }>();
         onProgress.onmessage = update => progress(update.done);
         return invoke("export_documents", { runId, id, database, command, path, format, onProgress });
+    },
+    exportRun: (runId, job, progress) => {
+        const onProgress = new Channel<ExportProgress>();
+        onProgress.onmessage = progress;
+        return invoke("export_run", { runId, job, onProgress });
     },
     importDocuments: (runId, id, database, collection, path, format, progress) => {
         const onProgress = new Channel<{ done: number }>();

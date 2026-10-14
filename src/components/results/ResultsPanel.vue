@@ -10,7 +10,8 @@ import DropMenu from "@/components/DropMenu.vue";
 import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
-import { TRANSFER_FORMATS, useTransfer } from "@/composables/transfer";
+import { useExportWizard } from "@/composables/exportWizard";
+import { useTransfer } from "@/composables/transfer";
 import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { isDoc, toShell } from "@/shell/ejson";
@@ -39,6 +40,7 @@ const dialogs = useDialogs();
 const notifications = useNotifications();
 const tabs = useTabsStore();
 const transfer = useTransfer();
+const exportWizard = useExportWizard();
 // The store's own object: the view, the page size and the search are changed here.
 const tab = computed(() => tabs.tabs.find(item => item.id === props.tabId)!);
 const result = computed(() => tab.value.result);
@@ -241,10 +243,38 @@ function showQueryCode() {
     dialogs.showText({ title: t("result.code"), text: statement, variants });
 }
 
-const exportEntries = computed<MenuEntry[]>(() => TRANSFER_FORMATS.map(({ format }) => ({
-    label: t(`result.export.${format}`),
-    action: () => void exportDocuments(format)
-})));
+/**
+ * What the query reads, as the filter of a row of the export wizard: the `find` filter, or a
+ * pipeline when the query also sorts, skips, limits or projects, or is an aggregation itself.
+ */
+function wizardFilter(): { collection: string; filter: string } | undefined {
+    const command = tab.value.plan?.command;
+    const plan = tab.value.plan;
+    if (!command || !plan || plan.shape || isWrite(plan)) return undefined;
+    if (typeof command.aggregate === "string" && Array.isArray(command.pipeline)) {
+        return { collection: command.aggregate, filter: command.pipeline.length > 0 ? toShell(command.pipeline) : "" };
+    }
+    if (typeof command.find !== "string") return undefined;
+    const filter = isDoc(command.filter) ? command.filter : {};
+    const stages: Json[] = [];
+    if (Object.keys(filter).length > 0) stages.push({ $match: filter });
+    if (isDoc(command.sort) && Object.keys(command.sort).length > 0) stages.push({ $sort: command.sort });
+    if (command.skip !== undefined) stages.push({ $skip: command.skip });
+    if (command.limit !== undefined) stages.push({ $limit: command.limit });
+    if (isDoc(command.projection) && Object.keys(command.projection).length > 0) stages.push({ $project: command.projection });
+    const onlyFilter = stages.length === 1 && Object.keys(filter).length > 0;
+    return { collection: command.find, filter: stages.length === 0 ? "" : onlyFilter ? toShell(filter) : toShell(stages) };
+}
+
+/** The export wizard with the collection and the filter of the query; other results as shown, in JSON. */
+async function openExport() {
+    const query = wizardFilter();
+    if (!inApp || !query) {
+        await exportDocuments("json");
+        return;
+    }
+    await exportWizard.openExport({ connectionId: tab.value.connectionId, database: tab.value.plan!.database, collection: query.collection }, query.filter);
+}
 
 /** The command that reads everything the query returns, when it can be read again without writing. */
 function exportCommand(): Doc | undefined {
@@ -385,7 +415,7 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
                 "separator",
                 { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", action: () => void importClipboard(), disabled: locked },
                 { label: t("result.import"), icon: "i-lucide-download", action: () => void importDocuments(), disabled: locked },
-                ...TRANSFER_FORMATS.map(({ format }): MenuEntry => ({ label: t(`result.export.${format}`), icon: "i-lucide-upload", action: () => void exportDocuments(format) }))
+                { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + S", action: () => void openExport() }
             ]
         },
         {
@@ -526,20 +556,16 @@ provideResultContext({ editable, selected, marked, choose, fold, commit: (target
                 icon="i-lucide-braces"
             />
             <span class="toolbar-rule" />
-            <DropMenu
-                :entries="exportEntries"
-                :label="$t('result.export')"
+            <IconButton
+                @click="openExport"
+                :disabled="!result"
+                :label="`${$t('export.menu')} (Ctrl + S)`"
+                data-testid="result-export"
+                icon="i-lucide-upload"
+                tint="text-warning"
             >
-                <span
-                    :class="result ? '' : 'pointer-events-none opacity-35'"
-                    :title="$t('result.export')"
-                    class="h-6.5 px-1 inline-flex items-center gap-1.5 rounded-sm text-[13px] text-on-surface hover:text-on-surface-strong hover:bg-on-surface/10"
-                    data-testid="result-export"
-                >
-                    <span class="i-lucide-upload size-4 text-warning" />
-                    <span class="pr-1 text-on-surface-strong">{{ $t("result.export.short") }}</span>
-                </span>
-            </DropMenu>
+                {{ $t("result.export.short") }}
+            </IconButton>
             <IconButton
                 @click="importDocuments"
                 :disabled="collection === undefined || tabs.locked(tab)"

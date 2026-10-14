@@ -16,7 +16,7 @@ const page = browser.contexts()[0].pages().find(candidate => candidate.url().inc
 page.setDefaultTimeout(15_000);
 const failures = [];
 page.on("pageerror", error => failures.push(`page error: ${error.message}`));
-page.on("console", message => message.type() === "error" && failures.push(`console: ${message.text()}`));
+page.on("console", message => message.type() === "error" && failures.push(`console: ${message.text()} (${message.location().url})`));
 
 const id = name => page.locator(`[data-testid="${name}"]`);
 const visible = name => page.locator(`[data-testid="${name}"]:visible`);
@@ -239,10 +239,12 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         // Without a filter the count comes from the collection itself.
         await panel.locator("[data-testid=result-count]").click();
         await page.locator("text=/matches 3 documents/").first().waitFor();
-        // The export offers its formats; the file dialog itself belongs to the system.
+        // The export of the result opens the wizard with its collection, as one row.
         await visible("result-export").click();
-        for (const format of ["JSON", "JSON Lines", "CSV"]) await page.locator("[data-testid=menu-item]:visible", { hasText: `Export as ${format}` }).first().waitFor();
-        await page.keyboard.press("Escape");
+        await id("export-wizard").waitFor();
+        assert.equal(await id("export-row").count(), 1);
+        await id("export-close").click();
+        await id("export-wizard").waitFor({ state: "hidden" });
     });
 
     await step("a collection unfolds to its indexes; they are created, hidden, duplicated and dropped", async () => {
@@ -292,6 +294,43 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
             await id("confirm-action").click();
             await item.waitFor({ state: "detached" });
         }
+    });
+
+    await step("the export wizard writes a filtered collection to the clipboard and into a database", async () => {
+        const row = page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) });
+        const openWizard = async () => {
+            await row.click({ button: "right" });
+            await chooseMenu("Export...");
+            await id("export-wizard").waitFor();
+        };
+        const wizardSelect = async (position, label) => {
+            await page.locator("[data-testid=export-wizard] [data-testid=select-field]").nth(position).click();
+            await page.locator("[data-testid=menu-item]:visible", { hasText: label }).first().click();
+        };
+
+        // JSON in the shell's notation, with a filter of the row.
+        await openWizard();
+        assert.equal(await id("export-output").inputValue(), `${DATABASE}.${COLLECTION}.json`);
+        await wizardSelect(0, "Clipboard");
+        await id("export-filter").fill("{ n: { $gte: 2 } }");
+        await id("export-next").click();
+        await id("export-start").click();
+        await page.locator("[data-testid=export-progress-row][data-state=done]").waitFor();
+        const text = await page.evaluate(() => navigator.clipboard.readText());
+        assert.equal(text.match(/^\{/gm)?.length, 2, text);
+        assert.match(text, /^\t"_id": ObjectId\("[0-9a-f]{24}"\),\r$/m);
+        await id("export-close").click();
+
+        // Into a database: the same server, another collection name.
+        await openWizard();
+        await id("export-tile-database").click();
+        await wizardSelect(0, NAME);
+        await id("export-target-database").fill(DATABASE);
+        await id("export-output").fill(`${COLLECTION}_exported`);
+        await id("export-next").click();
+        await page.locator("[data-testid=export-progress-row][data-state=done]").waitFor();
+        await id("export-close").click();
+        await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_exported` }).waitFor();
     });
 
     await step("a collection is copied with Ctrl+C and pasted under a new name", async () => {

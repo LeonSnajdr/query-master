@@ -51,7 +51,11 @@ pub enum InsertMode {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum Destination {
     Directory {
         path: PathBuf,
@@ -488,6 +492,21 @@ pub async fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reads_the_job_the_wizard_sends() {
+        let job: ExportJob = serde_json::from_value(serde_json::json!({
+            "connectionId": "a",
+            "items": [{ "database": "shop", "collection": "orders", "output": "orders", "filter": null }],
+            "destination": { "kind": "database", "connectionId": "b", "database": "backup", "insertMode": "newId", "copyIndexes": true },
+            "format": { "kind": "json", "notation": "shell", "layout": "lines" }
+        }))
+        .unwrap();
+        assert!(matches!(
+            job.destination,
+            Destination::Database { ref connection_id, insert_mode: InsertMode::NewId, copy_indexes: true, .. } if connection_id == "b"
+        ));
+    }
 
     #[test]
     fn an_output_is_a_plain_name() {
