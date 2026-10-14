@@ -544,6 +544,21 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.match(await panel.locator("[data-testid=query-result]").innerText(), /documents/);
         await shot("aggregate");
 
+        // A stage after $group is offered the fields $group makes, not those of the collection.
+        await rows.nth(1).locator(".cm-content").click();
+        await visible("stage-add").click();
+        await chooseMenu("$project");
+        await rows.nth(2).locator(".cm-content").click();
+        await page.keyboard.press("Control+A");
+        await page.keyboard.type("{ d");
+        // The sample of the stages before is read when the stage gets the focus.
+        await page.waitForTimeout(500);
+        await page.keyboard.press("Control+Space");
+        await page.locator(".cm-tooltip-autocomplete", { hasText: "documents" }).waitFor();
+        await page.keyboard.press("Escape");
+        await visible("stage-remove").click();
+        assert.equal(await rows.count(), 2);
+
         // $group moved in front of $match: the stages run in the new order.
         await rows.nth(1).locator(".cm-content").click();
         await visible("stage-up").click();

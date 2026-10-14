@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { SwitchRoot, SwitchThumb, SwitchTrack, useNotifications } from "@vuetify/v0";
-import { computed, shallowRef } from "vue";
+import { computed, reactive, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
+import { backend } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
 import DropMenu from "@/components/DropMenu.vue";
 import IconButton from "@/components/IconButton.vue";
@@ -14,10 +15,11 @@ import { useMessages } from "@/composables/messages";
 import type { MenuEntry } from "@/menu";
 import { STAGES } from "@/shell/catalog";
 import type { Environment } from "@/shell/complete";
-import { parseStatements } from "@/shell/parse";
-import { aggregateStatement, newStage, optionsOf, pipelineText, stagesOf, WRITING_STAGES } from "@/shell/pipeline";
+import { parseStatements, parseValue } from "@/shell/parse";
+import type { Json } from "@/shell/ejson";
+import { aggregateStatement, keepsDocuments, newStage, optionsOf, pipelineText, stagesOf, WRITING_STAGES } from "@/shell/pipeline";
 import type { PipelineStage } from "@/shell/pipeline";
-import { useConnectionsStore } from "@/stores/connections";
+import { collectFields, useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
 
 /** The aggregation builder: the stages of a pipeline as rows above, the result below. */
@@ -58,6 +60,50 @@ const environment = computed<Environment>(() => ({
     collections: connections.collectionsOf(tab.value.connectionId, tab.value.database),
     fields: name => connections.fieldsOf(tab.value.connectionId, tab.value.database, name)
 }));
+
+/** Fields the pipeline gives up to a point, per pipeline text; read from a sample when first asked. */
+const shapedFields = reactive(new Map<string, string[]>());
+const sampling = new Set<string>();
+
+/**
+ * The fields a stage sees: those of the collection while every stage before keeps the documents
+ * as they are; after a $group, $project … those of 50 documents the stages before give. Asked only
+ * when the editor suggests, so typing does not run the pipeline.
+ */
+function fieldsAt(position: number): string[] {
+    const before = stages.value.slice(0, position).filter(stage => stage.enabled && !WRITING_STAGES.includes(stage.operator));
+    if (keepsDocuments(before)) return connections.fieldsOf(tab.value.connectionId, tab.value.database, collection.value);
+    let pipeline: Json;
+    try {
+        pipeline = parseValue(pipelineText(before));
+    } catch {
+        return [];
+    }
+    const key = JSON.stringify(pipeline);
+    if (!shapedFields.has(key) && !sampling.has(key) && Array.isArray(pipeline)) {
+        sampling.add(key);
+        backend.runCursorCommand(tab.value.connectionId, tab.value.database, { aggregate: collection.value, pipeline: [...pipeline, { $limit: 50 }], cursor: {} }, 50)
+            .then((page) => {
+                const found = new Set<string>();
+                for (const document of page.documents) collectFields(document, "", 1, found);
+                shapedFields.set(key, [...found].sort((a, b) => a.localeCompare(b)));
+            })
+            .catch(() => shapedFields.set(key, []))
+            .finally(() => sampling.delete(key));
+    }
+    return shapedFields.get(key) ?? [];
+}
+
+/** The stage being worked on; its fields are read now, so they are there when the editor asks. */
+function focusStage(stage: PipelineStage) {
+    current.value = stage.id;
+    fieldsAt(stages.value.indexOf(stage));
+}
+
+function environmentAt(stage: PipelineStage): Environment {
+    const position = stages.value.indexOf(stage);
+    return { ...environment.value, fields: () => fieldsAt(position) };
+}
 
 /** What a stage's text continues, so the editor suggests the keys and operators of that stage. */
 function prefix(stage: PipelineStage): string {
@@ -256,7 +302,7 @@ function createView() {
                 <div
                     v-for="stage in stages"
                     :key="stage.id"
-                    @focusin="current = stage.id"
+                    @focusin="focusStage(stage)"
                     @mousedown="current = stage.id"
                     :class="current === stage.id ? 'border-l-primary' : 'border-l-transparent'"
                     class="flex items-start border-b border-divider border-l-3 py-0.5"
@@ -288,7 +334,7 @@ function createView() {
                         <CodeEditor
                             v-model="stage.text"
                             @run="tabs.runAggregate(tab)"
-                            :environment
+                            :environment="environmentAt(stage)"
                             :label="stage.operator"
                             :prefix="prefix(stage)"
                         />

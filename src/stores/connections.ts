@@ -48,7 +48,8 @@ const FIELD_SAMPLE = 50;
 /** Sub documents are followed this deep. */
 const FIELD_DEPTH = 4;
 
-function collectFields(value: Json, prefix: string, depth: number, into: Set<string>): void {
+/** The field paths of a document (and of documents in its arrays), a few levels deep. */
+export function collectFields(value: Json, prefix: string, depth: number, into: Set<string>): void {
     if (Array.isArray(value)) {
         // The fields of the documents in an array count for the array's path.
         for (const item of value.slice(0, 5)) if (isDoc(item) && !scalar(item)) collectFields(item, prefix, depth, into);
