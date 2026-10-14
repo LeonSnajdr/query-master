@@ -74,11 +74,11 @@ export function useActions() {
         }
     }
 
-    /** A shell with the frame of a pipeline for the collection. */
+    /** The aggregation builder on the collection. */
     function aggregation(at = target.value) {
-        if (at?.database === undefined || at.collection === undefined) return;
-        const text = `db.getCollection(${JSON.stringify(at.collection)}).aggregate([\n    { $match: { } }\n])`;
-        tabs.openShell({ connectionId: at.connectionId, database: at.database, text });
+        if (at?.database !== undefined && at.collection !== undefined) {
+            tabs.openAggregate({ connectionId: at.connectionId, database: at.database, collection: at.collection });
+        }
     }
 
     /** A shell that runs one statement right away (statistics, server status …). */

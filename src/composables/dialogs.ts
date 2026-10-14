@@ -36,6 +36,8 @@ export interface CollectionRequest {
     database: string;
     /** The collection whose validator is edited, or the source of a new view. */
     collection?: string;
+    /** A new view: the pipeline to start with, as text. */
+    pipeline?: string;
 }
 
 /** The index dialog: a new index of a collection, a copy of `index`, or `index` made anew. */

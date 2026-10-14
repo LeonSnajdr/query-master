@@ -86,7 +86,7 @@ watch([open, () => props.request], async ([isOpen]) => {
     validator.value = "{\n    \n}";
     locale.value = "";
     viewOn.value = props.request.collection ?? collections.value[0] ?? "";
-    pipeline.value = "[\n    \n]";
+    pipeline.value = props.request.pipeline ?? "[\n    \n]";
     if (mode.value === "validator") await loadValidator(props.request).catch(cause => (error.value = say(errorMessage(cause))));
 });
 

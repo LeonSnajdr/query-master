@@ -349,6 +349,35 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("browse-title").waitFor();
     });
 
+    await step("the aggregation builder runs a pipeline of stages, reordered and switched", async () => {
+        await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).click({ button: "right" });
+        await chooseMenu("Open aggregation builder");
+        await visible("aggregate-title").waitFor();
+        const rows = page.locator("[data-testid=pipeline-stage]:visible");
+        assert.equal(await rows.count(), 1);
+        await write(rows.nth(0), "{ n: { $gte: 1 } }");
+        await visible("stage-add").click();
+        await chooseMenu("$group");
+        assert.equal(await rows.count(), 2);
+        await write(rows.nth(1), "{ _id: null, documents: { $sum: 1 } }");
+        await visible("query-run").click();
+        await panel.locator("[data-testid=query-run]:not([disabled])").waitFor();
+        await panel.locator("[data-testid=result-range]").waitFor();
+        assert.match(await panel.locator("[data-testid=query-result]").innerText(), /documents/);
+        await shot("aggregate");
+
+        // $group moved in front of $match: the stages run in the new order.
+        await rows.nth(1).locator(".cm-content").click();
+        await visible("stage-up").click();
+        assert.equal(await rows.nth(0).locator("[data-testid=stage-operator]").innerText(), "$group");
+        await rows.nth(1).locator("[role=switch]").click();
+        await visible("query-run").click();
+        await panel.locator("[data-testid=query-run]:not([disabled])").waitFor();
+        assert.match(await panel.locator("[data-testid=query-result]").innerText(), /documents/);
+        await page.keyboard.press("Control+w");
+        await visible("browse-title").waitFor();
+    });
+
     await step("filter and sort narrow and order the result", async () => {
         const rows = panel.locator("[data-testid=stage-row]");
         await write(rows.nth(0), "{ n: { $gte: 2 } }");

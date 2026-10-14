@@ -9,6 +9,8 @@ import type { Message } from "@/shell/message";
 import { parseStatements, statementAt } from "@/shell/parse";
 import { isWrite, pageCommand, planStatement, replyError } from "@/shell/plan";
 import type { Plan } from "@/shell/plan";
+import { aggregateStatement, keepsDocuments, newStage } from "@/shell/pipeline";
+import type { PipelineStage } from "@/shell/pipeline";
 import { useConnectionsStore } from "./connections";
 
 /** Sizes offered for a page of results. */
@@ -20,8 +22,8 @@ const UNPAGED_LIMIT = 10_000;
 const STRUCTURE_COMMANDS = ["create", "drop", "dropDatabase", "renameCollection"];
 
 export type ResultView = "tree" | "table" | "json";
-/** The start page, a collection with its query fields, a shell, or a page about the server. */
-export type TabKind = "start" | "browse" | "shell" | "server";
+/** The start page, a collection with its query fields, a shell, a pipeline, or a page about the server. */
+export type TabKind = "start" | "browse" | "shell" | "aggregate" | "server";
 /** What a server tab shows. */
 export type ServerPage = "status" | "log" | "users" | "roles";
 export type StageName = "filter" | "projection" | "sort" | "skip" | "limit";
@@ -77,11 +79,13 @@ export interface WorkTab {
     runId?: string;
     /** Server tabs: what they show. */
     page?: ServerPage;
+    /** Aggregate tabs: the stages of the pipeline. */
+    pipeline?: PipelineStage[];
 }
 
 /** Tabs with a query or a script, results and a result view. */
 export function isQueryTab(tab: WorkTab | undefined): tab is WorkTab {
-    return tab?.kind === "browse" || tab?.kind === "shell";
+    return tab?.kind === "browse" || tab?.kind === "shell" || tab?.kind === "aggregate";
 }
 
 /** A failed write the server reports in a reply that is otherwise fine. */
@@ -164,6 +168,11 @@ export const useTabsStore = defineStore("tabs", () => {
         return create("shell", { connectionId: target.connectionId, database: target.database, text });
     }
 
+    /** The aggregation builder on a collection, with the stages given or one empty $match. */
+    function openAggregate(target: { connectionId: string; database: string; collection: string; pipeline?: PipelineStage[] }): WorkTab {
+        return create("aggregate", { ...target, pipeline: target.pipeline ?? [newStage("$match", "{ }")] });
+    }
+
     /**
      * The status or the log of a server, or the users or roles of a database; a tab that shows it
      * already comes to the front.
@@ -185,11 +194,13 @@ export const useTabsStore = defineStore("tabs", () => {
             collection: tab.collection,
             text: tab.text,
             stages: tab.stages.map(stage => ({ ...stage })),
+            pipeline: tab.pipeline?.map(stage => newStage(stage.operator, stage.text, stage.enabled)),
             view: tab.view,
             pageSize: tab.pageSize,
             readonly: tab.readonly
         });
         if (copy.kind === "browse") void runBrowse(copy);
+        if (copy.kind === "aggregate") void runAggregate(copy);
     }
 
     function close(id: string): void {
@@ -370,7 +381,24 @@ export const useTabsStore = defineStore("tabs", () => {
         });
     }
 
+    /** Aggregate tabs: runs the stages that are switched on. */
+    function runAggregate(tab: WorkTab): Promise<boolean> {
+        return guarded(tab, async () => {
+            const text = aggregateStatement(tab.collection ?? "", tab.pipeline ?? []);
+            let statement;
+            try {
+                [statement] = parseStatements(text);
+            } catch (error) {
+                throw error instanceof ShellError ? new ShellError(error.key, error.params) : error;
+            }
+            if (!statement) throw new ShellError("error.plan.nothing");
+            await fetch(tab, planStatement(statement, tab.database), 0, text);
+            remember(tab, text);
+        });
+    }
+
     function runTab(tab: WorkTab): Promise<boolean> {
+        if (tab.kind === "aggregate") return runAggregate(tab);
         return tab.kind === "browse" ? runBrowse(tab) : run(tab, 0, undefined, true);
     }
 
@@ -389,6 +417,8 @@ export const useTabsStore = defineStore("tabs", () => {
     /** The collection the shown documents come from, when the result is one of documents of a collection. */
     function sourceCollection(tab: WorkTab): string | undefined {
         if (tab.kind === "browse") return tab.collection;
+        // Documents a pipeline reshaped are not documents of the collection any more.
+        if (tab.kind === "aggregate") return keepsDocuments(tab.pipeline ?? []) ? tab.collection : undefined;
         const command = tab.plan?.command;
         if (!command || tab.plan?.shape) return undefined;
         const name = command.find ?? command.aggregate;
@@ -452,8 +482,8 @@ export const useTabsStore = defineStore("tabs", () => {
 
     return {
         tabs, activeId, active, historyOf, clearHistory,
-        openStart, openBrowse, openShell, openServer, duplicate, close, closeOthers, closeAll, closeConnection, step,
-        run, stop, runBrowse, runTab, showPage, refresh, count, sourceCollection, editable, resultText,
+        openStart, openBrowse, openShell, openAggregate, openServer, duplicate, close, closeOthers, closeAll, closeConnection, step,
+        run, stop, runBrowse, runAggregate, runTab, showPage, refresh, count, sourceCollection, editable, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField
     };
 });

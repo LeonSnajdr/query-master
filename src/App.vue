@@ -3,8 +3,9 @@ import { ButtonRoot, SplitterHandle, SplitterPanel, SplitterRoot, TabsItem, Tabs
 import { computed, onMounted, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { inApp } from "@/api";
-import AppDialogs from "@/components/AppDialogs.vue";
 import AppMenuBar from "@/components/AppMenuBar.vue";
+import AggregatePanel from "@/components/AggregatePanel.vue";
+import AppDialogs from "@/components/AppDialogs.vue";
 import AppSnackbars from "@/components/AppSnackbars.vue";
 import BrowsePanel from "@/components/BrowsePanel.vue";
 import ConnectionDock from "@/components/ConnectionDock.vue";
@@ -35,7 +36,7 @@ const tabs = useTabsStore();
 const dock = useTemplateRef("dock");
 const tabMenu = useTemplateRef("tabMenu");
 
-const TAB_ICONS = { start: "i-lucide-info", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", server: "i-lucide-activity" } as const;
+const TAB_ICONS = { start: "i-lucide-info", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", server: "i-lucide-activity" } as const;
 
 const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield" } as const;
 
@@ -52,7 +53,7 @@ const activeTab = computed({
 function titleOf(tab: WorkTab): string {
     if (tab.kind === "start") return t("start.title");
     if (tab.kind === "server") return t(`server.tab.${tab.page ?? "status"}`, { name: connections.profiles.find(item => item.id === tab.connectionId)?.name ?? "", database: tab.database });
-    return tab.kind === "browse" ? tab.collection ?? "" : tab.database;
+    return tab.kind === "browse" || tab.kind === "aggregate" ? tab.collection ?? "" : tab.database;
 }
 
 /** The server the status bar names: that of the active tab, else of the selected row. */
@@ -257,6 +258,10 @@ onMounted(async () => {
                     <StartPage v-if="tab.kind === 'start'" />
                     <BrowsePanel
                         v-else-if="tab.kind === 'browse'"
+                        :tabId="tab.id"
+                    />
+                    <AggregatePanel
+                        v-else-if="tab.kind === 'aggregate'"
                         :tabId="tab.id"
                     />
                     <ServerPanel
