@@ -7,8 +7,8 @@ import { useMessages } from "@/composables/messages";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
-import { DEFAULT_CSV, DEFAULT_SQL, exportJob, rowsFor, switchFormat } from "@/transfer/export";
-import type { ExportFormat, ExportRow, ExportState } from "@/transfer/export";
+import { DEFAULT_CSV, DEFAULT_SQL, exportJob, exportPreset, readExportPreset, rowsFor, switchFormat } from "@/transfer/export";
+import type { ExportFormat, ExportPreset, ExportRow, ExportState } from "@/transfer/export";
 
 /** A row's progress while the export runs. */
 export interface RowProgress {
@@ -21,8 +21,8 @@ export interface RowProgress {
 /** The pages of the wizard: rows and destination, settings of the format, columns (CSV, SQL), progress. */
 export type WizardStep = "rows" | "settings" | "schema" | "progress";
 
-/** The folder chosen last; the wizard starts with it (for this session). */
-let lastFolder = "";
+/** What the wizard was set to after the last run; read from SQLite when it first opens. */
+let preset: ExportPreset | undefined;
 
 const wizard = reactive({
     open: false,
@@ -76,16 +76,21 @@ export function useExportWizard() {
         busy.value = true;
         try {
             const collections = await collectionsOf(at);
+            preset ??= readExportPreset(await backend.getPreset("export").catch(() => null));
             Object.assign(wizard, { open: true, step: "rows", progress: [], outcome: undefined });
+            // Always JSON into a folder first; the options are those of the last run.
             Object.assign(wizard.state, {
                 connectionId: at.connectionId,
                 format: "json",
                 target: "directory",
-                path: lastFolder,
+                path: preset.folder,
                 rows: rowsFor("json", collections.map(item => ({ ...item, filter }))),
+                json: { ...preset.json },
+                csv: { ...preset.csv },
+                sql: { ...preset.sql },
                 columns: {}
             });
-            wizard.state.database = { connectionId: at.connectionId, database: "", insertMode: "overwrite", copyIndexes: true };
+            wizard.state.database = { connectionId: at.connectionId, database: "", insertMode: preset.insertMode, copyIndexes: preset.copyIndexes };
         } catch (error) {
             report(error);
         } finally {
@@ -122,7 +127,8 @@ export function useExportWizard() {
             report(error);
             return;
         }
-        if (state.target === "directory" && state.format !== "database") lastFolder = state.path;
+        preset = exportPreset(state, preset ?? readExportPreset(null));
+        backend.savePreset("export", preset).catch(report);
         wizard.progress = state.rows.map(() => ({ state: "waiting", done: 0 }));
         wizard.step = "progress";
         wizard.outcome = undefined;

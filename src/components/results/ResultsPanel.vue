@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { ToggleGroup, ToggleRoot, useNotifications } from "@vuetify/v0";
+import { ToggleGroup, ToggleRoot, useHotkey, useNotifications } from "@vuetify/v0";
 import { computed, ref, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage, inApp } from "@/api";
-import type { TransferFormat } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import DropMenu from "@/components/DropMenu.vue";
@@ -11,7 +10,7 @@ import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import { useExportWizard } from "@/composables/exportWizard";
-import { useTransfer } from "@/composables/transfer";
+import { useImportWizard } from "@/composables/importWizard";
 import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { isDoc, toShell } from "@/shell/ejson";
@@ -19,7 +18,7 @@ import type { Doc, Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
 import { parseStatements, parseValue } from "@/shell/parse";
 import { CODE_LANGUAGES, queryCode } from "@/shell/code";
-import { isWrite, pageCommand, planStatement } from "@/shell/plan";
+import { isWrite, planStatement } from "@/shell/plan";
 import { PAGE_SIZES, useTabsStore } from "@/stores/tabs";
 import type { ResultView } from "@/stores/tabs";
 import { provideResultContext } from "./result-context";
@@ -39,7 +38,7 @@ const { say, report } = useMessages();
 const dialogs = useDialogs();
 const notifications = useNotifications();
 const tabs = useTabsStore();
-const transfer = useTransfer();
+const importWizard = useImportWizard();
 const exportWizard = useExportWizard();
 // The store's own object: the view, the page size and the search are changed here.
 const tab = computed(() => tabs.tabs.find(item => item.id === props.tabId)!);
@@ -266,41 +265,22 @@ function wizardFilter(): { collection: string; filter: string } | undefined {
     return { collection: command.find, filter: stages.length === 0 ? "" : onlyFilter ? toShell(filter) : toShell(stages) };
 }
 
-/** The export wizard with the collection and the filter of the query; other results as shown, in JSON. */
+/**
+ * The export wizard with the collection and the filter of the query. A result the wizard can not
+ * read again (a script, another command, the browser preview) is saved as shown, in JSON.
+ */
 async function openExport() {
     const query = wizardFilter();
-    if (!inApp || !query) {
-        await exportDocuments("json");
+    if (inApp && query) {
+        await exportWizard.openExport({ connectionId: tab.value.connectionId, database: tab.value.plan!.database, collection: query.collection }, query.filter);
         return;
     }
-    await exportWizard.openExport({ connectionId: tab.value.connectionId, database: tab.value.plan!.database, collection: query.collection }, query.filter);
-}
-
-/** The command that reads everything the query returns, when it can be read again without writing. */
-function exportCommand(): Doc | undefined {
-    const plan = tab.value.plan;
-    if (!plan?.cursor || !plan.paging || plan.shape || isWrite(plan)) return undefined;
-    return pageCommand(plan, 0, 1000);
-}
-
-/**
- * Everything the query returns, written into a file by the Rust side straight from the cursor;
- * a result that is no cursor (or the browser preview) gives the documents shown, as JSON.
- */
-async function exportDocuments(format: TransferFormat) {
-    const plan = tab.value.plan;
     if (!result.value) return;
-    const name = collection.value ?? tab.value.database;
+    const documents = result.value.items;
     try {
-        const command = exportCommand();
-        if (!inApp || !plan || !command) {
-            const documents = result.value.items;
-            if (await saveTextFile(`${name}.json`, JSON_FILES, JSON.stringify(documents, null, 2))) {
-                notifications.send({ subject: t("result.exported", { count: documents.length }, documents.length), timeout: 3000 });
-            }
-            return;
+        if (await saveTextFile(`${collection.value ?? tab.value.database}.json`, JSON_FILES, JSON.stringify(documents, null, 2))) {
+            notifications.send({ subject: t("result.exported", { count: documents.length }, documents.length), timeout: 3000 });
         }
-        await transfer.exportCommand({ connectionId: tab.value.connectionId, database: plan.database }, command, name, format);
     } catch (error) {
         report(error);
     }
@@ -324,19 +304,24 @@ function readDocuments(text: string): Doc[] {
     return list as Doc[];
 }
 
-/** A JSON, JSON Lines or CSV file into the collection the result comes from, on the Rust side. */
+/** The import wizard with every file going into the collection the result comes from. */
 async function importDocuments() {
     const target = collection.value;
     if (target === undefined) return;
     if (!inApp) return importShown();
-    const database = tab.value.plan?.database ?? tab.value.database;
-    try {
-        if (tabs.locked(tab.value)) throw new ShellError("error.plan.readonly");
-        if (await transfer.importInto({ connectionId: tab.value.connectionId, database }, target)) await tabs.refresh(tab.value);
-    } catch (error) {
-        report(error);
+    if (tabs.locked(tab.value)) {
+        report(new ShellError("error.plan.readonly"));
+        return;
     }
+    await importWizard.openImport({ connectionId: tab.value.connectionId, database: tab.value.plan?.database ?? tab.value.database, collection: target });
 }
+
+//: Ctrl+S exports what the tab shows, Ctrl+O imports into its collection,
+// Ctrl+Shift+V inserts documents from the clipboard. Only for the tab in front.
+const inFront = computed(() => tabs.activeId === tab.value.id);
+useHotkey(() => (inFront.value ? "ctrl+s" : undefined), () => void openExport(), { inputs: true });
+useHotkey(() => (inFront.value && collection.value !== undefined ? "ctrl+o" : undefined), () => void importDocuments(), { inputs: true });
+useHotkey(() => (inFront.value && collection.value !== undefined ? "ctrl+shift+v" : undefined), () => void importClipboard());
 
 /** Documents copied somewhere else: JSON, JSON Lines or shell notation, inserted after asking. */
 async function importClipboard() {
@@ -413,8 +398,8 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
                 { label: t("document.remove"), icon: "i-lucide-file-x-2", danger: true, action: () => void removeDocument(target.index), disabled: !document || !editable.value },
                 { label: t("document.refresh"), icon: "i-lucide-rotate-cw", action: () => void tabs.refreshDocument(tab.value, target.index).catch(report), disabled: !document || collection.value === undefined },
                 "separator",
-                { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", action: () => void importClipboard(), disabled: locked },
-                { label: t("result.import"), icon: "i-lucide-download", action: () => void importDocuments(), disabled: locked },
+                { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", hotkey: "Ctrl + Shift + V", action: () => void importClipboard(), disabled: locked },
+                { label: t("result.import"), icon: "i-lucide-download", hotkey: "Ctrl + O", action: () => void importDocuments(), disabled: locked },
                 { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + S", action: () => void openExport() }
             ]
         },

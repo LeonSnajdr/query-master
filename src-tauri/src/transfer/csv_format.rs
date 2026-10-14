@@ -1,12 +1,9 @@
 //! CSV: a column per chosen field (dotted paths reach into sub documents); without a choice one per
 //! field of the first level, those of the first batch in the order they first appear, and a field
-//! seen only later is reported, not written. Nested values
-//! are written as relaxed extended JSON. Reading guesses numbers and booleans, the rest stays text.
+//! seen only later is reported, not written. Nested values are written as relaxed extended JSON.
 
 use std::collections::BTreeSet;
-use std::fs::File;
-use std::io::{BufWriter, Write};
-use std::path::Path;
+use std::io::Write;
 
 use mongodb::bson::{Bson, Document};
 use serde::Deserialize;
@@ -46,12 +43,6 @@ pub struct CsvWriter<W: Write> {
     /// The columns were chosen: fields outside them are left out, not reported.
     chosen: bool,
     skipped: BTreeSet<String>,
-}
-
-impl CsvWriter<BufWriter<File>> {
-    pub fn new(file: BufWriter<File>) -> Self {
-        Self::with_options(file, CsvOptions::default(), None)
-    }
 }
 
 impl<W: Write> CsvWriter<W> {
@@ -175,51 +166,12 @@ fn cell(value: &Bson) -> String {
     }
 }
 
-/// The value a cell stands for: a whole number, a decimal number, a boolean, or text. An empty
-/// cell leaves the field out.
-fn value_of(text: &str) -> Option<Bson> {
-    if text.is_empty() {
-        return None;
-    }
-    if let Ok(number) = text.parse::<i64>() {
-        return Some(i32::try_from(number).map_or(Bson::Int64(number), Bson::Int32));
-    }
-    let looks_numeric = text
-        .chars()
-        .all(|c| c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E'));
-    if looks_numeric {
-        if let Ok(number) = text.parse::<f64>() {
-            return Some(Bson::Double(number));
-        }
-    }
-    Some(match text {
-        "true" => Bson::Boolean(true),
-        "false" => Bson::Boolean(false),
-        _ => Bson::String(text.to_owned()),
-    })
-}
-
-pub fn read(path: &Path) -> Result<Vec<Document>> {
-    let mut reader = csv::Reader::from_path(path).map_err(csv_error)?;
-    let headers = reader.headers().map_err(csv_error)?.clone();
-    let mut documents = Vec::new();
-    for record in reader.records() {
-        let record = record.map_err(csv_error)?;
-        let mut document = Document::new();
-        for (header, text) in headers.iter().zip(record.iter()) {
-            if let Some(value) = value_of(text) {
-                document.insert(header, value);
-            }
-        }
-        documents.push(document);
-    }
-    Ok(documents)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use mongodb::bson::{doc, oid::ObjectId, DateTime};
+    use std::fs::File;
+    use std::io::BufWriter;
 
     #[test]
     fn writes_the_columns_chosen_with_the_settings_of_the_page() {
@@ -263,7 +215,11 @@ mod tests {
         let path =
             std::env::temp_dir().join(format!("querymaster-{}-cells.csv", std::process::id()));
         let id = ObjectId::parse_str("64b7f0c2a1b2c3d4e5f60718").unwrap();
-        let mut writer = CsvWriter::new(BufWriter::new(File::create(&path).unwrap()));
+        let mut writer = CsvWriter::with_options(
+            BufWriter::new(File::create(&path).unwrap()),
+            CsvOptions::default(),
+            None,
+        );
         writer
             .write(&[
                 doc! { "_id": id, "name": "Anna, \"A\"", "at": DateTime::from_millis(0) },
@@ -277,18 +233,6 @@ mod tests {
         assert_eq!(
             text,
             "_id,name,at,tags\n64b7f0c2a1b2c3d4e5f60718,\"Anna, \"\"A\"\"\",1970-01-01T00:00:00Z,\n2,\"line\nbreak\",,\"[\"\"a\"\",1]\"\n3,,,\n"
-        );
-        std::fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn reads_numbers_booleans_and_text_back() {
-        let path =
-            std::env::temp_dir().join(format!("querymaster-{}-read.csv", std::process::id()));
-        std::fs::write(&path, "a,b,c,d,e,f\n1,2.5,true,,9007199254740993,1e3x\n").unwrap();
-        assert_eq!(
-            read(&path).unwrap(),
-            [doc! { "a": 1, "b": 2.5, "c": true, "e": 9_007_199_254_740_993_i64, "f": "1e3x" }]
         );
         std::fs::remove_file(path).unwrap();
     }

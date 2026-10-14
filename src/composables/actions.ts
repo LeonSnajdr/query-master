@@ -114,7 +114,7 @@ export function useActions() {
 
     /** The import wizard on the server of the selection; a collection chosen there takes every file. */
     function importWizard(at = target.value) {
-        importOf.openImport(at);
+        void importOf.openImport(at);
     }
 
     /** A shell that runs one statement right away (statistics, server status …). */

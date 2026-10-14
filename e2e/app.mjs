@@ -242,12 +242,24 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         // Without a filter the count comes from the collection itself.
         await panel.locator("[data-testid=result-count]").click();
         await page.locator("text=/matches 3 documents/").first().waitFor();
-        // The export of the result opens the wizard with its collection, as one row.
+        // The export of the result opens the wizard with its collection, as one row; so does Ctrl+S.
         await visible("result-export").click();
         await id("export-wizard").waitFor();
         assert.equal(await id("export-row").count(), 1);
         await id("export-close").click();
         await id("export-wizard").waitFor({ state: "hidden" });
+        await panel.locator("[data-testid=tree-row]").first().click();
+        await page.keyboard.press("Control+s");
+        await id("export-wizard").waitFor();
+        assert.equal(await id("export-output").inputValue(), `${DATABASE}.${COLLECTION}.json`);
+        await id("export-close").click();
+        await id("export-wizard").waitFor({ state: "hidden" });
+        // Ctrl+O: the import wizard, every file going into this collection.
+        await page.keyboard.press("Control+o");
+        await id("import-wizard").waitFor();
+        await id("import-empty").waitFor();
+        await id("import-close").click();
+        await id("import-wizard").waitFor({ state: "hidden" });
     });
 
     await step("a collection unfolds to its indexes; they are created, hidden, duplicated and dropped", async () => {

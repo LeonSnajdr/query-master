@@ -6,6 +6,7 @@ mod files;
 mod gridfs;
 mod history;
 mod mongo;
+mod preset;
 mod runs;
 mod script;
 mod setting;
@@ -33,6 +34,8 @@ pub fn run() {
             connection::commands::connection_delete,
             setting::commands::setting_get,
             setting::commands::setting_save,
+            preset::commands::preset_get,
+            preset::commands::preset_save,
             history::commands::history_list,
             history::commands::history_add,
             history::commands::history_clear,
@@ -53,11 +56,9 @@ pub fn run() {
             script::commands::script_run,
             runs::run_stop,
             copy::copy_collection,
-            transfer::commands::export_documents,
             transfer::commands::export_run,
             transfer::commands::import_run,
             transfer::commands::import_preview,
-            transfer::commands::import_documents,
             gridfs::gridfs_upload,
             gridfs::gridfs_download,
             files::read_text_file,

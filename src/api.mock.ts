@@ -74,8 +74,8 @@ export const mockBackend: Backend = {
     stopRun: async () => undefined,
     copyCollection: () => Promise.reject({ key: "error.copy.browser", detail: null }),
     // Files are written by the Rust side; the browser preview exports what the page holds instead.
-    exportDocuments: () => Promise.reject({ key: "error.transfer.browser", detail: null }),
-    importDocuments: () => Promise.reject({ key: "error.transfer.browser", detail: null }),
+    getPreset: async () => null,
+    savePreset: async () => undefined,
     exportRun: () => Promise.reject({ key: "error.transfer.browser", detail: null }),
     importRun: () => Promise.reject({ key: "error.transfer.browser", detail: null }),
     importPreview: () => Promise.reject({ key: "error.transfer.browser", detail: null }),

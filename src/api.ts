@@ -77,15 +77,6 @@ export interface CopyResult {
     view: boolean;
 }
 
-/** How documents are written to and read from files. */
-export type TransferFormat = "json" | "jsonLines" | "csv";
-
-export interface TransferResult {
-    documents: number;
-    /** CSV export: fields that appeared only after the columns were fixed, so are not in the file. */
-    skippedFields: string[];
-}
-
 /** How far a row of the export got. */
 export interface ExportProgress {
     item: number;
@@ -153,16 +144,15 @@ export interface Backend {
     listHistory: (connectionId: string) => Promise<string[]>;
     addHistory: (connectionId: string, database: string, statement: string) => Promise<void>;
     clearHistory: (connectionId: string) => Promise<void>;
-    /** Streams what the cursor command gives into the file at `path`, on the Rust side. */
-    exportDocuments: (runId: string, id: string, database: string, command: Doc, path: string, format: TransferFormat, progress: (done: number) => void) => Promise<TransferResult>;
     /** The export of the wizard (`exportJob` in `src/transfer/export.ts`); progress per row. */
     exportRun: (runId: string, job: Doc, progress: (update: ExportProgress) => void) => Promise<ExportOutcome>;
     /** The import of the wizard: many files, each into its collection; progress per row as for the export. */
     importRun: (runId: string, job: Doc, progress: (update: ExportProgress) => void) => Promise<ImportOutcome>;
     /** The columns of a CSV file with guessed types, and its first rows. */
     importPreview: (path: string, options: Doc) => Promise<CsvPreview>;
-    /** Inserts the documents of the file at `path` into the collection, in batches. */
-    importDocuments: (runId: string, id: string, database: string, collection: string, path: string, format: TransferFormat, progress: (done: number) => void) => Promise<TransferResult>;
+    /** What the export or import wizard was set to last, as stored; `null` before the first run. */
+    getPreset: (wizard: "export" | "import") => Promise<unknown>;
+    savePreset: (wizard: "export" | "import", value: object) => Promise<void>;
     /** Stores the file at `path` in the GridFS bucket; gives the new file's `_id`. */
     gridfsUpload: (runId: string, id: string, database: string, bucket: string, path: string, progress: (done: number, total: number) => void) => Promise<Json>;
     /** Writes the file with `fileId` from the bucket to `path`. */
@@ -206,11 +196,6 @@ const tauriBackend: Backend = {
     listHistory: connectionId => invoke("history_list", { connectionId }),
     addHistory: (connectionId, database, statement) => invoke("history_add", { connectionId, database, statement }),
     clearHistory: connectionId => invoke("history_clear", { connectionId }),
-    exportDocuments: (runId, id, database, command, path, format, progress) => {
-        const onProgress = new Channel<{ done: number }>();
-        onProgress.onmessage = update => progress(update.done);
-        return invoke("export_documents", { runId, id, database, command, path, format, onProgress });
-    },
     exportRun: (runId, job, progress) => {
         const onProgress = new Channel<ExportProgress>();
         onProgress.onmessage = progress;
@@ -222,11 +207,8 @@ const tauriBackend: Backend = {
         return invoke("import_run", { runId, job, onProgress });
     },
     importPreview: (path, options) => invoke("import_preview", { path, options }),
-    importDocuments: (runId, id, database, collection, path, format, progress) => {
-        const onProgress = new Channel<{ done: number }>();
-        onProgress.onmessage = update => progress(update.done);
-        return invoke("import_documents", { runId, id, database, collection, path, format, onProgress });
-    },
+    getPreset: wizard => invoke("preset_get", { wizard }),
+    savePreset: (wizard, value) => invoke("preset_save", { wizard, value }),
     gridfsUpload: (runId, id, database, bucket, path, progress) => {
         const onProgress = new Channel<{ done: number; total: number }>();
         onProgress.onmessage = update => progress(update.done, update.total);

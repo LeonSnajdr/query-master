@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            insert into transfer_preset (wizard, value) values ($1, $2)\n            on conflict (wizard) do update set value = excluded.value\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "034ad09f7e511bfec417aafa751f274eb81c75ba09aa40b3dde73c3f48e67768"
+}

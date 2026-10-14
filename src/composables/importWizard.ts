@@ -8,8 +8,11 @@ import { useMessages } from "@/composables/messages";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
-import { DEFAULT_CSV_READ, formatOf, importJob, rowFor } from "@/transfer/import";
-import type { ImportFormat, ImportState } from "@/transfer/import";
+import { DEFAULT_CSV_READ, formatOf, importJob, readImportPreset, rowFor } from "@/transfer/import";
+import type { ImportFormat, ImportPreset, ImportState } from "@/transfer/import";
+
+/** What the wizard was set to after the last CSV run; read from SQLite when it first opens. */
+let preset: ImportPreset | undefined;
 
 /** The pages of the wizard: files and target, CSV settings, CSV columns, progress. */
 export type ImportStep = "rows" | "settings" | "schema" | "progress";
@@ -47,8 +50,10 @@ export function useImportWizard() {
     }
 
     /** Opens the wizard on the server of the selection; a database or collection there is where files go. */
-    function openImport(at?: TreeSelection) {
+    async function openImport(at?: TreeSelection) {
         if (wizard.runId) return;
+        preset ??= readImportPreset(await backend.getPreset("import").catch(() => null));
+        wizard.state.csv = { ...preset.csv };
         Object.assign(wizard, {
             open: true,
             step: "rows",
@@ -96,6 +101,10 @@ export function useImportWizard() {
             return;
         }
         const job = importJob(state);
+        if (state.format === "csv") {
+            preset = { csv: { ...state.csv } };
+            backend.savePreset("import", preset).catch(report);
+        }
         wizard.progress = state.rows.map(() => ({ state: "waiting", done: 0 }));
         wizard.step = "progress";
         wizard.outcome = undefined;

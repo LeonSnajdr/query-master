@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CSV, DEFAULT_SQL, exportJob, exportProblems, filterValue, rowsFor, splitPath, switchFormat } from "./export";
+import { DEFAULT_CSV, DEFAULT_SQL, exportJob, exportPreset, exportProblems, filterValue, readExportPreset, rowsFor, splitPath, switchFormat } from "./export";
 import type { ExportState } from "./export";
 
 function state(change: Partial<ExportState> = {}): ExportState {
@@ -25,6 +25,9 @@ describe("rows of the export", () => {
         const typed = [{ ...rows[0]!, output: "mine.txt" }, ...rowsFor("json", [{ database: "shop", collection: "people" }])];
         expect(switchFormat(typed, "json", "csv").map(row => row.output)).toEqual(["mine.txt", "shop.people.csv"]);
         expect(switchFormat(rows, "json", "database")[0]!.output).toBe("orders");
+        // Collection names may hold what Windows does not take in a file name.
+        expect(rowsFor("csv", [{ database: "shop", collection: "a/b:c*d?\"e\"<f>|g\\h" }])[0]!.output).toBe("shop.a_b_c_d__e__f__g_h.csv");
+        expect(rowsFor("database", [{ database: "shop", collection: "a:b" }])[0]!.output).toBe("a:b");
     });
 
     it("takes a filter document or a pipeline in shell notation", () => {
@@ -75,6 +78,18 @@ describe("exportJob", () => {
         expect(job.format).toEqual({ kind: "sql", options: { dialect: "oracle", schema: "sales", createTable: true, dropTable: true } });
         expect((job.items as { columns: string[] | null }[]).map(item => item.columns)).toEqual([null, ["name"]]);
         expect(rowsFor("sql", [{ database: "shop", collection: "orders" }])[0]!.output).toBe("shop.orders.sql");
+    });
+
+    it("keeps folder and options between runs, and reads an old or broken preset with defaults", () => {
+        const empty = readExportPreset(null);
+        expect(empty).toEqual({ folder: "", json: { notation: "shell", layout: "lines" }, csv: DEFAULT_CSV, sql: DEFAULT_SQL, insertMode: "overwrite", copyIndexes: true });
+        const after = exportPreset(state({ csv: { ...DEFAULT_CSV, delimiter: ";" } }), empty);
+        expect(after.folder).toBe("C:\\exports");
+        expect(readExportPreset(JSON.parse(JSON.stringify(after)))).toEqual(after);
+        // The clipboard and a database write no folder: the one before stays.
+        expect(exportPreset(state({ target: "clipboard" }), after).folder).toBe("C:\\exports");
+        expect(exportPreset(state({ target: "file", path: "D:\\out\\a.json" }), after).folder).toBe("D:\\out");
+        expect(readExportPreset({ csv: { delimiter: "|", header: "yes" }, sql: { dialect: "db2" }, insertMode: 3 })).toEqual(empty);
     });
 
     it("splits paths of either kind", () => {

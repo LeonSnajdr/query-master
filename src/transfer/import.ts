@@ -1,5 +1,5 @@
 import type { Doc } from "@/shell/ejson";
-import { splitPath } from "./export";
+import { oneOf, splitPath } from "./export";
 
 /** The two kinds of import, as the tiles of the wizard. */
 export const IMPORT_FORMATS = ["json", "csv"] as const;
@@ -93,6 +93,29 @@ export function importJob(state: ImportState): Doc {
             collection: row.collection.trim(),
             columns: state.format === "csv" ? (state.columns[row.path] as unknown as Doc[] | undefined) ?? null : null
         }))
+    };
+}
+
+/** What the wizard keeps between runs (`transfer_preset`): the CSV settings. */
+export interface ImportPreset {
+    csv: CsvReadSettings;
+}
+
+/** The preset as stored; anything missing or unknown takes the default. */
+export function readImportPreset(value: unknown): ImportPreset {
+    const csv = typeof value === "object" && value !== null ? (value as { csv?: unknown }).csv : undefined;
+    const field = (key: string) => (typeof csv === "object" && csv !== null ? (csv as Record<string, unknown>)[key] : undefined);
+    const flag = (key: string, fallback: boolean) => (typeof field(key) === "boolean" ? field(key) as boolean : fallback);
+    const skipRows = field("skipRows");
+    return {
+        csv: {
+            delimiter: oneOf(field("delimiter"), [",", ";", "\t", " "] as const, DEFAULT_CSV_READ.delimiter),
+            quote: oneOf(field("quote"), ["\"", "'"] as const, DEFAULT_CSV_READ.quote),
+            skipRows: typeof skipRows === "number" && Number.isInteger(skipRows) && skipRows >= 0 && skipRows <= 10 ? skipRows : 0,
+            empty: oneOf(field("empty"), ["null", "emptyString", "omit"] as const, DEFAULT_CSV_READ.empty),
+            header: flag("header", DEFAULT_CSV_READ.header),
+            unescape: flag("unescape", DEFAULT_CSV_READ.unescape)
+        }
     };
 }
 

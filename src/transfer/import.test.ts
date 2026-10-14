@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CSV_READ, formatOf, importJob, importProblems, rowFor } from "./import";
+import { DEFAULT_CSV_READ, formatOf, importJob, importProblems, readImportPreset, rowFor } from "./import";
 import type { ImportState } from "./import";
 
 function state(change: Partial<ImportState> = {}): ImportState {
@@ -36,6 +36,15 @@ describe("importProblems", () => {
         expect(importProblems(state({ connectionId: "", rows: [] }))).toEqual([{ key: "import.problem.noServer" }, { key: "import.problem.noRows" }]);
         const rows = [{ path: "a.json", database: " ", collection: "system.users" }];
         expect(importProblems(state({ rows }))).toEqual([{ key: "import.problem.noDatabase", row: 0 }, { key: "import.problem.badCollection", row: 0 }]);
+    });
+});
+
+describe("readImportPreset", () => {
+    it("takes stored CSV settings and replaces what it does not know", () => {
+        const csv = { ...DEFAULT_CSV_READ, delimiter: "\t" as const, skipRows: 2, empty: "omit" as const };
+        expect(readImportPreset({ csv })).toEqual({ csv });
+        expect(readImportPreset({ csv: { delimiter: "|", skipRows: 99, empty: "zero", header: 1 } })).toEqual({ csv: DEFAULT_CSV_READ });
+        expect(readImportPreset("broken")).toEqual({ csv: DEFAULT_CSV_READ });
     });
 });
 

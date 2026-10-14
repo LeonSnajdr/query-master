@@ -79,9 +79,14 @@ export interface ExportState {
 
 const EXTENSIONS: Record<Exclude<ExportFormat, "database">, string> = { json: "json", csv: "csv", sql: "sql" };
 
+/** A name as a file name: characters Windows forbids become `_`. */
+export function fileName(name: string): string {
+    return name.replace(/[<>:"/\\|?*]/g, "_");
+}
+
 /** The output a row gets by default: `db.collection.json`, or the collection's own name. */
 export function defaultOutput(format: ExportFormat, database: string, collection: string): string {
-    return format === "database" ? collection : `${database}.${collection}.${EXTENSIONS[format]}`;
+    return format === "database" ? collection : fileName(`${database}.${collection}.${EXTENSIONS[format]}`);
 }
 
 /** The rows for collections (each with its database), with default outputs and no filter. */
@@ -132,6 +137,75 @@ export function exportProblems(state: ExportState): { key: string; row?: number 
         }
     });
     return problems;
+}
+
+/** What the wizard keeps between runs (`transfer_preset`): the folder and the options of each format. */
+export interface ExportPreset {
+    folder: string;
+    json: ExportState["json"];
+    csv: CsvSettings;
+    sql: SqlSettings;
+    insertMode: InsertMode;
+    copyIndexes: boolean;
+}
+
+/** One of the allowed values, or the fallback. */
+export function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
+    return allowed.includes(value as T) ? (value as T) : fallback;
+}
+
+function field(value: unknown, key: string): unknown {
+    return typeof value === "object" && value !== null ? (value as Record<string, unknown>)[key] : undefined;
+}
+
+function flag(value: unknown, fallback: boolean): boolean {
+    return typeof value === "boolean" ? value : fallback;
+}
+
+/** The preset as stored; anything missing or unknown (an older version wrote it) takes the default. */
+export function readExportPreset(value: unknown): ExportPreset {
+    const json = field(value, "json");
+    const csv = field(value, "csv");
+    const sql = field(value, "sql");
+    const folder = field(value, "folder");
+    const schema = field(sql, "schema");
+    return {
+        folder: typeof folder === "string" ? folder : "",
+        json: {
+            notation: oneOf(field(json, "notation"), ["shell", "relaxed", "canonical"] as const, "shell"),
+            layout: oneOf(field(json, "layout"), ["lines", "comma", "array"] as const, "lines")
+        },
+        csv: {
+            delimiter: oneOf(field(csv, "delimiter"), [",", ";", "\t", " "] as const, DEFAULT_CSV.delimiter),
+            quote: oneOf(field(csv, "quote"), ["\"", "'"] as const, DEFAULT_CSV.quote),
+            header: flag(field(csv, "header"), DEFAULT_CSV.header),
+            nullEmpty: flag(field(csv, "nullEmpty"), DEFAULT_CSV.nullEmpty),
+            escapeStrings: flag(field(csv, "escapeStrings"), DEFAULT_CSV.escapeStrings)
+        },
+        sql: {
+            dialect: oneOf(field(sql, "dialect"), SQL_DIALECTS, DEFAULT_SQL.dialect),
+            schema: typeof schema === "string" ? schema : "",
+            createTable: flag(field(sql, "createTable"), DEFAULT_SQL.createTable),
+            dropTable: flag(field(sql, "dropTable"), DEFAULT_SQL.dropTable)
+        },
+        insertMode: oneOf(field(value, "insertMode"), ["overwrite", "newId"] as const, "overwrite"),
+        copyIndexes: flag(field(value, "copyIndexes"), true)
+    };
+}
+
+/** The preset after a run; the folder stays the one before when the run wrote none. */
+export function exportPreset(state: ExportState, before: ExportPreset): ExportPreset {
+    let folder = before.folder;
+    if (state.format !== "database" && state.target === "directory") folder = state.path.trim();
+    else if (state.format !== "database" && state.target === "file") folder = splitPath(state.path.trim()).folder || folder;
+    return {
+        folder,
+        json: { ...state.json },
+        csv: { ...state.csv },
+        sql: { ...state.sql },
+        insertMode: state.database.insertMode,
+        copyIndexes: state.database.copyIndexes
+    };
 }
 
 /** The folder of a file path, and its name. */

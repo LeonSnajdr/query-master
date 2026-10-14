@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "select value from transfer_preset where wizard = $1",
+  "describe": {
+    "columns": [
+      {
+        "name": "value",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d1d90341ad1991922ea1e74ceba4431f331ce43827bf131b03ce5e523b3ad2f8"
+}
