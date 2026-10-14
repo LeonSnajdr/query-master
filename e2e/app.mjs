@@ -31,12 +31,15 @@ async function step(name, action) {
         await action();
         steps.push(`ok    ${name}`);
     } catch (error) {
-        // The first lines say what was waited for; the rest is Playwright's retry log.
-        steps.push(`FAIL  ${name}: ${String(error.message).split("\n").slice(0, 3).join(" | ")}`);
+        // The first lines say what was waited for and why it did not happen (e.g. another element
+        // intercepts the click); the rest is Playwright's retry log.
+        steps.push(`FAIL  ${name}: ${String(error.message).split("\n").slice(0, 6).join(" | ")}`);
         // An assertion says what it got; the stack says which one it was.
         if ("actual" in error) steps.push(`      actual ${JSON.stringify(error.actual)}, expected ${JSON.stringify(error.expected)}`);
-        const line = String(error.stack).split("\n").find(entry => entry.includes("app.mjs"));
-        if (line) steps.push(`      at ${line.trim()}`);
+        // Every place in this file, so a failure inside a helper also names the call that led there.
+        const lines = String(error.stack).split("\n").filter(entry => entry.includes("app.mjs")).slice(0, 4);
+        if (lines.length > 0) steps.push(`      at ${lines.map(entry => entry.trim().replace(/^at /, "")).join(" <- ")}`);
+        await shot(`fail-${steps.length}`).catch(() => undefined);
         // What dialogs were open says most about a failure in one.
         const open = await page.locator("dialog[open]").evaluateAll(dialogs => dialogs.map(dialog => dialog.innerText.replace(/\s+/g, " ").slice(0, 400))).catch(() => []);
         if (open.length > 0) steps.push(`      open dialogs: ${open.join(" || ")}`);
@@ -75,11 +78,18 @@ async function choose(field, text) {
     await valueBecomes(input, text);
 }
 
+/** Closes every toast, so none lies over what is clicked next. */
+async function dismissToasts() {
+    const close = page.locator("button[aria-label=Dismiss]:visible");
+    for (let round = 0; round < 20 && await close.count() > 0; round++) await close.first().click().catch(() => undefined);
+}
+
 /** Replaces the text of the code editor inside `scope`. */
 async function write(scope, text) {
     // Tabs keep their hidden panels in the page: only the editor that shows is meant.
     const editor = scope.locator(".cm-content:visible").first();
-    await editor.click();
+    // At the start of the first line: a list of suggestions still open below it does not catch the click.
+    await editor.click({ position: { x: 4, y: 4 } });
     await page.keyboard.press("Control+A");
     // Inserted as one piece: no completion list opens and no bracket is closed for us.
     await page.keyboard.insertText(text);
@@ -258,7 +268,8 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 3");
         const text = await panel.locator("[data-testid=query-result]").innerText();
         assert.match(text, /NumberLong\(9007199254740993\)/);
-        assert.match(text, /2024-05-01T00:00:00\.000Z/);
+        // Dates show in the machine's locale and time zone, as in the table.
+        assert.match(text, /\nat\n:\n[^\n]*2024[^\n]*\ndate\n/);
         // Without a filter the count comes from the collection itself.
         await panel.locator("[data-testid=result-count]").click();
         await page.locator("text=/matches 3 documents/").first().waitFor();
@@ -1012,6 +1023,8 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         const row = id("connection-row").last();
         assert.doesNotMatch(await row.innerText(), /@/, "the credentials show in the tree");
         assert.equal(await id("recent-connection").count(), recent);
+        // The row is the tree's last: the toasts at the bottom left may lie over it.
+        await dismissToasts();
         await row.click({ button: "right" });
         assert.equal(await page.locator("[data-testid=menu-item]:visible", { hasText: "Open connection settings" }).count(), 0);
         await chooseMenu("Disconnect");
@@ -1072,8 +1085,8 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("settings-tab-general").click();
         await visible("settings-close").click();
         assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ Q\)$/);
-        // The reload closed the connection; the next steps work on it.
-        await id("connection-row").first().dblclick();
+        // The reload closed the connection and emptied the tree; the next steps work on it.
+        await page.locator("[data-testid=recent-connection]", { hasText: NAME }).click();
         await id("database-row").first().waitFor();
     });
 
@@ -1111,14 +1124,19 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
             await runShell(`db.getSiblingDB("${DATABASE}").runCommand({ dropUser: "${COLLECTION}_user" })`).catch(() => undefined);
             await runShell(`db.getSiblingDB("${DATABASE}").runCommand({ dropRole: "${COLLECTION}_role" })`).catch(() => undefined);
         }
-        await id("connection-list").click();
-        const item = page.locator("[data-testid=connection-item]:visible", { hasText: NAME });
-        if (await item.count() > 0) {
-            await item.click();
+        // This run's connection, and any an earlier run left behind when it broke off ("E2E <time>").
+        const items = page.locator("[data-testid=connection-item]:visible", { hasText: /E2E \d{10,}/ });
+        for (let round = 0; round < 20; round++) {
+            if (await items.count() === 0) await id("connection-list").click();
+            await page.waitForTimeout(200);
+            if (await items.count() === 0) break;
+            const name = (await items.first().innerText()).match(/E2E \d+/)[0];
+            await items.first().click();
             await id("connection-delete").click();
             await id("confirm-action").click();
-            await page.locator("[data-testid=recent-connection]", { hasText: NAME }).waitFor({ state: "detached" });
-        } else await page.keyboard.press("Escape");
+            await page.locator("[data-testid=recent-connection]", { hasText: name }).waitFor({ state: "detached" });
+        }
+        await page.keyboard.press("Escape");
     }).catch(() => undefined);
 
     console.log(steps.join("\n"));
