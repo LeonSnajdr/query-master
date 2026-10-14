@@ -587,6 +587,28 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 1"));
     });
 
+    await step("documents in shell notation are imported from the clipboard; one is read again", async () => {
+        await page.evaluate(() => navigator.clipboard.writeText("[{ name: \"clip\", n: 5 }, { name: \"clip\", n: NumberLong(6) }]"));
+        const probe = await page.evaluate(async () => {
+            try {
+                return await navigator.clipboard.readText();
+            } catch (error) {
+                return `error ${String(error)}`;
+            }
+        });
+        assert.match(probe, /clip/, probe);
+        await panel.locator("[data-testid=tree-row]").first().click({ button: "right" });
+        await chooseMenu("Import from clipboard");
+        await page.locator("dialog[open]", { hasText: "Insert 2 documents" }).waitFor();
+        await id("confirm-action").click();
+        await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 3"));
+        await panel.locator("[data-testid=tree-row]").first().click({ button: "right" });
+        await chooseMenu("Refresh document");
+        await page.waitForTimeout(300);
+        assert.equal(await panel.locator("[data-testid=query-error]").count(), 0);
+        assert.equal(await panel.locator("[data-testid=tree-row]").count() >= 3, true);
+    });
+
     await step("the history offers the statements that ran", async () => {
         await panel.locator("[data-testid=history]").click();
         await page.locator("[data-testid=menu-item]:visible", { hasText: COLLECTION }).first().waitFor();

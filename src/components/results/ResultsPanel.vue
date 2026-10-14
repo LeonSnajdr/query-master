@@ -249,7 +249,12 @@ function readDocuments(text: string): Doc[] {
     try {
         parsed = JSON.parse(text);
     } catch {
-        parsed = text.split("\n").filter(line => line.trim() !== "").map(line => JSON.parse(line) as unknown);
+        try {
+            parsed = text.split("\n").filter(line => line.trim() !== "").map(line => JSON.parse(line) as unknown);
+        } catch {
+            // Shell notation, as the shell and "Copy document" write it: ObjectId(…), unquoted keys.
+            parsed = parseValue(text);
+        }
     }
     const list = Array.isArray(parsed) ? parsed : [parsed];
     if (!list.every(item => isDoc(item as Json))) throw new Error(t("document.error.notDocument"));
@@ -272,6 +277,25 @@ async function importDocuments() {
             backend.importDocuments(runId, tab.value.connectionId, database, target, path, format, progress));
         notifications.send({ subject: t("result.imported", { count: outcome.documents }, outcome.documents), timeout: 3000 });
         await tabs.refresh(tab.value);
+    } catch (error) {
+        report(error);
+    }
+}
+
+/** Documents copied somewhere else: JSON, JSON Lines or shell notation, inserted after asking. */
+async function importClipboard() {
+    try {
+        const documents = readDocuments(await navigator.clipboard.readText());
+        if (documents.length === 0) return;
+        const confirmed = await dialogs.confirm({
+            title: t("result.importClipboard"),
+            text: t("result.importClipboard.text", { count: documents.length, collection: collection.value ?? "" }, documents.length),
+            action: t("action.insert")
+        });
+        if (!confirmed) return;
+        if (await tabs.insertDocuments(tab.value, documents)) {
+            notifications.send({ subject: t("result.imported", { count: documents.length }, documents.length), timeout: 3000 });
+        } else report(tab.value.error);
     } catch (error) {
         report(error);
     }
@@ -327,6 +351,7 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
         { label: t("copy.value"), icon: "i-lucide-copy", action: () => void copy(toShell(target.value)) },
         { label: t("copy.path"), action: () => void copy(target.path), disabled: !field },
         { label: t("copy.document"), action: () => void copy(toShell(document ?? target.value)) },
+        { label: t("copy.json"), action: () => void copy(JSON.stringify(document ?? target.value, null, 2)) },
         ...(extra.length > 0 ? ["separator" as const, ...extra] : []),
         "separator",
         { label: t("result.expand.document"), hotkey: "Ctrl + J", action: () => setFold(true, target.index) },
@@ -336,6 +361,8 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
         "separator",
         ...FORMATS.map(({ format }): MenuEntry => ({ label: t(`result.export.${format}`), icon: "i-lucide-upload", action: () => void exportDocuments(format) })),
         { label: t("result.import"), icon: "i-lucide-download", action: () => void importDocuments(), disabled: collection.value === undefined || tabs.locked(tab.value) },
+        { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", action: () => void importClipboard(), disabled: collection.value === undefined || tabs.locked(tab.value) },
+        { label: t("document.refresh"), icon: "i-lucide-rotate-cw", action: () => void tabs.refreshDocument(tab.value, target.index).catch(report), disabled: !document || collection.value === undefined },
         "separator",
         { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void tabs.refresh(tab.value) }
     ];
@@ -444,9 +471,9 @@ provideResultContext({ editable, selected, fold, commit: (target, text) => void 
             />
             <IconButton
                 @click="showQueryCode"
-                data-testid="result-code"
                 :disabled="!result"
                 :label="$t('result.code')"
+                data-testid="result-code"
                 icon="i-lucide-braces"
             />
             <span class="toolbar-rule" />

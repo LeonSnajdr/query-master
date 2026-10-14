@@ -505,6 +505,19 @@ export const useTabsStore = defineStore("tabs", () => {
         return write(tab, collection => ({ update: collection, updates: [{ q: { _id: id }, u: { $unset: { [path]: "" } }, multi: false }] }));
     }
 
+    /** Reads one shown document again by its `_id` and puts it in its place; gone, it leaves the page. */
+    async function refreshDocument(tab: WorkTab, index: number): Promise<void> {
+        const result = tab.result;
+        const item = result?.items[index];
+        const collection = sourceCollection(tab);
+        if (!result || !isDoc(item) || !("_id" in item) || collection === undefined) return;
+        const database = tab.plan?.database ?? tab.database;
+        const page = await backend.runCursorCommand(tab.connectionId, database, { find: collection, filter: { _id: item._id }, limit: 1 }, 1);
+        const fresh = page.documents[0];
+        const items = fresh ? result.items.map((old, position) => (position === index ? fresh : old)) : result.items.filter((_, position) => position !== index);
+        tab.result = markRaw({ ...result, items });
+    }
+
     /** The shown result as text, one document after the other. */
     function resultText(tab: WorkTab): string {
         return (tab.result?.items ?? []).map(item => toShell(item, "", true)).join("\n");
@@ -521,6 +534,6 @@ export const useTabsStore = defineStore("tabs", () => {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, openAggregate, openServer, duplicate, close, closeOthers, closeAll, closeConnection, step,
         run, stop, runBrowse, runAggregate, runTab, showPage, refresh, count, sourceCollection, editable, locked, lockedByTree, resultText,
-        insertDocuments, replaceDocument, removeDocuments, setField, removeField
+        insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument
     };
 });
