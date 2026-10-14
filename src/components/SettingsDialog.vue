@@ -1,18 +1,30 @@
 <script setup lang="ts">
-import { DialogClose, DialogContent, DialogRoot, DialogTitle } from "@vuetify/v0";
-import { computed } from "vue";
+import { DialogClose, DialogContent, DialogRoot, DialogTitle, TabsItem, TabsList, TabsPanel, TabsRoot } from "@vuetify/v0";
+import { computed, nextTick, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { LOCALES } from "../../i18n/i18n.config";
 import type { AppLocale } from "../../i18n/i18n.config";
 import ChoiceField from "@/components/ChoiceField.vue";
+import KeybindingsTab from "@/components/KeybindingsTab.vue";
 import { RESULT_VIEWS, useAppearance } from "@/composables/appearance";
 import type { StartView } from "@/composables/appearance";
+import type { SettingsPage } from "@/composables/dialogs";
 import { THEMES } from "@/plugins/vuetify";
 import type { ThemeName } from "@/plugins/vuetify";
 import { PAGE_SIZES } from "@/stores/tabs";
 
-/** The settings of the app; each change applies and is kept at once. */
+/** The settings of the app in two tabs, General and Keyboard shortcuts; each change applies and is kept at once. */
 const open = defineModel<boolean>({ default: false });
+const page = defineModel<SettingsPage>("page", { default: "general" });
+const PAGES: SettingsPage[] = ["general", "keys"];
+
+// A tab only selects once it is there; on opening the tabs choose the first, so the page asked for is set again.
+watch(open, async (isOpen) => {
+    if (!isOpen) return;
+    const wanted = page.value;
+    await nextTick();
+    page.value = wanted;
+});
 
 const FONT_SIZES = [11, 12, 13, 14, 15, 16, 18];
 
@@ -34,53 +46,85 @@ const fontSizeOptions = FONT_SIZES.map(value => ({ value, label: `${value} px` }
 
 <template>
     <DialogRoot v-model="open">
-        <DialogContent class="dialog w-[min(94vw,30rem)]!">
+        <DialogContent class="dialog w-[min(94vw,52rem)]!">
             <div
-                class="flex flex-col gap-4 text-[13px]"
+                class="flex flex-col gap-3 text-[13px]"
                 data-testid="settings"
             >
                 <DialogTitle class="dialog-title text-[21px]!">
                     {{ $t("settings.title") }}
                 </DialogTitle>
-                <div class="form-grid grid-cols-[11rem_1fr]!">
-                    <span>{{ $t("settings.language") }}:</span>
-                    <ChoiceField
-                        v-model="languageModel"
-                        :label="$t('settings.language')"
-                        :options="languageOptions"
-                    />
-                    <span>{{ $t("settings.theme") }}:</span>
-                    <ChoiceField
-                        v-model="themeModel"
-                        :label="$t('settings.theme')"
-                        :options="themeOptions"
-                    />
-                    <span class="pt-3 border-t border-divider">{{ $t("settings.pageSize") }}:</span>
-                    <span class="pt-3 border-t border-divider">
-                        <ChoiceField
-                            v-model="pageSize"
-                            :label="$t('settings.pageSize')"
-                            :options="pageSizeOptions"
-                            data-testid="settings-page-size"
-                        />
-                    </span>
-                    <span>{{ $t("settings.view") }}:</span>
-                    <ChoiceField
-                        v-model="resultView"
-                        :label="$t('settings.view')"
-                        :options="viewOptions"
-                        data-testid="settings-view"
-                    />
-                    <span>{{ $t("settings.fontSize") }}:</span>
-                    <ChoiceField
-                        v-model="fontSize"
-                        :label="$t('settings.fontSize')"
-                        :options="fontSizeOptions"
-                    />
-                </div>
-                <p class="m-0 text-on-surface-variant">
-                    {{ $t("settings.note") }}
-                </p>
+                <!-- Manual: when a confirmation over the dialog closes, the focus comes back to the first tab without choosing it. -->
+                <TabsRoot
+                    v-model="page"
+                    activation="manual"
+                    mandatory
+                >
+                    <TabsList
+                        :label="$t('settings.title')"
+                        class="flex border-b border-divider"
+                    >
+                        <TabsItem
+                            v-for="item in PAGES"
+                            :key="item"
+                            :data-testid="`settings-tab-${item}`"
+                            :value="item"
+                            class="h-8 px-3 text-[13px] text-on-surface border-b-2 border-transparent hover:text-on-surface-strong data-[selected]:text-primary data-[selected]:border-primary"
+                        >
+                            {{ $t(`settings.tab.${item}`) }}
+                        </TabsItem>
+                    </TabsList>
+                    <TabsPanel
+                        class="pt-4 max-w-[30rem] flex flex-col gap-4"
+                        value="general"
+                    >
+                        <div class="form-grid grid-cols-[11rem_1fr]!">
+                            <span>{{ $t("settings.language") }}:</span>
+                            <ChoiceField
+                                v-model="languageModel"
+                                :label="$t('settings.language')"
+                                :options="languageOptions"
+                            />
+                            <span>{{ $t("settings.theme") }}:</span>
+                            <ChoiceField
+                                v-model="themeModel"
+                                :label="$t('settings.theme')"
+                                :options="themeOptions"
+                            />
+                            <span class="pt-3 border-t border-divider">{{ $t("settings.pageSize") }}:</span>
+                            <span class="pt-3 border-t border-divider">
+                                <ChoiceField
+                                    v-model="pageSize"
+                                    :label="$t('settings.pageSize')"
+                                    :options="pageSizeOptions"
+                                    data-testid="settings-page-size"
+                                />
+                            </span>
+                            <span>{{ $t("settings.view") }}:</span>
+                            <ChoiceField
+                                v-model="resultView"
+                                :label="$t('settings.view')"
+                                :options="viewOptions"
+                                data-testid="settings-view"
+                            />
+                            <span>{{ $t("settings.fontSize") }}:</span>
+                            <ChoiceField
+                                v-model="fontSize"
+                                :label="$t('settings.fontSize')"
+                                :options="fontSizeOptions"
+                            />
+                        </div>
+                        <p class="m-0 text-on-surface-variant">
+                            {{ $t("settings.note") }}
+                        </p>
+                    </TabsPanel>
+                    <TabsPanel
+                        class="pt-3"
+                        value="keys"
+                    >
+                        <KeybindingsTab v-if="open && page === 'keys'" />
+                    </TabsPanel>
+                </TabsRoot>
                 <div class="flex justify-end">
                     <DialogClose
                         class="btn-secondary"

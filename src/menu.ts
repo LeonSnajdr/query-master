@@ -1,9 +1,13 @@
+import type { CommandId } from "@/keys/commands";
+
 /** A line of a menu; `"separator"` draws a rule between groups. */
 export interface MenuItem {
     label: string;
     /** UnoCSS icon class. */
     icon?: string;
-    /** Shown at the right, for example `Ctrl + Q`. */
+    /** The command whose shortcut is shown at the right, as the user set it. */
+    command?: CommandId;
+    /** Other text at the right, where there is no command (for example `Alt + F4`, a version). */
     hotkey?: string;
     action: () => void;
     disabled?: boolean;

@@ -21,6 +21,7 @@ const folders = new Map<string, TreeFolder[]>();
 function inFolderOf(path: string, database: string): boolean {
     return database === "" ? path !== "" && !path.includes("/") : path.startsWith(`${database}/`);
 }
+const keybindings: Record<string, string[]> = {};
 let setting: Setting = { language: null, theme: null, pageSize: null, resultView: null, editorFontSize: null };
 
 const STATUS = ["open", "paid", "shipped", "cancelled"];
@@ -88,6 +89,16 @@ export const mockBackend: Backend = {
     gridfsUpload: () => Promise.reject({ key: "error.transfer.browser", detail: null }),
     gridfsDownload: () => Promise.reject({ key: "error.transfer.browser", detail: null }),
     getSetting: async () => setting,
+    getKeybindings: async () => ({ ...keybindings }),
+    saveKeybindings: async (changes) => {
+        for (const { commandId, keys } of changes) {
+            if (keys === null) delete keybindings[commandId];
+            else keybindings[commandId] = keys;
+        }
+    },
+    clearKeybindings: async () => {
+        for (const id of Object.keys(keybindings)) delete keybindings[id];
+    },
     saveSetting: async (value) => {
         setting = value;
     },

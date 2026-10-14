@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ButtonRoot, SplitterHandle, SplitterPanel, SplitterRoot, TabsItem, TabsList, TabsRoot, useHotkey } from "@vuetify/v0";
+import { ButtonRoot, SplitterHandle, SplitterPanel, SplitterRoot, TabsItem, TabsList, TabsRoot } from "@vuetify/v0";
 import { computed, onMounted, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { inApp } from "@/api";
@@ -21,6 +21,8 @@ import { watchAppearance } from "@/composables/appearance";
 import { useFocusAreas } from "@/composables/focus";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
+import type { CommandId } from "@/keys/commands";
+import { useShortcut } from "@/keys/keymap";
 import { appWindow } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { useConnectionsStore } from "@/stores/connections";
@@ -75,13 +77,13 @@ const seconds = computed(() => ((tabs.active?.result?.milliseconds ?? 0) / 1000)
 
 function openTabMenu(event: MouseEvent, tab: WorkTab) {
     const entries: MenuEntry[] = [
-        { label: t("tab.next"), hotkey: "Ctrl + Tab", action: () => tabs.step(1) },
-        { label: t("tab.previous"), hotkey: "Ctrl + Shift + Tab", action: () => tabs.step(-1) },
+        { label: t("tab.next"), command: "tab.next", action: () => tabs.step(1) },
+        { label: t("tab.previous"), command: "tab.previous", action: () => tabs.step(-1) },
         "separator",
-        { label: t("tab.duplicate"), hotkey: "Ctrl + Shift + T", action: () => tabs.duplicate(tab), disabled: !isQueryTab(tab) },
+        { label: t("tab.duplicate"), command: "tab.duplicate", action: () => tabs.duplicate(tab), disabled: !isQueryTab(tab) },
         "separator",
-        { label: t("tab.close.current"), hotkey: "Ctrl + W", action: () => tabs.close(tab.id) },
-        { label: t("tab.close.others"), hotkey: "Ctrl + Shift + W", action: () => tabs.closeOthers(tab.id) },
+        { label: t("tab.close.current"), command: "tab.close", action: () => tabs.close(tab.id) },
+        { label: t("tab.close.others"), command: "tab.closeOthers", action: () => tabs.closeOthers(tab.id) },
         { label: t("tab.close.all"), action: () => tabs.closeAll() }
     ];
     void tabMenu.value?.open(event, entries);
@@ -95,44 +97,48 @@ function withActive(action: (tab: WorkTab) => void) {
     if (tabs.active) action(tabs.active);
 }
 
-// Also while an editor has the focus (`inputs`); F5 there belongs to the editor.
-const everywhere = { inputs: true };
-useHotkey("f2", () => dock.value?.openList(), everywhere);
-useHotkey("ctrl+f2", () => actions.newConnection(), everywhere);
-useHotkey("ctrl+q", () => actions.browse(), everywhere);
-useHotkey("ctrl+t", () => actions.openShell(), everywhere);
-useHotkey("ctrl+shift+q", () => actions.aggregation(), everywhere);
-useHotkey("ctrl+alt+q", () => actions.openSql(), everywhere);
-useHotkey("ctrl+h", () => void actions.createCollection(), everywhere);
-useHotkey("ctrl+shift+h", () => actions.createView(), everywhere);
-useHotkey("ctrl+alt+v", () => actions.editValidator(), everywhere);
-useHotkey("ctrl+shift+d", () => void actions.createDatabase(), everywhere);
-useHotkey("ctrl+i", () => actions.createIndex(), everywhere);
-useHotkey("ctrl+alt+i", () => actions.recreateIndex(), everywhere);
-useHotkey("ctrl+shift+i", () => actions.duplicateIndex(), everywhere);
-useHotkey("ctrl+alt+d", () => void actions.disconnect(), everywhere);
-useHotkey("ctrl+alt+u", () => actions.manageUsers(), everywhere);
-useHotkey("ctrl+shift+u", () => connections.collapseAll(), everywhere);
-useHotkey("ctrl+alt+p", () => dialogs.openSettings(), everywhere);
-useHotkey("ctrl+g", () => void actions.addFolder(), everywhere);
-useHotkey("ctrl+shift+s", () => void actions.exportWizard(), everywhere);
-useHotkey("ctrl+shift+o", () => actions.importWizard(), everywhere);
-useHotkey("ctrl+alt+r", () => actions.manageRoles(), everywhere);
-useHotkey("ctrl+w", () => withActive(tab => tabs.close(tab.id)), everywhere);
-useHotkey("ctrl+shift+w", () => withActive(tab => tabs.closeOthers(tab.id)), everywhere);
-useHotkey("ctrl+shift+t", () => withActive(tab => tabs.duplicate(tab)), everywhere);
-useHotkey("ctrl+tab", () => tabs.step(1), everywhere);
-useHotkey("ctrl+shift+tab", () => tabs.step(-1), everywhere);
-useHotkey("alt+1", () => setView("tree"), everywhere);
-useHotkey("alt+2", () => setView("table"), everywhere);
-useHotkey("alt+3", () => setView("json"), everywhere);
-useHotkey("f4", () => focus.focusTree(), everywhere);
-useHotkey("f6", () => focus.focusEditor(), everywhere);
-useHotkey("f7", () => focus.focusResults(), everywhere);
-useHotkey("f12", () => dialogs.openHelp("shortcuts"), everywhere);
-// Without these the web view would reload the app.
-useHotkey("ctrl+r", () => withActive(tab => isQueryTab(tab) && void tabs.refresh(tab)), everywhere);
-useHotkey("f5", () => withActive(tab => isQueryTab(tab) && void tabs.runTab(tab)));
+/** What the global shortcuts do; their keys come from the command list and the user's changes. */
+const SHORTCUTS: Partial<Record<CommandId, () => void>> = {
+    "connection.list": () => dock.value?.openList(),
+    "connection.add": () => actions.newConnection(),
+    "connection.uri": () => void actions.viewUri(),
+    "connection.disconnect": () => void actions.disconnect(),
+    "tab.browse": () => actions.browse(),
+    "tab.shell": () => actions.openShell(),
+    "tab.aggregation": () => actions.aggregation(),
+    "tab.sql": () => actions.openSql(),
+    "tab.refresh": () => withActive(tab => isQueryTab(tab) && void tabs.refresh(tab)),
+    "tab.next": () => tabs.step(1),
+    "tab.previous": () => tabs.step(-1),
+    "tab.duplicate": () => withActive(tab => tabs.duplicate(tab)),
+    "tab.close": () => withActive(tab => tabs.close(tab.id)),
+    "tab.closeOthers": () => withActive(tab => tabs.closeOthers(tab.id)),
+    "database.create": () => void actions.createDatabase(),
+    "folder.add": () => void actions.addFolder(),
+    "collection.create": () => void actions.createCollection(),
+    "view.create": () => actions.createView(),
+    "validator.edit": () => actions.editValidator(),
+    "index.create": () => actions.createIndex(),
+    "index.recreate": () => actions.recreateIndex(),
+    "index.duplicate": () => actions.duplicateIndex(),
+    "users.manage": () => actions.manageUsers(),
+    "roles.manage": () => actions.manageRoles(),
+    "export.wizard": () => void actions.exportWizard(),
+    "import.wizard": () => actions.importWizard(),
+    "tree.collapse": () => connections.collapseAll(),
+    "settings.open": () => dialogs.openSettings(),
+    "view.tree": () => setView("tree"),
+    "view.table": () => setView("table"),
+    "view.json": () => setView("json"),
+    "help.shortcuts": () => dialogs.openHelp("shortcuts"),
+    "keys.open": () => dialogs.openSettings("keys"),
+    "focus.tree": () => focus.focusTree(),
+    "focus.editor": () => focus.focusEditor(),
+    "focus.results": () => focus.focusResults(),
+    // Outside the editor; inside it its own keymap runs the statement.
+    "query.run": () => withActive(tab => isQueryTab(tab) && void tabs.runTab(tab))
+};
+for (const [id, run] of Object.entries(SHORTCUTS) as [CommandId, () => void][]) useShortcut(id, run);
 
 onMounted(async () => {
     tabs.openStart();

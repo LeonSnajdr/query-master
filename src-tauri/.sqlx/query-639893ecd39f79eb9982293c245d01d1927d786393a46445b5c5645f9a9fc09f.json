@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                        insert into keybinding (command_id, keys) values ($1, $2)\n                        on conflict (command_id) do update set keys = excluded.keys\n                    ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "639893ecd39f79eb9982293c245d01d1927d786393a46445b5c5645f9a9fc09f"
+}

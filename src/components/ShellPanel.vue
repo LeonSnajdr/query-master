@@ -17,6 +17,7 @@ import { parseStatements, statementAt } from "@/shell/parse";
 import { optionsOf, stagesOf } from "@/shell/pipeline";
 import { useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
+import { useKeymap } from "@/keys/keymap";
 
 /** A shell: a script above, the output of the statement that ran below. */
 const props = defineProps<{
@@ -27,6 +28,7 @@ const { report } = useMessages();
 const { layout } = useLayout();
 const connections = useConnectionsStore();
 const tabs = useTabsStore();
+const keymap = useKeymap();
 // The store's own object: the text, the database and the read-only switch are changed here.
 const tab = computed(() => tabs.tabs.find(item => item.id === props.tabId)!);
 const profile = computed(() => connections.profiles.find(item => item.id === tab.value.connectionId));
@@ -129,7 +131,7 @@ function openInBuilder() {
                 @click="run()"
                 :disabled="tab.running"
                 :icon="tab.running ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-play'"
-                :label="`${$t('query.run')} (F5)`"
+                :label="keymap.titled($t('query.run'), 'query.run')"
                 data-testid="query-run"
                 tint="text-success"
             >

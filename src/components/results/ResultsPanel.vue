@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ToggleGroup, ToggleRoot, useHotkey, useNotifications } from "@vuetify/v0";
+import { ToggleGroup, ToggleRoot, useNotifications } from "@vuetify/v0";
 import { computed, ref, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage, inApp } from "@/api";
@@ -11,6 +11,7 @@ import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import { useExportWizard } from "@/composables/exportWizard";
 import { useImportWizard } from "@/composables/importWizard";
+import { useKeymap, useShortcut } from "@/keys/keymap";
 import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { isDoc, toShell } from "@/shell/ejson";
@@ -36,6 +37,7 @@ const VIEWS: ResultView[] = ["tree", "table", "json"];
 const { t } = useI18n();
 const { say, report } = useMessages();
 const dialogs = useDialogs();
+const keymap = useKeymap();
 const notifications = useNotifications();
 const tabs = useTabsStore();
 const importWizard = useImportWizard();
@@ -93,14 +95,14 @@ function togglePin(path: string) {
 }
 
 /**
- * Keys of the tree, as the menu says: Ctrl+J unfolds the chosen node with all below it,
- * Ctrl+Shift+J folds it, Ctrl+P pins the chosen field. The table has keys of its own.
+ * Keys of the tree, as the menu says (by default Ctrl+J unfolds the chosen node with all below it,
+ * Ctrl+Shift+J folds it, Ctrl+P pins the chosen field). The table has keys of its own.
  */
 function onResultKey(event: KeyboardEvent) {
-    if (tab.value.view !== "tree" || !(event.ctrlKey || event.metaKey) || event.altKey || selected.value === undefined) return;
-    const key = event.key.toLowerCase();
-    if (key === "j") setFold(!event.shiftKey, selected.value, selectedPath.value);
-    else if (key === "p" && !event.shiftKey && selectedPath.value !== "") togglePin(selectedPath.value);
+    if (tab.value.view !== "tree" || selected.value === undefined) return;
+    if (keymap.matches(event, "result.expand")) setFold(true, selected.value, selectedPath.value);
+    else if (keymap.matches(event, "result.collapse")) setFold(false, selected.value, selectedPath.value);
+    else if (keymap.matches(event, "result.pin") && selectedPath.value !== "") togglePin(selectedPath.value);
     else return;
     // Without it the web view opens its downloads (Ctrl+J) or prints (Ctrl+P).
     event.preventDefault();
@@ -347,9 +349,15 @@ async function importDocuments() {
 //: Ctrl+S exports what the tab shows, Ctrl+O imports into its collection,
 // Ctrl+Shift+V inserts documents from the clipboard. Only for the tab in front.
 const inFront = computed(() => tabs.activeId === tab.value.id);
-useHotkey(() => (inFront.value ? "ctrl+s" : undefined), () => void openExport(), { inputs: true });
-useHotkey(() => (inFront.value && collection.value !== undefined ? "ctrl+o" : undefined), () => void importDocuments(), { inputs: true });
-useHotkey(() => (inFront.value && collection.value !== undefined ? "ctrl+shift+v" : undefined), () => void importClipboard());
+
+/** How to run, with the keys as set. */
+const runHint = computed(() => {
+    const keys = keymap.spoken("query.run", t("keys.or"));
+    return keys === undefined ? t("query.hint.noKey") : t("query.hint", { keys });
+});
+useShortcut("result.export", () => void openExport(), () => inFront.value);
+useShortcut("result.import", () => void importDocuments(), () => inFront.value && collection.value !== undefined);
+useShortcut("result.importClipboard", () => void importClipboard(), () => inFront.value && collection.value !== undefined);
 
 /** Documents copied somewhere else: JSON, JSON Lines or shell notation, inserted after asking. */
 async function importClipboard() {
@@ -417,7 +425,7 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
     // The table pins its columns itself (`extra`); the tree pins fields here.
     const isPinned = pinned.value.includes(target.path);
     const pin: MenuEntry[] = field && tab.value.view === "tree"
-        ? [{ label: t(isPinned ? "result.unpin" : "result.pin"), icon: isPinned ? "i-lucide-pin-off" : "i-lucide-pin", hotkey: "Ctrl + P", action: () => togglePin(target.path) }]
+        ? [{ label: t(isPinned ? "result.unpin" : "result.pin"), icon: isPinned ? "i-lucide-pin-off" : "i-lucide-pin", command: "result.pin", action: () => togglePin(target.path) }]
         : [];
     // Grouped: Documents, Fields, Copy; what the view adds; then the rest.
     const entries: MenuEntry[] = [
@@ -432,9 +440,9 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
                 { label: t("document.remove"), icon: "i-lucide-file-x-2", danger: true, action: () => void removeDocument(target.index), disabled: !document || !editable.value },
                 { label: t("document.refresh"), icon: "i-lucide-rotate-cw", action: () => void tabs.refreshDocument(tab.value, target.index).catch(report), disabled: !document || collection.value === undefined },
                 "separator",
-                { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", hotkey: "Ctrl + Shift + V", action: () => void importClipboard(), disabled: locked },
-                { label: t("result.import"), icon: "i-lucide-download", hotkey: "Ctrl + O", action: () => void importDocuments(), disabled: locked },
-                { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + S", action: () => void openExport() }
+                { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", command: "result.importClipboard", action: () => void importClipboard(), disabled: locked },
+                { label: t("result.import"), icon: "i-lucide-download", command: "result.import", action: () => void importDocuments(), disabled: locked },
+                { label: t("export.menu"), icon: "i-lucide-upload", command: "result.export", action: () => void openExport() }
             ]
         },
         {
@@ -443,8 +451,8 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
             children: [
                 { label: t("field.remove"), action: () => void removeField(target), disabled: !field || !editable.value || target.path === "_id" },
                 "separator",
-                { label: t("result.expand.node"), hotkey: "Ctrl + J", action: () => setFold(true, target.index, target.path) },
-                { label: t("result.collapse.node"), hotkey: "Ctrl + Shift + J", action: () => setFold(false, target.index, target.path) },
+                { label: t("result.expand.node"), command: "result.expand", action: () => setFold(true, target.index, target.path) },
+                { label: t("result.collapse.node"), command: "result.collapse", action: () => setFold(false, target.index, target.path) },
                 { label: t("result.expand.all"), action: () => setFold(true) },
                 { label: t("result.collapse.all"), action: () => setFold(false) }
             ]
@@ -463,7 +471,7 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
         ...pin,
         ...(extra.length > 0 ? ["separator" as const, ...extra] : []),
         "separator",
-        { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void tabs.refresh(tab.value) }
+        { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void tabs.refresh(tab.value) }
     ];
     void menu.value?.open(event, entries);
 }
@@ -579,7 +587,7 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
             <IconButton
                 @click="openExport"
                 :disabled="!result"
-                :label="`${$t('export.menu')} (Ctrl + S)`"
+                :label="keymap.titled($t('export.menu'), 'result.export')"
                 data-testid="result-export"
                 icon="i-lucide-upload"
                 tint="text-warning"
@@ -662,7 +670,7 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
                 v-if="!result"
                 class="m-0 px-4 py-3 font-sans text-[13px] text-on-surface-variant"
             >
-                {{ tab.running ? $t("query.running") : $t("query.hint") }}
+                {{ tab.running ? $t("query.running") : runHint }}
             </p>
             <p
                 v-else-if="rows.length === 0"

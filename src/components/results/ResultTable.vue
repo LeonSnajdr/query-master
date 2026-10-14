@@ -2,6 +2,7 @@
 import { ButtonContent, ButtonRoot } from "@vuetify/v0";
 import { computed, ref, shallowRef, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
+import { useKeymap } from "@/keys/keymap";
 import type { MenuEntry } from "@/menu";
 import { isDoc, preview, scalar, typeOf } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
@@ -25,6 +26,7 @@ const MAX_COLUMNS = 120;
 
 const { t, locale } = useI18n();
 const context = useResultContext();
+const keymap = useKeymap();
 
 /** The path stepped into, segment by segment; empty at the top of the documents. */
 const stack = ref<string[]>([]);
@@ -246,19 +248,19 @@ function openMenu(event: MouseEvent, index: number, column: string) {
     const value = cellAt(index, column);
     const nested = children(value).length > 0;
     const extra: MenuEntry[] = [
-        { label: t("table.embedded.show"), hotkey: "Ctrl + J", disabled: !nested, action: () => commands.showEmbedded(column) },
-        { label: t("table.embedded.showAll"), hotkey: "Ctrl + Shift + J", disabled: unfoldable.value.length === 0, action: commands.showAllEmbedded },
-        { label: t("table.embedded.hideAll"), hotkey: "Ctrl + Alt + J", disabled: embedded.value.size === 0, action: commands.hideAllEmbedded },
+        { label: t("table.embedded.show"), command: "table.embedded.show", disabled: !nested, action: () => commands.showEmbedded(column) },
+        { label: t("table.embedded.showAll"), command: "table.embedded.showAll", disabled: unfoldable.value.length === 0, action: commands.showAllEmbedded },
+        { label: t("table.embedded.hideAll"), command: "table.embedded.hideAll", disabled: embedded.value.size === 0, action: commands.hideAllEmbedded },
         "separator",
-        { label: t("table.stepInto"), icon: "i-lucide-corner-down-right", hotkey: "Ctrl + Enter", disabled: !nested, action: () => stepInto(column) },
-        ...(stack.value.length > 0 ? [{ label: t("table.stepBack"), icon: "i-lucide-arrow-left", hotkey: "Backspace", action: stepBack }] : []),
+        { label: t("table.stepInto"), icon: "i-lucide-corner-down-right", command: "table.stepInto", disabled: !nested, action: () => stepInto(column) },
+        ...(stack.value.length > 0 ? [{ label: t("table.stepBack"), icon: "i-lucide-arrow-left", command: "table.stepBack", action: stepBack } satisfies MenuEntry] : []),
         pinned.value.includes(column)
-            ? { label: t("table.unpin"), icon: "i-lucide-pin-off", hotkey: "Ctrl + P", action: () => commands.togglePin(column) }
-            : { label: t("table.pin"), icon: "i-lucide-pin", hotkey: "Ctrl + P", action: () => commands.togglePin(column) },
+            ? { label: t("table.unpin"), icon: "i-lucide-pin-off", command: "table.pin", action: () => commands.togglePin(column) }
+            : { label: t("table.pin"), icon: "i-lucide-pin", command: "table.pin", action: () => commands.togglePin(column) },
         "separator",
-        { label: t("table.hide"), hotkey: "Ctrl + K", action: () => commands.hide(column) },
-        { label: t("table.hideOthers"), hotkey: "Ctrl + Alt + K", action: () => commands.hideOthers(column) },
-        { label: t("table.showAll"), icon: "i-lucide-eye", hotkey: "Ctrl + Shift + K", disabled: hidden.value.size === 0, action: commands.showAll },
+        { label: t("table.hide"), command: "table.hide", action: () => commands.hide(column) },
+        { label: t("table.hideOthers"), command: "table.hideOthers", action: () => commands.hideOthers(column) },
+        { label: t("table.showAll"), icon: "i-lucide-eye", command: "table.showAll", disabled: hidden.value.size === 0, action: commands.showAll },
         { label: t("table.restore"), action: restore }
     ];
     context.menu(event, { index, path: fullPath(column), value: value ?? null }, extra);
@@ -273,7 +275,7 @@ function onKey(event: KeyboardEvent) {
     const at = current.value;
     const key = event.key.toLowerCase();
     const control = event.ctrlKey || event.metaKey;
-    if (!control && key === "backspace" && stack.value.length > 0) {
+    if (keymap.matches(event, "table.stepBack") && stack.value.length > 0) {
         stepBack();
     } else if (!control && at && ["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
         const rows = levels.value.map(level => level.index);
@@ -282,21 +284,23 @@ function onKey(event: KeyboardEvent) {
         const index = rows[Math.min(Math.max(row, 0), rows.length - 1)];
         const name = columns.value[Math.min(Math.max(column, 0), columns.value.length - 1)];
         if (index !== undefined && name !== undefined) select(index, name);
-    } else if (at && key === "enter") {
-        if (control) {
-            if (children(cellAt(at.index, at.column)).length > 0) stepInto(at.column);
-        } else {
-            void activate(at.index, at.column);
-        }
-    } else if (control && key === "j") {
-        if (event.altKey) commands.hideAllEmbedded();
-        else if (event.shiftKey) commands.showAllEmbedded();
-        else if (at) commands.showEmbedded(at.column);
-    } else if (control && key === "k") {
-        if (event.shiftKey) commands.showAll();
-        else if (at && event.altKey) commands.hideOthers(at.column);
-        else if (at) commands.hide(at.column);
-    } else if (control && key === "p" && at) {
+    } else if (at && keymap.matches(event, "table.stepInto")) {
+        if (children(cellAt(at.index, at.column)).length > 0) stepInto(at.column);
+    } else if (at && !control && key === "enter") {
+        void activate(at.index, at.column);
+    } else if (keymap.matches(event, "table.embedded.hideAll")) {
+        commands.hideAllEmbedded();
+    } else if (keymap.matches(event, "table.embedded.showAll")) {
+        commands.showAllEmbedded();
+    } else if (at && keymap.matches(event, "table.embedded.show")) {
+        commands.showEmbedded(at.column);
+    } else if (keymap.matches(event, "table.showAll")) {
+        commands.showAll();
+    } else if (at && keymap.matches(event, "table.hideOthers")) {
+        commands.hideOthers(at.column);
+    } else if (at && keymap.matches(event, "table.hide")) {
+        commands.hide(at.column);
+    } else if (at && keymap.matches(event, "table.pin")) {
         commands.togglePin(at.column);
     } else {
         return;

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "delete from keybinding where command_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "5d494142c5a29506e42d8e56d301136d10436c326154ded2f5fa8930aeaa9f34"
+}

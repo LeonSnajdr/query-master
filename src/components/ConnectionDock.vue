@@ -11,6 +11,7 @@ import { useActions } from "@/composables/actions";
 import { useCopy } from "@/composables/copy";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
+import { useKeymap } from "@/keys/keymap";
 import type { MenuEntry } from "@/menu";
 import { useConnectionsStore } from "@/stores/connections";
 import type { DatabaseNode, TreeSelection } from "@/stores/connections";
@@ -24,6 +25,13 @@ const { report } = useMessages();
 const dialogs = useDialogs();
 const actions = useActions();
 const copying = useCopy();
+const keymap = useKeymap();
+
+/** The line under "no connection", with the key of the connection list as set. */
+const connectHint = computed(() => {
+    const key = keymap.label("connection.list");
+    return key === undefined ? t("connection.none.hint.noKey") : t("connection.none.hint", { key });
+});
 const connections = useConnectionsStore();
 const notes = useNotesStore();
 const menu = useTemplateRef("menu");
@@ -118,7 +126,7 @@ function rowsOf(profile: Profile, database: DatabaseNode): CollectionRow[] {
 function openFolderMenu(event: MouseEvent, profile: Profile, database: DatabaseNode | undefined, folder: string) {
     const at = { connectionId: profile.id, database: database?.name };
     void menu.value?.open(event, [
-        { label: t("folder.add"), icon: "i-lucide-folder-plus", hotkey: "Ctrl + G", action: () => void actions.addFolder(at) },
+        { label: t("folder.add"), icon: "i-lucide-folder-plus", command: "folder.add", action: () => void actions.addFolder(at) },
         { label: t("folder.rename"), icon: "i-lucide-pencil", action: () => void actions.renameFolder(at, folder) },
         { label: t("folder.delete"), icon: "i-lucide-folder-x", danger: true, action: () => void actions.deleteFolder(at, folder) }
     ]);
@@ -184,9 +192,9 @@ async function choose(profile: Profile) {
 }
 
 const createEntries = computed<MenuEntry[]>(() => [
-    { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(), disabled: !actions.hasConnection.value },
-    { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(), disabled: !actions.hasDatabase.value },
-    { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(), disabled: !actions.hasCollection.value }
+    { label: t("database.create"), command: "database.create", action: () => void actions.createDatabase(), disabled: !actions.hasConnection.value },
+    { label: t("collection.create"), icon: "i-lucide-file-plus-2", command: "collection.create", action: () => void actions.createCollection(), disabled: !actions.hasDatabase.value },
+    { label: t("index.create"), icon: "i-lucide-key-round", command: "index.create", action: () => actions.createIndex(), disabled: !actions.hasCollection.value }
 ]);
 
 const manageEntries = computed<MenuEntry[]>(() => [
@@ -197,17 +205,15 @@ const manageEntries = computed<MenuEntry[]>(() => [
     { label: t("connection.status"), icon: "i-lucide-activity", action: () => actions.serverStatus(), disabled: !actions.hasConnection.value },
     { label: t("connection.log"), icon: "i-lucide-scroll-text", action: () => actions.serverLog(), disabled: !actions.hasConnection.value },
     "separator",
-    { label: t("users.manage"), icon: "i-lucide-users", hotkey: "Ctrl + Alt + U", action: () => actions.manageUsers(), disabled: !actions.hasConnection.value },
-    { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(), disabled: !actions.hasConnection.value }
+    { label: t("users.manage"), icon: "i-lucide-users", command: "users.manage", action: () => actions.manageUsers(), disabled: !actions.hasConnection.value },
+    { label: t("roles.manage"), icon: "i-lucide-shield", command: "roles.manage", action: () => actions.manageRoles(), disabled: !actions.hasConnection.value }
 ]);
 
 /** Keys on a focused row act on the selected one: Del drops, Ctrl+C copies, Ctrl+V pastes. */
 function onTreeKey(event: KeyboardEvent) {
     const at = connections.selected;
-    if (!at || event.altKey || event.shiftKey) return;
-    const control = event.ctrlKey || event.metaKey;
-    const key = event.key.toLowerCase();
-    if (!control && key === "delete") {
+    if (!at) return;
+    if (keymap.matches(event, "tree.drop")) {
         if (at.index !== undefined) {
             if (at.index !== "_id_") void actions.dropIndex(at);
         } else if (at.collection !== undefined) {
@@ -217,9 +223,9 @@ function onTreeKey(event: KeyboardEvent) {
         } else {
             return;
         }
-    } else if (control && key === "c" && at.database !== undefined && at.collection !== undefined && at.index === undefined) {
+    } else if (keymap.matches(event, "tree.copy") && at.database !== undefined && at.collection !== undefined && at.index === undefined) {
         copying.copy({ connectionId: at.connectionId, database: at.database, collection: at.collection });
-    } else if (control && key === "v" && at.database !== undefined) {
+    } else if (keymap.matches(event, "tree.paste") && at.database !== undefined) {
         void copying.paste(at.connectionId, at.database);
     } else {
         return;
@@ -240,26 +246,26 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
     const paste = (database: string): MenuEntry => ({
         label: pasteLabel(),
         icon: "i-lucide-clipboard-paste",
-        hotkey: "Ctrl + V",
+        command: "tree.paste",
         action: () => void copying.paste(at.connectionId, database),
         disabled: !copying.copied.value?.length || copying.running.runId !== undefined
     });
     const tail: MenuEntry[] = [
         "separator",
-        { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void actions.refresh(at) },
-        { label: t("connection.disconnect"), hotkey: "Ctrl + Alt + D", action: () => void actions.disconnect(at) }
+        { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void actions.refresh(at) },
+        { label: t("connection.disconnect"), command: "connection.disconnect", action: () => void actions.disconnect(at) }
     ];
     let entries: MenuEntry[];
     if (at.index !== undefined) {
         entries = [
-            { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
+            { label: t("tab.shell"), icon: "i-lucide-square-terminal", command: "tab.shell", action: () => actions.openShell(at) },
             "separator",
-            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(at) },
-            { label: t("index.recreate"), hotkey: "Ctrl + Alt + I", action: () => actions.recreateIndex(at), disabled: at.index === "_id_" },
-            { label: t("index.duplicate"), icon: "i-lucide-copy", hotkey: "Ctrl + Shift + I", action: () => actions.duplicateIndex(at), disabled: at.index === "_id_" },
+            { label: t("index.create"), icon: "i-lucide-key-round", command: "index.create", action: () => actions.createIndex(at) },
+            { label: t("index.recreate"), command: "index.recreate", action: () => actions.recreateIndex(at), disabled: at.index === "_id_" },
+            { label: t("index.duplicate"), icon: "i-lucide-copy", command: "index.duplicate", action: () => actions.duplicateIndex(at), disabled: at.index === "_id_" },
             // The index on _id belongs to the collection: it can be neither dropped nor hidden.
             { label: t(actions.indexOf(at)?.hidden === true ? "index.unhide" : "index.hide"), action: () => void actions.toggleIndexHidden(at), disabled: at.index === "_id_" },
-            { label: t("index.drop"), hotkey: "Del", danger: true, action: () => void actions.dropIndex(at), disabled: at.index === "_id_" },
+            { label: t("index.drop"), command: "tree.drop", danger: true, action: () => void actions.dropIndex(at), disabled: at.index === "_id_" },
             "separator",
             { label: t("index.info.show"), action: () => actions.indexInfo(at) },
             ...tail
@@ -269,28 +275,28 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
         const bucket = node ? bucketAt(node, at.collection) : undefined;
         entries = [
             ...(bucket === undefined ? [] : [{ label: t("gridfs.open"), icon: "i-lucide-folder-archive", action: () => actions.openGridFs(at, bucket) }]),
-            { label: t("tab.browse"), icon: "i-lucide-file-text", hotkey: "Ctrl + Q", action: () => actions.browse(at) },
+            { label: t("tab.browse"), icon: "i-lucide-file-text", command: "tab.browse", action: () => actions.browse(at) },
             "separator",
-            { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
-            { label: t("tab.aggregation"), icon: "i-lucide-network", hotkey: "Ctrl + Shift + Q", action: () => actions.aggregation(at) },
-            { label: t("tab.sql"), icon: "i-lucide-file-code-2", hotkey: "Ctrl + Alt + Q", action: () => actions.openSql(at) },
+            { label: t("tab.shell"), icon: "i-lucide-square-terminal", command: "tab.shell", action: () => actions.openShell(at) },
+            { label: t("tab.aggregation"), icon: "i-lucide-network", command: "tab.aggregation", action: () => actions.aggregation(at) },
+            { label: t("tab.sql"), icon: "i-lucide-file-code-2", command: "tab.sql", action: () => actions.openSql(at) },
             "separator",
-            { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(at) },
-            { label: t("view.create"), icon: "i-lucide-file-search", hotkey: "Ctrl + Shift + H", action: () => actions.createView(at) },
+            { label: t("collection.create"), icon: "i-lucide-file-plus-2", command: "collection.create", action: () => void actions.createCollection(at) },
+            { label: t("view.create"), icon: "i-lucide-file-search", command: "view.create", action: () => actions.createView(at) },
             { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(at) },
             "separator",
-            { label: t("collection.copy"), icon: "i-lucide-copy", hotkey: "Ctrl + C", action: () => copying.copy({ connectionId: at.connectionId, database: at.database!, collection: at.collection! }) },
+            { label: t("collection.copy"), icon: "i-lucide-copy", command: "tree.copy", action: () => copying.copy({ connectionId: at.connectionId, database: at.database!, collection: at.collection! }) },
             paste(at.database!),
-            { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + Shift + S", action: () => void actions.exportWizard(at) },
-            { label: t("import.menu"), icon: "i-lucide-download", hotkey: "Ctrl + Shift + O", action: () => actions.importWizard(at), disabled: isView(at) },
+            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(at) },
+            { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at), disabled: isView(at) },
             "separator",
             { label: t("collection.rename"), action: () => void actions.renameCollection(at) },
-            { label: t("collection.drop"), icon: "i-lucide-file-x-2", hotkey: "Del", danger: true, action: () => void actions.dropCollection(at) },
+            { label: t("collection.drop"), icon: "i-lucide-file-x-2", command: "tree.drop", danger: true, action: () => void actions.dropCollection(at) },
             "separator",
             // A view has neither indexes nor a validator of its own.
-            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(at), disabled: isView(at) },
+            { label: t("index.create"), icon: "i-lucide-key-round", command: "index.create", action: () => actions.createIndex(at), disabled: isView(at) },
             { label: t("index.list"), action: () => actions.indexes(at), disabled: isView(at) },
-            { label: t("validator.edit"), hotkey: "Ctrl + Alt + V", action: () => actions.editValidator(at), disabled: isView(at) },
+            { label: t("validator.edit"), command: "validator.edit", action: () => actions.editValidator(at), disabled: isView(at) },
             "separator",
             { label: t("collection.stats"), action: () => actions.collectionStats(at) },
             ...folderEntries(at),
@@ -299,58 +305,58 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
         ];
     } else if (at.database !== undefined) {
         entries = [
-            { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
+            { label: t("tab.shell"), icon: "i-lucide-square-terminal", command: "tab.shell", action: () => actions.openShell(at) },
             "separator",
-            { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(at) },
-            { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(at) },
-            { label: t("view.create"), icon: "i-lucide-file-search", hotkey: "Ctrl + Shift + H", action: () => actions.createView(at) },
+            { label: t("database.create"), command: "database.create", action: () => void actions.createDatabase(at) },
+            { label: t("collection.create"), icon: "i-lucide-file-plus-2", command: "collection.create", action: () => void actions.createCollection(at) },
+            { label: t("view.create"), icon: "i-lucide-file-search", command: "view.create", action: () => actions.createView(at) },
             { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(at) },
-            { label: t("folder.add"), icon: "i-lucide-folder-plus", hotkey: "Ctrl + G", action: () => void actions.addFolder(at) },
+            { label: t("folder.add"), icon: "i-lucide-folder-plus", command: "folder.add", action: () => void actions.addFolder(at) },
             "separator",
             { label: t("collection.copyAll"), icon: "i-lucide-copy", action: () => void copying.copyAll(at.connectionId, at.database!) },
             paste(at.database),
             "separator",
-            { label: t("database.drop"), hotkey: "Del", danger: true, action: () => void actions.dropDatabase(at) },
+            { label: t("database.drop"), command: "tree.drop", danger: true, action: () => void actions.dropDatabase(at) },
             "separator",
             { label: t("database.stats"), action: () => actions.databaseStats(at) },
             { label: t("database.collectionsStats"), action: () => actions.collectionsStats(at) },
-            { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + Shift + S", action: () => void actions.exportWizard(at) },
-            { label: t("import.menu"), icon: "i-lucide-download", hotkey: "Ctrl + Shift + O", action: () => actions.importWizard(at) },
+            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(at) },
+            { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at) },
             "separator",
-            { label: t("users.manage"), icon: "i-lucide-users", hotkey: "Ctrl + Alt + U", action: () => actions.manageUsers(at) },
-            { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(at) },
+            { label: t("users.manage"), icon: "i-lucide-users", command: "users.manage", action: () => actions.manageUsers(at) },
+            { label: t("roles.manage"), icon: "i-lucide-shield", command: "roles.manage", action: () => actions.manageRoles(at) },
             ...folderEntries(at),
             ...noteEntries(at),
             ...tail
         ];
     } else {
         entries = [
-            { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
+            { label: t("tab.shell"), icon: "i-lucide-square-terminal", command: "tab.shell", action: () => actions.openShell(at) },
             "separator",
-            { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(at) },
-            { label: t("folder.add"), icon: "i-lucide-folder-plus", hotkey: "Ctrl + G", action: () => void actions.addFolder(at) },
+            { label: t("database.create"), command: "database.create", action: () => void actions.createDatabase(at) },
+            { label: t("folder.add"), icon: "i-lucide-folder-plus", command: "folder.add", action: () => void actions.addFolder(at) },
             "separator",
             { label: t("connection.status"), icon: "i-lucide-activity", action: () => actions.serverStatus(at) },
             { label: t("connection.log"), icon: "i-lucide-scroll-text", action: () => actions.serverLog(at) },
-            { label: t("users.manage"), icon: "i-lucide-users", hotkey: "Ctrl + Alt + U", action: () => actions.manageUsers(at) },
-            { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(at) },
+            { label: t("users.manage"), icon: "i-lucide-users", command: "users.manage", action: () => actions.manageUsers(at) },
+            { label: t("roles.manage"), icon: "i-lucide-shield", command: "roles.manage", action: () => actions.manageRoles(at) },
             "separator",
-            { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + Shift + S", action: () => void actions.exportWizard(at) },
-            { label: t("import.menu"), icon: "i-lucide-download", hotkey: "Ctrl + Shift + O", action: () => actions.importWizard(at) },
+            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(at) },
+            { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at) },
             "separator",
-            { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void actions.refresh(at) },
-            { label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", hotkey: "Ctrl + Shift + U", action: () => connections.collapseAll() },
+            { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void actions.refresh(at) },
+            { label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", command: "tree.collapse", action: () => connections.collapseAll() },
             "separator",
             // A connection from a typed string has no settings, stored string or notes to show.
             ...(connections.isTransient(at.connectionId)
                 ? []
                 : [
                     { label: t("connection.settings"), action: () => actions.connectionSettings(at) },
-                    { label: t("connection.uri"), hotkey: "Ctrl + Alt + F2", action: () => void actions.viewUri(at) },
+                    { label: t("connection.uri"), command: "connection.uri", action: () => void actions.viewUri(at) },
                     ...noteEntries(at)
                 ] satisfies MenuEntry[]),
             "separator",
-            { label: t("connection.disconnect"), hotkey: "Ctrl + Alt + D", action: () => void actions.disconnect(at) }
+            { label: t("connection.disconnect"), command: "connection.disconnect", action: () => void actions.disconnect(at) }
         ];
     }
     void menu.value?.open(event, entries);
@@ -427,7 +433,7 @@ defineExpose({
             </PopoverRoot>
             <IconButton
                 @click="actions.newConnection()"
-                :label="`${$t('connection.add')} (Ctrl + F2)`"
+                :label="keymap.titled($t('connection.add'), 'connection.add')"
                 data-testid="connection-add"
                 icon="i-lucide-plus"
                 tint="text-success"
@@ -438,7 +444,7 @@ defineExpose({
             <IconButton
                 @click="actions.openShell()"
                 :disabled="!actions.hasConnection.value"
-                :label="`${$t('tab.shell')} (Ctrl + T)`"
+                :label="keymap.titled($t('tab.shell'), 'tab.shell')"
                 data-testid="dock-shell"
                 icon="i-lucide-square-terminal"
             >
@@ -448,20 +454,20 @@ defineExpose({
             <IconButton
                 @click="actions.browse()"
                 :disabled="!actions.hasCollection.value"
-                :label="`${$t('tab.browse')} (Ctrl + Q)`"
+                :label="keymap.titled($t('tab.browse'), 'tab.browse')"
                 data-testid="dock-browse"
                 icon="i-lucide-file-text"
             />
             <IconButton
                 @click="actions.aggregation()"
                 :disabled="!actions.hasCollection.value"
-                :label="`${$t('tab.aggregation')} (Ctrl + Shift + Q)`"
+                :label="keymap.titled($t('tab.aggregation'), 'tab.aggregation')"
                 icon="i-lucide-network"
             />
             <IconButton
                 @click="actions.openSql()"
                 :disabled="!actions.hasConnection.value"
-                :label="`${$t('tab.sql')} (Ctrl + Alt + Q)`"
+                :label="keymap.titled($t('tab.sql'), 'tab.sql')"
                 data-testid="dock-sql"
                 icon="i-lucide-file-code-2"
             />
@@ -514,7 +520,7 @@ defineExpose({
                 class="pt-14 flex flex-col items-center gap-1 text-center"
             >
                 <span class="text-lg text-on-surface-variant">{{ $t("connection.none") }}</span>
-                <span class="text-on-surface-variant/70">{{ $t("connection.none.hint") }}</span>
+                <span class="text-on-surface-variant/70">{{ connectHint }}</span>
             </div>
 
             <div

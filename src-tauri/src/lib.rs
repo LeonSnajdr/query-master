@@ -5,6 +5,7 @@ mod error;
 mod files;
 mod gridfs;
 mod history;
+mod keybinding;
 mod mongo;
 mod preset;
 mod runs;
@@ -34,6 +35,9 @@ pub fn run() {
             connection::commands::connection_delete,
             setting::commands::setting_get,
             setting::commands::setting_save,
+            keybinding::commands::keybinding_list,
+            keybinding::commands::keybinding_save,
+            keybinding::commands::keybinding_clear,
             preset::commands::preset_get,
             preset::commands::preset_save,
             history::commands::history_list,

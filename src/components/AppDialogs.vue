@@ -235,6 +235,9 @@ async function copyText() {
     <TaskProgress />
     <ExportWizard />
     <ImportWizard />
-    <SettingsDialog v-model="state.settingsOpen" />
+    <SettingsDialog
+        v-model="state.settingsOpen"
+        v-model:page="state.settingsPage"
+    />
     <HelpDialog v-model="state.help" />
 </template>

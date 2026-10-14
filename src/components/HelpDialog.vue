@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { DialogClose, DialogContent, DialogDescription, DialogRoot, DialogTitle } from "@vuetify/v0";
+import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogDescription, DialogRoot, DialogTitle } from "@vuetify/v0";
 import { computed } from "vue";
 import ShortcutList from "@/components/ShortcutList.vue";
+import { useDialogs } from "@/composables/dialogs";
 import type { HelpPage } from "@/composables/dialogs";
 
 /** Help → Keyboard shortcuts (F12) and Help → About QueryMaster. */
@@ -9,6 +10,7 @@ const page = defineModel<HelpPage | undefined>();
 
 const open = computed({ get: () => page.value !== undefined, set: value => !value && (page.value = undefined) });
 const version = __APP_VERSION__;
+const dialogs = useDialogs();
 </script>
 
 <template>
@@ -29,7 +31,14 @@ const version = __APP_VERSION__;
                 <div class="text-[13px] text-on-surface">
                     <ShortcutList />
                 </div>
-                <div class="mt-2 flex justify-end">
+                <div class="mt-2 flex justify-end gap-2">
+                    <ButtonRoot
+                        @click="dialogs.openSettings('keys')"
+                        class="btn-secondary"
+                        data-testid="help-customize"
+                    >
+                        <ButtonContent>{{ $t("keys.customize") }}</ButtonContent>
+                    </ButtonRoot>
                     <DialogClose class="btn-primary">
                         {{ $t("action.close") }}
                     </DialogClose>

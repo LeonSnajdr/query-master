@@ -20,6 +20,11 @@ export interface ProfileInput {
     uri: string;
 }
 
+export interface KeybindingChange {
+    commandId: string;
+    keys: string[] | null;
+}
+
 export interface Setting {
     /** `null`: not chosen, the language of the system is used. */
     language: string | null;
@@ -140,6 +145,12 @@ export interface Backend {
     copyCollection: (runId: string, source: Place, target: Place, replace: boolean, progress: (progress: CopyProgress) => void) => Promise<CopyResult>;
     getSetting: () => Promise<Setting>;
     saveSetting: (setting: Setting) => Promise<void>;
+    /** The keyboard shortcuts the user changed: keys per command id (`[]`: no shortcut). */
+    getKeybindings: () => Promise<Record<string, string[]>>;
+    /** In one go; `keys: null` returns the command to its default. */
+    saveKeybindings: (changes: KeybindingChange[]) => Promise<void>;
+    /** Every command back to its default. */
+    clearKeybindings: () => Promise<void>;
     /** The statements that ran on a connection, newest first. */
     listHistory: (connectionId: string) => Promise<string[]>;
     addHistory: (connectionId: string, database: string, statement: string) => Promise<void>;
@@ -193,6 +204,9 @@ const tauriBackend: Backend = {
     },
     getSetting: () => invoke("setting_get"),
     saveSetting: setting => invoke("setting_save", { setting }),
+    getKeybindings: () => invoke("keybinding_list"),
+    saveKeybindings: changes => invoke("keybinding_save", { changes }),
+    clearKeybindings: () => invoke("keybinding_clear"),
     listHistory: connectionId => invoke("history_list", { connectionId }),
     addHistory: (connectionId, database, statement) => invoke("history_add", { connectionId, database, statement }),
     clearHistory: connectionId => invoke("history_clear", { connectionId }),

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "select command_id, keys from keybinding order by command_id",
+  "describe": {
+    "columns": [
+      {
+        "name": "command_id",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "keys",
+        "ordinal": 1,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "735e5647b15128234e820b5b696f1b11332316482e4ae6c84f1b8562d038ed62"
+}

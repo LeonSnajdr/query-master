@@ -1,4 +1,4 @@
-import { reactive } from "vue";
+import { nextTick, reactive } from "vue";
 import type { Profile } from "@/api";
 import type { Doc } from "@/shell/ejson";
 
@@ -55,12 +55,16 @@ export interface IndexRequest {
     recreate?: boolean;
 }
 
+/** The tabs of the settings dialog. */
+export type SettingsPage = "general" | "keys";
+
 /** What the Help dialog shows: the keyboard shortcuts (F12) or "About QueryMaster". */
 export type HelpPage = "shortcuts" | "about";
 
 // One dialog of each kind for the whole app (`AppDialogs.vue` renders them).
 const state = reactive({
     settingsOpen: false,
+    settingsPage: "general" as SettingsPage,
     help: undefined as HelpPage | undefined,
     indexOpen: false,
     index: undefined as IndexRequest | undefined,
@@ -112,8 +116,16 @@ export function useDialogs() {
         state.indexOpen = true;
     }
 
-    function openSettings(): void {
-        state.settingsOpen = true;
+    /** Opens the settings; on a page if one is given, otherwise where they were left. */
+    function openSettings(page?: SettingsPage): void {
+        if (page) state.settingsPage = page;
+        if (state.help === undefined) {
+            state.settingsOpen = true;
+            return;
+        }
+        // From the help: that dialog closes first, a modal dialog does not open over a closing one.
+        state.help = undefined;
+        void nextTick(() => (state.settingsOpen = true));
     }
 
     function openHelp(page: HelpPage): void {
