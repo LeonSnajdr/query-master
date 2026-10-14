@@ -1,14 +1,15 @@
 use tauri::State;
 
-use super::{engine, ScriptResult, ScriptRuns};
+use super::{engine, ScriptResult};
 use crate::error::{Error, Result};
 use crate::mongo::Clients;
+use crate::runs::Runs;
 
 /// Runs a script on the connection of a tab. `run_id` names the run, so it can be stopped.
 #[tauri::command]
 pub async fn script_run(
     clients: State<'_, Clients>,
-    runs: State<'_, ScriptRuns>,
+    runs: State<'_, Runs>,
     id: String,
     run_id: String,
     database: String,
@@ -24,9 +25,4 @@ pub async fn script_run(
     .await;
     runs.finish(&run_id);
     outcome.map_err(|e| Error::Script(e.to_string()))?
-}
-
-#[tauri::command]
-pub fn script_stop(runs: State<'_, ScriptRuns>, run_id: String) {
-    runs.stop(&run_id);
 }

@@ -10,7 +10,8 @@ import { useMessages } from "@/composables/messages";
 import type { IndexRequest } from "@/composables/dialogs";
 import type { Environment } from "@/shell/complete";
 import { isDoc, toShell } from "@/shell/ejson";
-import { defaultIndexName, emptyIndexForm, INDEX_KINDS, indexFormErrors, indexFormOf, indexKey, indexSpec } from "@/shell/indexes";
+import type { Doc } from "@/shell/ejson";
+import { defaultIndexName, emptyIndexForm, INDEX_KINDS, indexFormErrors, indexFormOf, indexKey, indexSpec, storedSpec } from "@/shell/indexes";
 import type { IndexForm } from "@/shell/indexes";
 import { parseValue } from "@/shell/parse";
 import { replyError } from "@/shell/plan";
@@ -52,7 +53,11 @@ const placeholderName = computed(() => defaultIndexName(indexKey(form.value.fiel
 const problems = computed(() => indexFormErrors(form.value));
 // A form without a field yet is how it starts, not a mistake to point out; saving waits for one.
 const shownProblems = computed(() => problems.value.filter(key => key !== "indexDialog.error.noField").map(key => t(key)));
-const title = computed(() => (props.request ? t("indexDialog.title", { collection: props.request.collection }) : ""));
+const title = computed(() => {
+    const request = props.request;
+    if (!request) return "";
+    return request.recreate ? t("indexDialog.title.recreate", { name: String(request.index?.name) }) : t("indexDialog.title", { collection: request.collection });
+});
 
 watch([open, () => props.request], async ([isOpen]) => {
     if (!isOpen || !props.request) return;
@@ -61,7 +66,7 @@ watch([open, () => props.request], async ([isOpen]) => {
     const source = props.request.index;
     form.value = source ? indexFormOf(source) : emptyIndexForm();
     // A copy needs a name of its own; the derived one would be taken.
-    if (source) form.value.name = "";
+    if (source && !props.request.recreate) form.value.name = "";
     partialFilter.value = form.value.partialFilter ? toShell(form.value.partialFilter) : "{}";
 });
 
@@ -90,9 +95,19 @@ async function save() {
         const filter = partialFilter.value.trim() ? parseValue(partialFilter.value) : {};
         if (!isDoc(filter)) throw new Error(`${t("indexDialog.partialFilter")}: ${t("document.error.notDocument")}`);
         const spec = indexSpec({ ...form.value, partialFilter: filter });
-        const reply = await backend.runCommand(request.connectionId, request.database, { createIndexes: request.collection, indexes: [spec] });
-        const failure = replyError(reply);
-        if (failure) throw new Error(say(failure));
+        const create = async (index: Doc) => {
+            const failure = replyError(await backend.runCommand(request.connectionId, request.database, { createIndexes: request.collection, indexes: [index] }));
+            if (failure) throw new Error(say(failure));
+        };
+        const old = request.recreate ? request.index : undefined;
+        if (old) await backend.runCommand(request.connectionId, request.database, { dropIndexes: request.collection, index: String(old.name) });
+        try {
+            await create(spec);
+        } catch (cause) {
+            // The new definition was refused: the old index comes back, so nothing is lost.
+            if (old) await create(storedSpec(old)).catch(() => undefined);
+            throw cause;
+        }
         open.value = false;
         await connections.loadIndexes(request.connectionId, request.database, request.collection);
     } catch (cause) {
@@ -243,7 +258,7 @@ async function save() {
                         class="btn-primary"
                         data-testid="index-save"
                     >
-                        <ButtonContent>{{ $t("action.create") }}</ButtonContent>
+                        <ButtonContent>{{ $t(request?.recreate ? "action.save" : "action.create") }}</ButtonContent>
                     </ButtonRoot>
                     <DialogClose class="btn-secondary">
                         {{ $t("action.cancel") }}

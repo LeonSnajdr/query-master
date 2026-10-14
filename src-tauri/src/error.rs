@@ -24,6 +24,10 @@ pub enum Error {
     ReadOnly,
     #[error("the script was stopped")]
     ScriptStopped,
+    #[error("the copy was stopped")]
+    CopyStopped,
+    #[error("there is no collection {0}")]
+    CollectionMissing(String),
     #[error("{0}")]
     Script(String),
     #[error("the local database reported an error: {0}")]
@@ -50,6 +54,8 @@ impl Error {
             Self::Database(_) => Some("error.backend.database"),
             Self::ReadOnly => Some("error.plan.readonly"),
             Self::ScriptStopped => Some("error.script.stopped"),
+            Self::CopyStopped => Some("error.copy.stopped"),
+            Self::CollectionMissing(_) => Some("error.copy.missing"),
             Self::Mongo(_) | Self::Io(_) | Self::Script(_) => None,
         }
     }
@@ -61,7 +67,9 @@ impl Error {
             | Self::UriScheme
             | Self::CommandDocument
             | Self::ReadOnly
-            | Self::ScriptStopped => None,
+            | Self::ScriptStopped
+            | Self::CopyStopped => None,
+            Self::CollectionMissing(name) => Some(name.clone()),
             Self::Script(message) => Some(message.clone()),
             Self::ExtendedJson(cause) => Some(cause.clone()),
             Self::Keychain(cause) | Self::KeychainRead(cause) | Self::KeychainWrite(cause) => {

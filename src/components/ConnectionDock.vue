@@ -7,6 +7,7 @@ import ContextMenu from "@/components/ContextMenu.vue";
 import DropMenu from "@/components/DropMenu.vue";
 import IconButton from "@/components/IconButton.vue";
 import { useActions } from "@/composables/actions";
+import { useCopy } from "@/composables/copy";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import type { MenuEntry } from "@/menu";
@@ -18,6 +19,7 @@ const { t } = useI18n();
 const { report } = useMessages();
 const dialogs = useDialogs();
 const actions = useActions();
+const copying = useCopy();
 const connections = useConnectionsStore();
 const menu = useTemplateRef("menu");
 
@@ -84,8 +86,42 @@ const manageEntries = computed<MenuEntry[]>(() => [
     { label: t("connection.status"), action: () => actions.serverStatus(), disabled: !actions.hasConnection.value }
 ]);
 
+/** Keys on a focused row act on the selected one: Del drops, Ctrl+C copies, Ctrl+V pastes. */
+function onTreeKey(event: KeyboardEvent) {
+    const at = connections.selected;
+    if (!at || event.altKey || event.shiftKey) return;
+    const control = event.ctrlKey || event.metaKey;
+    const key = event.key.toLowerCase();
+    if (!control && key === "delete") {
+        if (at.index !== undefined) {
+            if (at.index !== "_id_") void actions.dropIndex(at);
+        } else if (at.collection !== undefined) {
+            void actions.dropCollection(at);
+        } else if (at.database !== undefined) {
+            void actions.dropDatabase(at);
+        } else {
+            return;
+        }
+    } else if (control && key === "c" && at.database !== undefined && at.collection !== undefined && at.index === undefined) {
+        copying.copy({ connectionId: at.connectionId, database: at.database, collection: at.collection });
+    } else if (control && key === "v" && at.database !== undefined) {
+        void copying.paste(at.connectionId, at.database);
+    } else {
+        return;
+    }
+    event.preventDefault();
+}
+
 function openMenu(event: MouseEvent, at: TreeSelection) {
     select(at);
+    // Pasting goes into the database of the row; the copy may come from another connection.
+    const paste = (database: string): MenuEntry => ({
+        label: copying.copied.value ? t("collection.pasteNamed", { name: copying.copied.value.collection }) : t("collection.paste"),
+        icon: "i-lucide-clipboard-paste",
+        hotkey: "Ctrl + V",
+        action: () => void copying.paste(at.connectionId, database),
+        disabled: !copying.copied.value || copying.running.runId !== undefined
+    });
     const tail: MenuEntry[] = [
         "separator",
         { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void actions.refresh(at) },
@@ -97,7 +133,8 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
             "separator",
             { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(at) },
-            { label: t("index.duplicate"), icon: "i-lucide-copy", action: () => actions.duplicateIndex(at), disabled: at.index === "_id_" },
+            { label: t("index.recreate"), hotkey: "Ctrl + Alt + I", action: () => actions.recreateIndex(at), disabled: at.index === "_id_" },
+            { label: t("index.duplicate"), icon: "i-lucide-copy", hotkey: "Ctrl + Shift + I", action: () => actions.duplicateIndex(at), disabled: at.index === "_id_" },
             // The index on _id belongs to the collection: it can be neither dropped nor hidden.
             { label: t(actions.indexOf(at)?.hidden === true ? "index.unhide" : "index.hide"), action: () => void actions.toggleIndexHidden(at), disabled: at.index === "_id_" },
             { label: t("index.drop"), hotkey: "Del", danger: true, action: () => void actions.dropIndex(at), disabled: at.index === "_id_" },
@@ -115,6 +152,8 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(at) },
             { label: t("view.create"), icon: "i-lucide-file-search", hotkey: "Ctrl + Shift + H", action: () => actions.createView(at) },
             "separator",
+            { label: t("collection.copy"), icon: "i-lucide-copy", hotkey: "Ctrl + C", action: () => copying.copy({ connectionId: at.connectionId, database: at.database!, collection: at.collection! }) },
+            paste(at.database!),
             { label: t("collection.rename"), action: () => void actions.renameCollection(at) },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", hotkey: "Del", danger: true, action: () => void actions.dropCollection(at) },
             "separator",
@@ -132,6 +171,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(at) },
             { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(at) },
             { label: t("view.create"), icon: "i-lucide-file-search", hotkey: "Ctrl + Shift + H", action: () => actions.createView(at) },
+            paste(at.database),
             "separator",
             { label: t("database.drop"), hotkey: "Del", danger: true, action: () => void actions.dropDatabase(at) },
             "separator",
@@ -300,6 +340,7 @@ defineExpose({
         />
 
         <div
+            @keydown="onTreeKey"
             class="grow min-h-0 overflow-y-auto pt-2 pb-2 text-[13px]"
             role="tree"
         >

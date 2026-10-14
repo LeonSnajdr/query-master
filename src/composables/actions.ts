@@ -178,6 +178,14 @@ export function useActions() {
         }
     }
 
+    /** The dialog filled with an index; saving drops it and creates it as the dialog says. */
+    function recreateIndex(at = target.value) {
+        const index = indexOf(at);
+        if (index && at?.database !== undefined && at.collection !== undefined && at.index !== "_id_") {
+            dialogs.editIndex({ connectionId: at.connectionId, database: at.database, collection: at.collection, index, recreate: true });
+        }
+    }
+
     function indexInfo(at = target.value) {
         const index = indexOf(at);
         if (index && at?.index !== undefined) dialogs.showText({ title: t("index.info", { name: at.index }), text: toShell(index) });
@@ -251,7 +259,7 @@ export function useActions() {
     return {
         target, hasConnection, hasDatabase, hasCollection,
         openShell, browse, aggregation, collectionStats, databaseStats, collectionsStats, serverStatus, indexes,
-        createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
+        createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         refresh, connect, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };

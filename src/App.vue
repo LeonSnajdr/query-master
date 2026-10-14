@@ -89,6 +89,8 @@ useHotkey("ctrl+shift+h", () => actions.createView(), everywhere);
 useHotkey("ctrl+alt+v", () => actions.editValidator(), everywhere);
 useHotkey("ctrl+shift+d", () => void actions.createDatabase(), everywhere);
 useHotkey("ctrl+i", () => actions.createIndex(), everywhere);
+useHotkey("ctrl+alt+i", () => actions.recreateIndex(), everywhere);
+useHotkey("ctrl+shift+i", () => actions.duplicateIndex(), everywhere);
 useHotkey("ctrl+alt+d", () => void actions.disconnect(), everywhere);
 useHotkey("ctrl+w", () => withActive(tab => tabs.close(tab.id)), everywhere);
 useHotkey("ctrl+shift+w", () => withActive(tab => tabs.closeOthers(tab.id)), everywhere);

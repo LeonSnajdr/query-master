@@ -38,13 +38,15 @@ export interface CollectionRequest {
     collection?: string;
 }
 
-/** The index dialog: a new index of a collection, or a copy of `index`. */
+/** The index dialog: a new index of a collection, a copy of `index`, or `index` made anew. */
 export interface IndexRequest {
     connectionId: string;
     database: string;
     collection: string;
     /** The index to start from, as `listIndexes` gives it. */
     index?: Doc;
+    /** `index` is dropped and created again as the dialog then says (an index can not be changed). */
+    recreate?: boolean;
 }
 
 // One dialog of each kind for the whole app (`AppDialogs.vue` renders them).

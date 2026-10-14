@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { mockBackend } from "./api.mock";
 import type { Doc, Json } from "./shell/ejson";
 import { ShellError } from "./shell/message";
@@ -33,6 +33,26 @@ export interface ScriptResult {
     output: string;
 }
 
+/** A collection on a connection. */
+export interface Place {
+    connectionId: string;
+    database: string;
+    collection: string;
+}
+
+export interface CopyProgress {
+    copied: number;
+    /** As the server estimated it when the copy started. */
+    total: number;
+}
+
+export interface CopyResult {
+    documents: number;
+    indexes: number;
+    /** The source was a view; it was created again, without documents. */
+    view: boolean;
+}
+
 export interface ServerInfo {
     version: string;
 }
@@ -57,9 +77,12 @@ export interface Backend {
     /** Files the user picked in a file dialog. */
     readTextFile: (path: string) => Promise<string>;
     writeTextFile: (path: string, text: string) => Promise<void>;
-    /** Runs a script in the engine of the Rust side; `runId` names the run for `stopScript`. */
+    /** Runs a script in the engine of the Rust side; `runId` names the run for `stopRun`. */
     runScript: (id: string, runId: string, database: string, source: string, readonly: boolean) => Promise<ScriptResult>;
-    stopScript: (runId: string) => Promise<void>;
+    /** Asks a script or a copy to stop. */
+    stopRun: (runId: string) => Promise<void>;
+    /** Copies a collection with its options, documents and indexes; `replace` drops the target first. */
+    copyCollection: (runId: string, source: Place, target: Place, replace: boolean, progress: (progress: CopyProgress) => void) => Promise<CopyResult>;
     getSetting: () => Promise<Setting>;
     saveSetting: (setting: Setting) => Promise<void>;
     /** The statements that ran on a connection, newest first. */
@@ -81,7 +104,12 @@ const tauriBackend: Backend = {
     readTextFile: path => invoke("read_text_file", { path }),
     writeTextFile: (path, text) => invoke("write_text_file", { path, text }),
     runScript: (id, runId, database, source, readonly) => invoke("script_run", { id, runId, database, source, readonly }),
-    stopScript: runId => invoke("script_stop", { runId }),
+    stopRun: runId => invoke("run_stop", { runId }),
+    copyCollection: (runId, source, target, replace, progress) => {
+        const onProgress = new Channel<CopyProgress>();
+        onProgress.onmessage = progress;
+        return invoke("copy_collection", { runId, source, target, replace, onProgress });
+    },
     getSetting: () => invoke("setting_get"),
     saveSetting: setting => invoke("setting_save", { setting }),
     listHistory: connectionId => invoke("history_list", { connectionId }),

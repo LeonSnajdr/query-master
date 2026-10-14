@@ -292,7 +292,7 @@ export const useTabsStore = defineStore("tabs", () => {
 
     /** Asks a running script to stop; it ends with an error saying so. */
     function stop(tab: WorkTab): void {
-        if (tab.runId) void backend.stopScript(tab.runId);
+        if (tab.runId) void backend.stopRun(tab.runId);
     }
 
     /**

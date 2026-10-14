@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyIndexForm, indexFormErrors, indexFormOf, indexSpec } from "./indexes";
+import { emptyIndexForm, indexFormErrors, indexFormOf, indexSpec, storedSpec } from "./indexes";
 import type { IndexForm } from "./indexes";
 
 function form(change: Partial<IndexForm>): IndexForm {
@@ -47,6 +47,12 @@ describe("indexFormErrors", () => {
         expect(indexFormErrors(form({ fields: [{ field: "a", kind: "1" }, { field: "b", kind: "1" }], ttl: "60" }))).toEqual(["indexDialog.error.ttlCompound"]);
         expect(indexFormErrors(form({ fields: [{ field: "a", kind: "hashed" }], unique: true }))).toEqual(["indexDialog.error.hashedUnique"]);
         expect(indexFormErrors(form({ fields: [{ field: "a", kind: "1" }], ttl: "60" }))).toEqual([]);
+    });
+});
+
+describe("storedSpec", () => {
+    it("drops what the server sets itself", () => {
+        expect(storedSpec({ v: 2, key: { a: 1 }, name: "a_1", ns: "shop.orders", sparse: true })).toEqual({ key: { a: 1 }, name: "a_1", sparse: true });
     });
 });
 

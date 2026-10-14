@@ -89,6 +89,14 @@ function seconds(value: Json | undefined): string {
     return String(value);
 }
 
+/** An index as `listIndexes` gives it, as a specification to create it again. */
+export function storedSpec(index: Doc): Doc {
+    const spec = { ...index };
+    delete spec.v;
+    delete spec.ns;
+    return spec;
+}
+
 /** The form for an index as `listIndexes` gives it, to duplicate it. */
 export function indexFormOf(index: Doc): IndexForm {
     const key = isDoc(index.key) ? index.key : {};

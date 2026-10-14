@@ -1,9 +1,11 @@
 mod connection;
+mod copy;
 mod db;
 mod error;
 mod files;
 mod history;
 mod mongo;
+mod runs;
 mod script;
 mod setting;
 
@@ -14,7 +16,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(mongo::Clients::default())
-        .manage(script::ScriptRuns::default())
+        .manage(runs::Runs::default())
         .setup(|app| {
             // Before the window asks for anything: commands take the pool as state.
             let pool = tauri::async_runtime::block_on(db::open(app.handle()))?;
@@ -37,7 +39,8 @@ pub fn run() {
             mongo::run_command,
             mongo::run_cursor_command,
             script::commands::script_run,
-            script::commands::script_stop,
+            runs::run_stop,
+            copy::copy_collection,
             files::read_text_file,
             files::write_text_file
         ])

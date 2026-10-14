@@ -229,6 +229,19 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await chooseMenu("Hide index");
         await index.getByText("hidden", { exact: true }).waitFor();
 
+        // Re-created with a changed option, under its name; it stays hidden as it was.
+        await index.click({ button: "right" });
+        await chooseMenu("Re-create index");
+        assert.equal(await id("index-name").inputValue(), "name_1_n_1");
+        await id("index-unique").click();
+        await id("index-save").click();
+        await page.locator("dialog[open]").waitFor({ state: "detached" });
+        await index.dblclick();
+        const definition = await page.locator("dialog[open] .cm-content").innerText();
+        assert.match(definition, /unique: true/);
+        assert.match(definition, /hidden: true/);
+        await page.keyboard.press("Escape");
+
         // The copy starts with the fields and options of the original, under a name of its own.
         await index.click({ button: "right" });
         await chooseMenu("Duplicate index");
@@ -245,6 +258,19 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
             await id("confirm-action").click();
             await item.waitFor({ state: "detached" });
         }
+    });
+
+    await step("a collection is copied with Ctrl+C and pasted under a new name", async () => {
+        const row = page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) });
+        await row.click();
+        await page.keyboard.press("Control+c");
+        await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
+        await chooseMenu(`Paste collection ${COLLECTION}`);
+        // The name is taken in the same database: the dialog offers one of its own.
+        assert.equal(await id("prompt-input").inputValue(), `${COLLECTION}_copy`);
+        await id("prompt-submit").click();
+        await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_copy` }).waitFor();
+        await page.getByText(`Copied to ${COLLECTION}_copy: 3 documents, 0 indexes.`).first().waitFor();
     });
 
     await step("filter and sort narrow and order the result", async () => {
@@ -352,7 +378,8 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         if (await id("connection-row").count() > 0) {
             await id("connection-row").first().click();
             await id("dock-shell").click();
-            await runShell(`db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}_view").drop(); db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}_capped").drop(); db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}").drop()`).catch(() => undefined);
+            const drops = ["_view", "_capped", "_copy", ""].map(suffix => `db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}${suffix}").drop()`);
+            await runShell(drops.join("; ")).catch(() => undefined);
         }
         await id("connection-list").click();
         const item = page.locator("[data-testid=connection-item]:visible", { hasText: NAME });
