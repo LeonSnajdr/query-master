@@ -6,8 +6,7 @@ import type { Profile } from "@/api";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import type { Doc } from "@/shell/ejson";
-import { isDoc, toShell } from "@/shell/ejson";
-import { parseValue } from "@/shell/parse";
+import { toShell } from "@/shell/ejson";
 import { replyError } from "@/shell/plan";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
@@ -135,27 +134,41 @@ export function useActions() {
         if (confirmed && await command(at.connectionId, at.database, { dropDatabase: 1 })) connections.selected = { connectionId: at.connectionId };
     }
 
-    async function createIndex(at = target.value) {
-        if (at?.database === undefined || at.collection === undefined) return;
-        const text = await dialogs.ask({ title: t("index.create.title"), label: t("index.keys"), value: "{ field: 1 }", action: t("action.create"), code: true });
-        if (!text) return;
-        try {
-            const key = parseValue(text);
-            if (!isDoc(key)) throw new Error(t("document.error.notDocument"));
-            const name = Object.entries(key).map(([field, direction]) => `${field}_${String(direction)}`).join("_");
-            if (await command(at.connectionId, at.database, { createIndexes: at.collection, indexes: [{ key, name }] })) {
-                notifications.send({ subject: t("index.created", { name }), timeout: 3000 });
-            }
-        } catch (error) {
-            report(error);
+    function createIndex(at = target.value) {
+        if (at?.database !== undefined && at.collection !== undefined) {
+            dialogs.editIndex({ connectionId: at.connectionId, database: at.database, collection: at.collection });
+        }
+    }
+
+    /** The index the selection points at, as `listIndexes` gave it. */
+    function indexOf(at: TreeSelection | undefined): Doc | undefined {
+        if (at?.database === undefined || at.collection === undefined || at.index === undefined) return undefined;
+        const database = connections.sessions[at.connectionId]?.databases.find(item => item.name === at.database);
+        return database?.details[at.collection]?.indexes?.find(item => item.name === at.index);
+    }
+
+    /** The dialog filled with an existing index, to create one like it. */
+    function duplicateIndex(at = target.value) {
+        const index = indexOf(at);
+        if (index && at?.database !== undefined && at.collection !== undefined) {
+            dialogs.editIndex({ connectionId: at.connectionId, database: at.database, collection: at.collection, index });
         }
     }
 
     function indexInfo(at = target.value) {
-        if (at?.database === undefined || at.collection === undefined || at.index === undefined) return;
-        const database = connections.sessions[at.connectionId]?.databases.find(item => item.name === at.database);
-        const index = database?.details[at.collection]?.indexes?.find(item => item.name === at.index);
-        if (index) dialogs.showText({ title: t("index.info", { name: at.index }), text: toShell(index) });
+        const index = indexOf(at);
+        if (index && at?.index !== undefined) dialogs.showText({ title: t("index.info", { name: at.index }), text: toShell(index) });
+    }
+
+    /** A hidden index is kept up to date but not used by queries (MongoDB 4.4 and later). */
+    async function toggleIndexHidden(at = target.value) {
+        const index = indexOf(at);
+        if (!index || at?.database === undefined || at.collection === undefined || at.index === undefined) return;
+        const hidden = index.hidden !== true;
+        if (await command(at.connectionId, at.database, { collMod: at.collection, index: { name: at.index, hidden } })) {
+            await connections.loadIndexes(at.connectionId, at.database, at.collection).catch(report);
+            notifications.send({ subject: t(hidden ? "index.hidden" : "index.shown", { name: at.index }), timeout: 3000 });
+        }
     }
 
     async function dropIndex(at = target.value) {
@@ -215,7 +228,7 @@ export function useActions() {
     return {
         target, hasConnection, hasDatabase, hasCollection,
         openShell, browse, aggregation, collectionStats, databaseStats, serverStatus, indexes,
-        createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, dropIndex, indexInfo,
+        createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         refresh, connect, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };

@@ -73,7 +73,7 @@ async function choose(profile: Profile) {
 const createEntries = computed<MenuEntry[]>(() => [
     { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(), disabled: !actions.hasConnection.value },
     { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(), disabled: !actions.hasDatabase.value },
-    { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => void actions.createIndex(), disabled: !actions.hasCollection.value }
+    { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(), disabled: !actions.hasCollection.value }
 ]);
 
 const manageEntries = computed<MenuEntry[]>(() => [
@@ -95,9 +95,12 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
         entries = [
             { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
             "separator",
-            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => void actions.createIndex(at) },
-            // The index on _id belongs to the collection and can not be dropped.
+            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(at) },
+            { label: t("index.duplicate"), icon: "i-lucide-copy", action: () => actions.duplicateIndex(at), disabled: at.index === "_id_" },
+            // The index on _id belongs to the collection: it can be neither dropped nor hidden.
+            { label: t(actions.indexOf(at)?.hidden === true ? "index.unhide" : "index.hide"), action: () => void actions.toggleIndexHidden(at), disabled: at.index === "_id_" },
             { label: t("index.drop"), hotkey: "Del", danger: true, action: () => void actions.dropIndex(at), disabled: at.index === "_id_" },
+            "separator",
             { label: t("index.info.show"), action: () => actions.indexInfo(at) },
             ...tail
         ];
@@ -114,7 +117,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("collection.rename"), action: () => void actions.renameCollection(at) },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", hotkey: "Del", danger: true, action: () => void actions.dropCollection(at) },
             "separator",
-            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => void actions.createIndex(at) },
+            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(at) },
             { label: t("index.list"), action: () => actions.indexes(at) },
             { label: t("validator.edit"), hotkey: "Ctrl + Alt + V", action: () => actions.editValidator(at) },
             "separator",
@@ -413,7 +416,14 @@ defineExpose({
                                         tabindex="0"
                                     >
                                         <span class="i-lucide-key-round size-3.5 shrink-0 text-on-surface" />
-                                        <span class="truncate text-on-surface-strong">{{ index.name }}</span>
+                                        <span
+                                            :class="index.hidden === true ? 'opacity-55' : ''"
+                                            class="truncate text-on-surface-strong"
+                                        >{{ index.name }}</span>
+                                        <span
+                                            v-if="index.hidden === true"
+                                            class="shrink-0 text-[11px] italic text-on-surface-variant"
+                                        >{{ $t("index.hiddenMark") }}</span>
                                     </div>
                                 </template>
                             </template>

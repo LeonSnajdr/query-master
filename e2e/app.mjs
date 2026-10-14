@@ -201,20 +201,40 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.match(text, /2024-05-01T00:00:00\.000Z/);
     });
 
-    await step("a collection unfolds to its indexes; one is created and dropped", async () => {
+    await step("a collection unfolds to its indexes; they are created, hidden, duplicated and dropped", async () => {
         const row = page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) });
         await row.locator("[data-testid=collection-toggle]").click();
         await page.locator("[data-testid=index-row]", { hasText: "_id_" }).waitFor();
         await row.click({ button: "right" });
         await chooseMenu("Create index");
-        await id("prompt-input").fill("{ name: 1 }");
-        await id("prompt-submit").click();
-        const index = page.locator("[data-testid=index-row]", { hasText: "name_1" });
+        await id("index-field").nth(0).fill("name");
+        await id("index-add-field").click();
+        await id("index-field").nth(1).fill("n");
+        assert.equal(await id("index-name").getAttribute("placeholder"), "name_1_n_1");
+        await id("index-save").click();
+        const index = page.locator("[data-testid=index-row]", { hasText: "name_1_n_1" });
         await index.waitFor();
+
         await index.click({ button: "right" });
-        await chooseMenu("Drop index");
-        await id("confirm-action").click();
-        await index.waitFor({ state: "detached" });
+        await chooseMenu("Hide index");
+        await index.getByText("hidden", { exact: true }).waitFor();
+
+        // The copy starts with the fields and options of the original, under a name of its own.
+        await index.click({ button: "right" });
+        await chooseMenu("Duplicate index");
+        assert.equal(await id("index-field").count(), 2);
+        await page.locator("[data-testid=index-field-row]").nth(1).getByRole("button", { name: "Remove field" }).click();
+        await id("index-name").fill("name_copy");
+        await id("index-save").click();
+        const copy = page.locator("[data-testid=index-row]", { hasText: "name_copy" });
+        await copy.waitFor();
+
+        for (const item of [index, copy]) {
+            await item.click({ button: "right" });
+            await chooseMenu("Drop index");
+            await id("confirm-action").click();
+            await item.waitFor({ state: "detached" });
+        }
     });
 
     await step("filter and sort narrow and order the result", async () => {

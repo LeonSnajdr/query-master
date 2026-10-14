@@ -1,5 +1,6 @@
 import { reactive } from "vue";
 import type { Profile } from "@/api";
+import type { Doc } from "@/shell/ejson";
 
 /** A question for one line of text. */
 export interface PromptRequest {
@@ -37,8 +38,19 @@ export interface CollectionRequest {
     collection?: string;
 }
 
+/** The index dialog: a new index of a collection, or a copy of `index`. */
+export interface IndexRequest {
+    connectionId: string;
+    database: string;
+    collection: string;
+    /** The index to start from, as `listIndexes` gives it. */
+    index?: Doc;
+}
+
 // One dialog of each kind for the whole app (`AppDialogs.vue` renders them).
 const state = reactive({
+    indexOpen: false,
+    index: undefined as IndexRequest | undefined,
     prompt: undefined as PromptRequest | undefined,
     confirm: undefined as ConfirmRequest | undefined,
     text: undefined as TextRequest | undefined,
@@ -82,7 +94,12 @@ export function useDialogs() {
         state.collectionOpen = true;
     }
 
-    return { ask, confirm, showText, editConnection, editCollection };
+    function editIndex(request: IndexRequest): void {
+        state.index = { ...request };
+        state.indexOpen = true;
+    }
+
+    return { ask, confirm, showText, editConnection, editCollection, editIndex };
 }
 
 /** For `AppDialogs.vue` only. */

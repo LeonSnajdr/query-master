@@ -62,7 +62,7 @@ const menus = computed<{ name: string; entries: MenuEntry[] }[]>(() => [
             { label: t("validator.edit"), hotkey: "Ctrl + Alt + V", action: () => actions.editValidator(), disabled: !actions.hasCollection.value },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", danger: true, action: () => void actions.dropCollection(), disabled: !actions.hasCollection.value },
             "separator",
-            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => void actions.createIndex(), disabled: !actions.hasCollection.value }
+            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(), disabled: !actions.hasCollection.value }
         ]
     },
     {
