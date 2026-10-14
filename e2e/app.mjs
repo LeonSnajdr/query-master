@@ -307,6 +307,17 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
             await page.locator("[data-testid=export-wizard] [data-testid=select-field]").nth(position).click();
             await page.locator("[data-testid=menu-item]:visible", { hasText: label }).first().click();
         };
+        // A row is done a moment before the text reaches the clipboard: wait for it to change.
+        const readClipboard = () => page.evaluate(() => navigator.clipboard.readText()).catch(() => "");
+        let clipboard = await readClipboard();
+        const clipboardChanged = async () => {
+            for (let attempt = 0; attempt < 50; attempt++) {
+                const text = await readClipboard();
+                if (text !== clipboard) return (clipboard = text);
+                await page.waitForTimeout(100);
+            }
+            throw new Error("the export did not reach the clipboard");
+        };
 
         // JSON in the shell's notation, with a filter of the row.
         await openWizard();
@@ -317,7 +328,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await id("export-next").click();
         await id("export-start").click();
         await page.locator("[data-testid=export-progress-row][data-state=done]").waitFor();
-        const text = await page.evaluate(() => navigator.clipboard.readText());
+        const text = await clipboardChanged();
         assert.equal(text.match(/^\{/gm)?.length, 2, text);
         assert.match(text, /^\t"_id": ObjectId\("[0-9a-f]{24}"\),\r$/m);
         await id("export-close").click();
@@ -344,8 +355,24 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await shot("export-schema");
         await id("export-start").click();
         await page.locator("[data-testid=export-progress-row][data-state=done]").waitFor();
-        const csv = await page.evaluate(() => navigator.clipboard.readText());
+        const csv = await clipboardChanged();
         assert.match(csv, /^name;nested\.deep;tags\r?\none;true;"?\[.*"a".*"b".*\]"?\r?\n$/, csv);
+        await id("export-close").click();
+
+        // SQL for PostgreSQL with CREATE TABLE, the columns of the first level as they come.
+        await openWizard();
+        await id("export-tile-sql").click();
+        await wizardSelect(0, "Clipboard");
+        await id("export-filter").fill("{ n: 2 }");
+        await id("export-next").click();
+        await wizardSelect(0, "PostgreSQL");
+        await shot("export-sql");
+        await id("export-schema").click();
+        await id("export-start").click();
+        await page.locator("[data-testid=export-progress-row][data-state=done]").waitFor();
+        const sql = await clipboardChanged();
+        assert.match(sql, new RegExp(`^CREATE TABLE "${COLLECTION}" \\(\\r\\n\\t"_id" VARCHAR\\(24\\),`), sql);
+        assert.match(sql, new RegExp(`INSERT INTO "${COLLECTION}" \\("_id", "n", "name", "price"\\) VALUES \\('[0-9a-f]{24}', 2, 'two', 9\\.99\\);\\r\\n$`), sql);
         await id("export-close").click();
 
         // Into a database: the same server, another collection name.

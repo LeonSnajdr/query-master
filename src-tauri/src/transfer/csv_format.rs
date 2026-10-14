@@ -117,7 +117,7 @@ fn csv_error(error: csv::Error) -> Error {
 }
 
 /// The fields of the first level, in the order they first appear.
-fn columns_of(documents: &[Document]) -> Vec<String> {
+pub(super) fn columns_of(documents: &[Document]) -> Vec<String> {
     let mut columns: Vec<String> = Vec::new();
     for document in documents {
         for key in document.keys() {
@@ -130,7 +130,7 @@ fn columns_of(documents: &[Document]) -> Vec<String> {
 }
 
 /// The value at a dotted path: through sub documents, and through arrays by position.
-fn path_value<'a>(document: &'a Document, path: &str) -> Option<&'a Bson> {
+pub(super) fn path_value<'a>(document: &'a Document, path: &str) -> Option<&'a Bson> {
     if let Some(value) = document.get(path) {
         return Some(value);
     }

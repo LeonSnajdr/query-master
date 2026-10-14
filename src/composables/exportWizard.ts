@@ -7,7 +7,7 @@ import { useMessages } from "@/composables/messages";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
-import { DEFAULT_CSV, exportJob, rowsFor, switchFormat } from "@/transfer/export";
+import { DEFAULT_CSV, DEFAULT_SQL, exportJob, rowsFor, switchFormat } from "@/transfer/export";
 import type { ExportFormat, ExportRow, ExportState } from "@/transfer/export";
 
 /** A row's progress while the export runs. */
@@ -18,7 +18,7 @@ export interface RowProgress {
     error?: string;
 }
 
-/** The pages of the wizard: rows and destination, settings of the format, columns (CSV), progress. */
+/** The pages of the wizard: rows and destination, settings of the format, columns (CSV, SQL), progress. */
 export type WizardStep = "rows" | "settings" | "schema" | "progress";
 
 /** The folder chosen last; the wizard starts with it (for this session). */
@@ -35,6 +35,7 @@ const wizard = reactive({
         rows: [],
         json: { notation: "shell", layout: "lines" },
         csv: { ...DEFAULT_CSV },
+        sql: { ...DEFAULT_SQL },
         columns: {},
         database: { connectionId: "", database: "", insertMode: "overwrite", copyIndexes: true }
     } as ExportState,
@@ -137,7 +138,7 @@ export function useExportWizard() {
             wizard.outcome = outcome;
             if (outcome.clipboard !== null) await navigator.clipboard.writeText(outcome.clipboard);
             notifications.send({
-                subject: t(outcome.failed > 0 ? "export.doneWithFailures" : "export.done", { documents: outcome.documents.toLocaleString(), failed: outcome.failed }),
+                subject: t(outcome.failed > 0 ? "export.doneWithFailures" : "export.done", { documents: outcome.documents.toLocaleString(), failed: outcome.failed }, outcome.documents),
                 severity: outcome.failed > 0 ? "error" : undefined,
                 timeout: 5000
             });

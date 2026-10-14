@@ -26,6 +26,26 @@ export interface CsvSettings {
 
 export const DEFAULT_CSV: CsvSettings = { delimiter: ",", quote: "\"", header: true, nullEmpty: true, escapeStrings: false };
 
+/** The SQL dialects of the SQL page; the names as the Rust side takes them. */
+export const SQL_DIALECTS = ["mySql", "msSql", "oracle", "postgreSql"] as const;
+export type SqlDialect = typeof SQL_DIALECTS[number];
+
+/** The settings of the SQL page. */
+export interface SqlSettings {
+    dialect: SqlDialect;
+    /** *Target schema or db*, put before the table name; empty for none. */
+    schema: string;
+    createTable: boolean;
+    dropTable: boolean;
+}
+
+export const DEFAULT_SQL: SqlSettings = { dialect: "mySql", schema: "", createTable: true, dropTable: false };
+
+/** The formats whose columns are chosen on the schema page. */
+export function hasColumns(format: ExportFormat): boolean {
+    return format === "csv" || format === "sql";
+}
+
 /** The key of a collection in `ExportState.columns`. */
 export function columnsKey(row: { database: string; collection: string }): string {
     return `${row.database}.${row.collection}`;
@@ -51,7 +71,8 @@ export interface ExportState {
     rows: ExportRow[];
     json: { notation: JsonNotation; layout: JsonLayout };
     csv: CsvSettings;
-    /** CSV columns (dotted paths) per collection, as `database.collection`; none: the fields of the first level. */
+    sql: SqlSettings;
+    /** CSV and SQL columns (dotted paths) per collection, as `database.collection`; none: the fields of the first level. */
     columns: Record<string, string[]>;
     database: { connectionId: string; database: string; insertMode: InsertMode; copyIndexes: boolean };
 }
@@ -136,9 +157,10 @@ export function exportJob(state: ExportState): Doc {
         // A folder; with several rows "File" also means one file per collection.
         destination = { kind: "directory", path: state.target === "file" ? splitPath(state.path.trim()).folder : state.path.trim() };
     }
-    const format: Doc = state.format === "csv"
-        ? { kind: "csv", options: { ...state.csv } }
-        : { kind: "json", notation: state.json.notation, layout: state.json.layout };
+    let format: Doc;
+    if (state.format === "csv") format = { kind: "csv", options: { ...state.csv } };
+    else if (state.format === "sql") format = { kind: "sql", options: { ...state.sql, schema: state.sql.schema.trim() } };
+    else format = { kind: "json", notation: state.json.notation, layout: state.json.layout };
     return {
         connectionId: state.connectionId,
         destination,
@@ -148,7 +170,7 @@ export function exportJob(state: ExportState): Doc {
             collection: row.collection,
             output: row.output.trim(),
             filter: filterValue(row.filter) ?? null,
-            columns: state.format === "csv" ? state.columns[columnsKey(row)] ?? null : null
+            columns: hasColumns(state.format) ? state.columns[columnsKey(row)] ?? null : null
         }))
     };
 }

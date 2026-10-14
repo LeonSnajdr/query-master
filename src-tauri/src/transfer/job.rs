@@ -19,6 +19,7 @@ use serde_json::Value;
 
 use super::csv_format::{CsvOptions, CsvWriter};
 use super::json_format::{JsonWriter, Layout, Notation};
+use super::sql_format::{SqlOptions, SqlWriter};
 use crate::copy::{create_command, describe, index_specs, NAMESPACE_EXISTS};
 use crate::error::{Error, Result};
 
@@ -39,7 +40,7 @@ pub struct ExportItem {
     /// Extended JSON: a `find` filter (document) or a pipeline (array); none for all documents.
     #[serde(default)]
     pub filter: Option<Value>,
-    /// CSV: the columns, as dotted paths; none for the fields of the first level.
+    /// CSV and SQL: the columns, as dotted paths; none for the fields of the first level.
     #[serde(default)]
     pub columns: Option<Vec<String>>,
 }
@@ -82,6 +83,7 @@ pub enum Destination {
 pub enum FileFormat {
     Json { notation: Notation, layout: Layout },
     Csv { options: CsvOptions },
+    Sql { options: SqlOptions },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -282,7 +284,45 @@ async fn export_text(
             clipboard.push_str(&String::from_utf8_lossy(&bytes));
             Ok(done)
         }
+        // Without a byte order mark: not every SQL client skips it.
+        (FileFormat::Sql { options }, Some(folder)) => {
+            check_output(&item.output)?;
+            let file = BufWriter::new(File::create(folder.join(&item.output))?);
+            let mut sink = Sink::File(file);
+            let writer = SqlWriter::new(options, &item.collection, item.columns.clone());
+            let done = write_sql(&mut cursor, &mut sink, writer, stop, progress).await?;
+            if let Sink::File(mut file) = sink {
+                file.flush()?;
+            }
+            Ok(done)
+        }
+        (FileFormat::Sql { options }, None) => {
+            let mut sink = Sink::Text(clipboard);
+            let writer = SqlWriter::new(options, &item.collection, item.columns.clone());
+            write_sql(&mut cursor, &mut sink, writer, stop, progress).await
+        }
     }
+}
+
+async fn write_sql(
+    cursor: &mut Cursor<Document>,
+    sink: &mut Sink<'_>,
+    mut writer: SqlWriter,
+    stop: &AtomicBool,
+    progress: &mut impl FnMut(u64),
+) -> Result<u64> {
+    let mut done = 0;
+    loop {
+        let batch = next_batch(cursor, stop).await?;
+        if batch.is_empty() {
+            break;
+        }
+        sink.write(&writer.batch(&batch))?;
+        done += batch.len() as u64;
+        progress(done);
+    }
+    sink.write(&writer.finish())?;
+    Ok(done)
 }
 
 async fn write_csv<W: Write>(
@@ -532,6 +572,14 @@ mod tests {
             job.destination,
             Destination::Database { ref connection_id, insert_mode: InsertMode::NewId, copy_indexes: true, .. } if connection_id == "b"
         ));
+        let sql: FileFormat = serde_json::from_value(serde_json::json!({
+            "kind": "sql",
+            "options": { "dialect": "postgreSql", "schema": "", "createTable": true, "dropTable": false }
+        }))
+        .unwrap();
+        assert!(
+            matches!(sql, FileFormat::Sql { ref options } if options.create_table && !options.drop_table)
+        );
     }
 
     #[test]

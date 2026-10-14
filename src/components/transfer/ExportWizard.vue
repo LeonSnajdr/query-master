@@ -5,11 +5,11 @@ import { useI18n } from "vue-i18n";
 import IconButton from "@/components/IconButton.vue";
 import SelectField from "@/components/SelectField.vue";
 import { useExportWizard } from "@/composables/exportWizard";
-import { CSV_FILES, JSON_FILES, pickFolder, pickSavePath } from "@/files";
+import { CSV_FILES, JSON_FILES, pickFolder, pickSavePath, SQL_FILES } from "@/files";
 import type { FileKind } from "@/files";
 import { useConnectionsStore } from "@/stores/connections";
-import { defaultOutput, exportProblems, FILE_TARGETS } from "@/transfer/export";
-import type { CsvSettings, ExportFormat, ExportRow, FileTarget, InsertMode, JsonLayout, JsonNotation } from "@/transfer/export";
+import { defaultOutput, exportProblems, FILE_TARGETS, hasColumns, SQL_DIALECTS } from "@/transfer/export";
+import type { CsvSettings, ExportFormat, ExportRow, FileTarget, InsertMode, JsonLayout, JsonNotation, SqlDialect } from "@/transfer/export";
 import ColumnSchema from "./ColumnSchema.vue";
 
 /** The export wizard: format tiles, rows of collections, settings, progress. */
@@ -24,14 +24,13 @@ const open = computed({ get: () => wizard.open, set: value => !value && close() 
 const state = computed(() => wizard.state);
 const running = computed(() => wizard.runId !== undefined);
 
-/** The tiles; SQL follows in the next step of the plan (`docs/roadmap/12-export-import.md`). */
+/** The tiles, with symbols. */
 const TILES: { format: ExportFormat; icon: string }[] = [
     { format: "json", icon: "i-lucide-braces" },
     { format: "csv", icon: "i-lucide-sheet" },
     { format: "sql", icon: "i-lucide-database" },
     { format: "database", icon: "i-lucide-file-text" }
 ];
-const AVAILABLE: ExportFormat[] = ["json", "csv", "database"];
 
 const title = computed(() => {
     if (wizard.step === "settings") return t("export.title.settings", { format: t(`export.format.${state.value.format}`) });
@@ -41,6 +40,8 @@ const title = computed(() => {
 const delimiterOptions = computed(() => ([[",", "comma"], [";", "semicolon"], ["\t", "tab"], [" ", "space"]] as const).map(([value, name]) => ({ value, label: t(`export.csv.delimiter.${name}`) })));
 const quoteOptions = computed(() => ([["\"", "double"], ["'", "single"]] as const).map(([value, name]) => ({ value, label: t(`export.csv.quote.${name}`) })));
 const CSV_FLAGS = ["header", "nullEmpty", "escapeStrings"] as const;
+const dialectOptions = computed(() => SQL_DIALECTS.map(value => ({ value, label: t(`export.sql.dialect.${value}`) })));
+const SQL_FLAGS = ["createTable", "dropTable"] as const;
 const targetOptions = computed(() => FILE_TARGETS.map(value => ({ value, label: t(`export.target.${value}`) })));
 const serverOptions = computed(() => connections.saved.map(profile => ({ value: profile.id, label: profile.name })));
 const insertOptions = computed(() => (["overwrite", "newId"] as InsertMode[]).map(value => ({ value, label: t(`export.insert.${value}`) })));
@@ -62,6 +63,7 @@ const insertMode = computed({ get: () => state.value.database.insertMode, set: (
 const notation = computed({ get: () => state.value.json.notation, set: (value: JsonNotation) => (state.value.json.notation = value) });
 const layout = computed({ get: () => state.value.json.layout, set: (value: JsonLayout) => (state.value.json.layout = value) });
 const delimiter = computed({ get: () => state.value.csv.delimiter, set: (value: CsvSettings["delimiter"]) => (state.value.csv.delimiter = value) });
+const dialect = computed({ get: () => state.value.sql.dialect, set: (value: SqlDialect) => (state.value.sql.dialect = value) });
 const quote = computed({ get: () => state.value.csv.quote, set: (value: CsvSettings["quote"]) => (state.value.csv.quote = value) });
 
 /** The row clicked last; edit and remove act on it. */
@@ -95,7 +97,7 @@ function removeRow() {
     selected.value = undefined;
 }
 
-const KINDS: Partial<Record<ExportFormat, FileKind>> = { json: JSON_FILES, csv: CSV_FILES };
+const KINDS: Partial<Record<ExportFormat, FileKind>> = { json: JSON_FILES, csv: CSV_FILES, sql: SQL_FILES };
 
 async function choosePath() {
     if (state.value.target === "directory") {
@@ -156,7 +158,7 @@ const STATE_ICONS: Record<string, string> = {
                             :aria-checked="state.format === tile.format"
                             :class="state.format === tile.format ? 'text-on-surface-strong font-bold' : 'text-on-surface hover:text-on-surface-strong'"
                             :data-testid="`export-tile-${tile.format}`"
-                            :disabled="!AVAILABLE.includes(tile.format) || running"
+                            :disabled="running"
                             class="relative w-21 pt-1 pb-2 flex flex-col items-center gap-1.5 disabled:opacity-35"
                             role="radio"
                         >
@@ -434,6 +436,42 @@ const STATE_ICONS: Record<string, string> = {
                         />
                     </div>
                     <div
+                        v-else-if="state.format === 'sql'"
+                        class="form-grid grid-cols-[18rem_1fr]!"
+                    >
+                        <span>{{ $t("export.sql.dialect") }}:</span>
+                        <SelectField
+                            v-model="dialect"
+                            :label="$t('export.sql.dialect')"
+                            :options="dialectOptions"
+                            data-testid="export-dialect"
+                        />
+                        <span>{{ $t("export.sql.schema") }}:</span>
+                        <input
+                            v-model="state.sql.schema"
+                            :aria-label="$t('export.sql.schema')"
+                            :placeholder="$t('export.sql.schema.placeholder')"
+                            class="field"
+                            data-testid="export-sql-schema"
+                            spellcheck="false"
+                        />
+                        <template
+                            v-for="flag in SQL_FLAGS"
+                            :key="flag"
+                        >
+                            <span>{{ $t(`export.sql.${flag}`) }}:</span>
+                            <SwitchRoot
+                                v-model="state.sql[flag]"
+                                :data-testid="`export-sql-${flag}`"
+                                :label="$t(`export.sql.${flag}`)"
+                            >
+                                <SwitchTrack class="switch-track">
+                                    <SwitchThumb class="switch-thumb" />
+                                </SwitchTrack>
+                            </SwitchRoot>
+                        </template>
+                    </div>
+                    <div
                         v-else
                         class="form-grid grid-cols-[14rem_1fr]!"
                     >
@@ -554,7 +592,7 @@ const STATE_ICONS: Record<string, string> = {
                             <ButtonContent>{{ $t("action.back") }}</ButtonContent>
                         </ButtonRoot>
                         <ButtonRoot
-                            v-if="wizard.step === 'settings' && state.format === 'csv'"
+                            v-if="wizard.step === 'settings' && hasColumns(state.format)"
                             @click="wizard.step = 'schema'"
                             class="btn-primary"
                             data-testid="export-schema"

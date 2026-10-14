@@ -11,6 +11,7 @@ export interface FileKind {
 export const JSON_FILES: FileKind = { name: "JSON", extensions: ["json"] };
 export const JSON_LINES_FILES: FileKind = { name: "JSON Lines", extensions: ["jsonl", "ndjson"] };
 export const CSV_FILES: FileKind = { name: "CSV", extensions: ["csv"] };
+export const SQL_FILES: FileKind = { name: "SQL", extensions: ["sql"] };
 export const SCRIPT_FILES: FileKind = { name: "JavaScript", extensions: ["js", "mongodb"] };
 
 /** Lets the user pick a file and returns its text; `undefined` when they cancel. */

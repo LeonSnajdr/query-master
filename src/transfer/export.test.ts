@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CSV, exportJob, exportProblems, filterValue, rowsFor, splitPath, switchFormat } from "./export";
+import { DEFAULT_CSV, DEFAULT_SQL, exportJob, exportProblems, filterValue, rowsFor, splitPath, switchFormat } from "./export";
 import type { ExportState } from "./export";
 
 function state(change: Partial<ExportState> = {}): ExportState {
@@ -11,6 +11,7 @@ function state(change: Partial<ExportState> = {}): ExportState {
         rows: rowsFor("json", [{ database: "shop", collection: "orders" }, { database: "shop", collection: "people" }]),
         json: { notation: "shell", layout: "lines" },
         csv: DEFAULT_CSV,
+        sql: DEFAULT_SQL,
         columns: {},
         database: { connectionId: "", database: "", insertMode: "overwrite", copyIndexes: true },
         ...change
@@ -67,6 +68,13 @@ describe("exportJob", () => {
         const job = exportJob(state({ format: "csv", csv: { ...DEFAULT_CSV, delimiter: ";" }, columns: { "shop.orders": ["total", "customer.city"] } }));
         expect(job.format).toEqual({ kind: "csv", options: { delimiter: ";", quote: "\"", header: true, nullEmpty: true, escapeStrings: false } });
         expect((job.items as { columns: string[] | null }[]).map(item => item.columns)).toEqual([["total", "customer.city"], null]);
+    });
+
+    it("sends the SQL settings and its columns as for CSV", () => {
+        const job = exportJob(state({ format: "sql", sql: { ...DEFAULT_SQL, dialect: "oracle", schema: " sales ", dropTable: true }, columns: { "shop.people": ["name"] } }));
+        expect(job.format).toEqual({ kind: "sql", options: { dialect: "oracle", schema: "sales", createTable: true, dropTable: true } });
+        expect((job.items as { columns: string[] | null }[]).map(item => item.columns)).toEqual([null, ["name"]]);
+        expect(rowsFor("sql", [{ database: "shop", collection: "orders" }])[0]!.output).toBe("shop.orders.sql");
     });
 
     it("splits paths of either kind", () => {
