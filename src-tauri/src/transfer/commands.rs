@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use serde_json::Value;
 use tauri::{ipc::Channel, State};
 
+use super::csv_import::{CsvPreview, CsvReadOptions};
+use super::import_job::{ImportJob, ImportOutcome};
 use super::job::{Destination, ExportJob, ExportOutcome, ItemProgress};
 use super::{Format, Progress, TransferResult};
 use crate::error::Result;
@@ -66,6 +68,32 @@ pub async fn export_run(
     .await;
     runs.finish(&run_id);
     outcome
+}
+
+/// The import of the wizard: many files, each into its collection. Progress of each row arrives
+/// on `on_progress`; `run_id` names the run.
+#[tauri::command]
+pub async fn import_run(
+    clients: State<'_, Clients>,
+    runs: State<'_, Runs>,
+    run_id: String,
+    job: ImportJob,
+    on_progress: Channel<ItemProgress>,
+) -> Result<ImportOutcome> {
+    let client = clients.get(&job.connection_id)?;
+    let stop = runs.start(&run_id);
+    let outcome = super::import_job::run(&client, &job, &stop, |progress| {
+        drop(on_progress.send(progress));
+    })
+    .await;
+    runs.finish(&run_id);
+    outcome
+}
+
+/// The columns of a CSV file with guessed types, and its first rows, for the schema page.
+#[tauri::command]
+pub async fn import_preview(path: PathBuf, options: CsvReadOptions) -> Result<CsvPreview> {
+    super::csv_import::preview(&path, &options)
 }
 
 /// Inserts the documents of the file at `path` into the collection, in batches.

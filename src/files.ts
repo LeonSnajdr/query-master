@@ -50,6 +50,13 @@ export async function pickOpenPath(kinds: FileKind[]): Promise<string | undefine
     return typeof path === "string" ? path : undefined;
 }
 
+/** Lets the user pick files of the kinds; their paths, none when they cancel. */
+export async function pickOpenPaths(kinds: FileKind[]): Promise<string[]> {
+    const paths = await open({ multiple: true, filters: [...kinds, { name: "*", extensions: ["*"] }] });
+    if (paths === null) return [];
+    return Array.isArray(paths) ? paths : [paths];
+}
+
 /** Lets the user pick where to save a file (of the kind, if one is given); its path, `undefined` when they cancel. */
 export async function pickSavePath(suggestedName: string, kind?: FileKind): Promise<string | undefined> {
     return (await save({ defaultPath: suggestedName, filters: kind ? [kind] : undefined })) ?? undefined;

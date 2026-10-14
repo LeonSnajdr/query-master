@@ -50,6 +50,7 @@ const menus = computed<{ name: string; entries: MenuEntry[] }[]>(() => [
             { label: t("tab.sql"), icon: "i-lucide-file-code-2", hotkey: "Ctrl + Alt + Q", action: () => actions.openSql(), disabled: !actions.hasConnection.value },
             "separator",
             { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + Shift + S", action: () => void actions.exportWizard(), disabled: !actions.hasConnection.value },
+            { label: t("import.menu"), icon: "i-lucide-download", hotkey: "Ctrl + Shift + O", action: () => actions.importWizard() },
             "separator",
             { label: t("connection.disconnect"), hotkey: "Ctrl + Alt + D", action: () => void actions.disconnect(), disabled: !actions.hasConnection.value },
             "separator",

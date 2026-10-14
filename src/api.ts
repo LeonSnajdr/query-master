@@ -3,6 +3,7 @@ import { mockBackend } from "./api.mock";
 import type { Doc, Json } from "./shell/ejson";
 import { ShellError } from "./shell/message";
 import type { Message } from "./shell/message";
+import type { CsvColumn } from "./transfer/import";
 
 /** A saved connection. Its connection string stays in the keychain. */
 export interface Profile {
@@ -102,6 +103,18 @@ export interface ExportOutcome {
     clipboard: string | null;
 }
 
+export interface ImportOutcome {
+    documents: number;
+    failed: number;
+    stopped: boolean;
+}
+
+/** The head of a CSV file for the import's schema page. */
+export interface CsvPreview {
+    columns: CsvColumn[];
+    rows: string[][];
+}
+
 export interface ServerInfo {
     version: string;
 }
@@ -144,6 +157,10 @@ export interface Backend {
     exportDocuments: (runId: string, id: string, database: string, command: Doc, path: string, format: TransferFormat, progress: (done: number) => void) => Promise<TransferResult>;
     /** The export of the wizard (`exportJob` in `src/transfer/export.ts`); progress per row. */
     exportRun: (runId: string, job: Doc, progress: (update: ExportProgress) => void) => Promise<ExportOutcome>;
+    /** The import of the wizard: many files, each into its collection; progress per row as for the export. */
+    importRun: (runId: string, job: Doc, progress: (update: ExportProgress) => void) => Promise<ImportOutcome>;
+    /** The columns of a CSV file with guessed types, and its first rows. */
+    importPreview: (path: string, options: Doc) => Promise<CsvPreview>;
     /** Inserts the documents of the file at `path` into the collection, in batches. */
     importDocuments: (runId: string, id: string, database: string, collection: string, path: string, format: TransferFormat, progress: (done: number) => void) => Promise<TransferResult>;
     /** Stores the file at `path` in the GridFS bucket; gives the new file's `_id`. */
@@ -199,6 +216,12 @@ const tauriBackend: Backend = {
         onProgress.onmessage = progress;
         return invoke("export_run", { runId, job, onProgress });
     },
+    importRun: (runId, job, progress) => {
+        const onProgress = new Channel<ExportProgress>();
+        onProgress.onmessage = progress;
+        return invoke("import_run", { runId, job, onProgress });
+    },
+    importPreview: (path, options) => invoke("import_preview", { path, options }),
     importDocuments: (runId, id, database, collection, path, format, progress) => {
         const onProgress = new Channel<{ done: number }>();
         onProgress.onmessage = update => progress(update.done);

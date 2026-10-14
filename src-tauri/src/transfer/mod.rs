@@ -4,8 +4,11 @@
 
 pub mod commands;
 mod csv_format;
+mod csv_import;
+mod import_job;
 mod job;
 mod json_format;
+mod shell_reader;
 mod sql_format;
 
 use std::fs::File;

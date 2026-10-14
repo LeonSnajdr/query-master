@@ -2,6 +2,9 @@
 // a person would check by hand. Started by `tools/e2e.ps1`, which runs the app with the web view's
 // debugging port open. Writes only into the database `querymaster_test`.
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { chromium } from "playwright-core";
 
 const uri = process.env.QUERYMASTER_TEST_URI;
@@ -386,6 +389,73 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.locator("[data-testid=export-progress-row][data-state=done]").waitFor();
         await id("export-close").click();
         await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_exported` }).waitFor();
+    });
+
+    await step("the import wizard reads exported JSON and CSV files back into new collections", async () => {
+        const folder = mkdtempSync(join(tmpdir(), "querymaster-e2e-"));
+        const row = page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) });
+        const progressText = async (testid) => {
+            await page.locator(`[data-testid=${testid}-progress-row][data-state=done]`).waitFor();
+            return page.locator(`[data-testid=${testid}-progress-row]`).innerText();
+        };
+
+        // Into a folder: JSON in the shell's notation, then CSV, each a file named.
+        for (const format of ["json", "csv"]) {
+            await row.click({ button: "right" });
+            await chooseMenu("Export...");
+            await id(`export-tile-${format}`).click();
+            await id("export-path").fill(folder);
+            await id("export-next").click();
+            if (format === "csv") await id("export-schema").click();
+            await id("export-start").click();
+            assert.match(await progressText("export"), /3 documents/);
+            await id("export-close").click();
+        }
+        const file = format => join(folder, `${DATABASE}.${COLLECTION}.${format}`);
+        assert.ok(readFileSync(file("json"), "utf8").startsWith("﻿{\r\n\t\"_id\": ObjectId("));
+
+        // Files dropped on the window: the name gives database and collection, the collection is renamed.
+        const drop = paths => page.evaluate(paths => window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
+            event: "tauri://drag-drop",
+            payload: { paths, position: { x: 400, y: 400 } }
+        }), paths);
+        await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
+        await chooseMenu("Import...");
+        await id("import-empty").waitFor();
+        await drop([file("json")]);
+        await id("import-row").waitFor();
+        assert.equal(await id("import-database").inputValue(), DATABASE);
+        assert.equal(await id("import-collection").inputValue(), COLLECTION);
+        await id("import-collection").fill(`${COLLECTION}_json`);
+        await shot("import-wizard");
+        await id("import-next").click();
+        assert.match(await progressText("import"), /3 documents/);
+        await id("import-close").click();
+
+        // CSV: the settings, then the columns with the types guessed from the first rows.
+        await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
+        await chooseMenu("Import...");
+        await drop([file("csv")]);
+        assert.equal(await id("import-tile-csv").getAttribute("aria-checked"), "true");
+        await id("import-collection").fill(`${COLLECTION}_csv`);
+        await id("import-next").click();
+        // The export kept the semicolon of the CSV step before: the wizard remembers its settings.
+        await page.locator("[data-testid=import-wizard] [data-testid=select-field]").first().click();
+        await page.locator("[data-testid=menu-item]:visible", { hasText: "Semicolon" }).first().click();
+        await id("import-schema-next").click();
+        const names = page.locator("[data-testid=import-column-name]");
+        await names.first().waitFor();
+        const columns = await names.evaluateAll(inputs => inputs.map(input => input.value));
+        assert.deepEqual(columns.slice(0, 3), ["_id", "n", "name"]);
+        assert.match(await page.locator("[data-testid=import-column] [data-testid=select-field]").nth(1).innerText(), /Int32/);
+        await page.locator("[data-testid=import-preview] tbody tr").nth(2).waitFor();
+        await shot("import-schema");
+        await id("import-start").click();
+        assert.match(await progressText("import"), /3 documents/);
+        await id("import-close").click();
+        await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_csv` }).waitFor();
+        await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_json` }).waitFor();
+        rmSync(folder, { recursive: true, force: true });
     });
 
     await step("a collection is copied with Ctrl+C and pasted under a new name", async () => {

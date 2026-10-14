@@ -9,7 +9,6 @@ import IconButton from "@/components/IconButton.vue";
 import NoteMarks from "@/components/NoteMarks.vue";
 import { useActions } from "@/composables/actions";
 import { useCopy } from "@/composables/copy";
-import { useTransfer } from "@/composables/transfer";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import type { MenuEntry } from "@/menu";
@@ -25,7 +24,6 @@ const { report } = useMessages();
 const dialogs = useDialogs();
 const actions = useActions();
 const copying = useCopy();
-const transfer = useTransfer();
 const connections = useConnectionsStore();
 const notes = useNotesStore();
 const menu = useTemplateRef("menu");
@@ -252,7 +250,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("collection.copy"), icon: "i-lucide-copy", hotkey: "Ctrl + C", action: () => copying.copy({ connectionId: at.connectionId, database: at.database!, collection: at.collection! }) },
             paste(at.database!),
             { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + Shift + S", action: () => void actions.exportWizard(at) },
-            { label: t("collection.import"), icon: "i-lucide-download", action: () => void transfer.importCollection({ connectionId: at.connectionId, database: at.database! }, at.collection!), disabled: isView(at) },
+            { label: t("import.menu"), icon: "i-lucide-download", hotkey: "Ctrl + Shift + O", action: () => actions.importWizard(at), disabled: isView(at) },
             "separator",
             { label: t("collection.rename"), action: () => void actions.renameCollection(at) },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", hotkey: "Del", danger: true, action: () => void actions.dropCollection(at) },
@@ -283,6 +281,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("database.stats"), action: () => actions.databaseStats(at) },
             { label: t("database.collectionsStats"), action: () => actions.collectionsStats(at) },
             { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + Shift + S", action: () => void actions.exportWizard(at) },
+            { label: t("import.menu"), icon: "i-lucide-download", hotkey: "Ctrl + Shift + O", action: () => actions.importWizard(at) },
             "separator",
             { label: t("users.manage"), icon: "i-lucide-users", hotkey: "Ctrl + Alt + U", action: () => actions.manageUsers(at) },
             { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(at) },
@@ -301,6 +300,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(at) },
             "separator",
             { label: t("export.menu"), icon: "i-lucide-upload", hotkey: "Ctrl + Shift + S", action: () => void actions.exportWizard(at) },
+            { label: t("import.menu"), icon: "i-lucide-download", hotkey: "Ctrl + Shift + O", action: () => actions.importWizard(at) },
             "separator",
             { label: t("action.refresh"), icon: "i-lucide-refresh-cw", hotkey: "Ctrl + R", action: () => void actions.refresh(at) },
             { label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", hotkey: "Ctrl + Shift + U", action: () => connections.collapseAll() },

@@ -55,6 +55,8 @@ pub fn run() {
             copy::copy_collection,
             transfer::commands::export_documents,
             transfer::commands::export_run,
+            transfer::commands::import_run,
+            transfer::commands::import_preview,
             transfer::commands::import_documents,
             gridfs::gridfs_upload,
             gridfs::gridfs_download,

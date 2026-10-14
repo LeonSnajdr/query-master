@@ -32,6 +32,8 @@ pub enum Error {
     TransferStopped,
     #[error("a file to import holds documents: an array of them, one, or one per line")]
     ImportShape,
+    #[error("the file can not be read at {0}")]
+    ImportText(String),
     #[error("{0} is no plain file name")]
     OutputName(String),
     #[error("a pipeline that writes ($out, $merge) is not run for an export")]
@@ -70,6 +72,7 @@ impl Error {
             Self::CollectionMissing(_) => Some("error.copy.missing"),
             Self::TransferStopped => Some("error.transfer.stopped"),
             Self::ImportShape => Some("error.transfer.shape"),
+            Self::ImportText(_) => Some("error.transfer.text"),
             Self::OutputName(_) => Some("error.transfer.outputName"),
             Self::WritingPipeline => Some("error.transfer.writingPipeline"),
             Self::ClipboardTooLarge => Some("error.transfer.clipboardTooLarge"),
@@ -92,7 +95,7 @@ impl Error {
             | Self::WritingPipeline
             | Self::ClipboardTooLarge
             | Self::SameTarget => None,
-            Self::OutputName(name) => Some(name.clone()),
+            Self::OutputName(name) | Self::ImportText(name) => Some(name.clone()),
             Self::CollectionMissing(name) => Some(name.clone()),
             Self::Script(message) => Some(message.clone()),
             Self::ExtendedJson(cause) => Some(cause.clone()),
