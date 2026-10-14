@@ -12,6 +12,21 @@ import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
 
+/** The script behind "Collections statistics"; views have no storage and are left out. */
+const COLLECTIONS_STATS = `// Sizes in bytes, as the server counts them.
+db.getCollectionInfos({ type: "collection" }).map(info => {
+    const stats = db.getCollection(info.name).stats();
+    return {
+        name: info.name,
+        documents: stats.count,
+        size: stats.size,
+        averageSize: stats.avgObjSize,
+        storageSize: stats.storageSize,
+        indexes: stats.nindexes,
+        indexSize: stats.totalIndexSize
+    };
+}).sort((a, b) => a.name.localeCompare(b.name))`;
+
 /**
  * What the menus, the toolbar of the dock and the keyboard shortcuts do. They act on the row
  * selected in the tree; without one, on what the active tab shows.
@@ -77,6 +92,14 @@ export function useActions() {
 
     function databaseStats(at = target.value) {
         if (at?.database !== undefined) inspect(at, at.database, "db.stats()");
+    }
+
+    /** One row per collection of the database: documents, sizes, indexes; shown as a table. */
+    function collectionsStats(at = target.value) {
+        if (at?.database === undefined) return;
+        const tab = tabs.openShell({ connectionId: at.connectionId, database: at.database, text: COLLECTIONS_STATS });
+        tab.view = "table";
+        void tabs.run(tab, 0, undefined, true);
     }
 
     function serverStatus(at = target.value) {
@@ -227,7 +250,7 @@ export function useActions() {
 
     return {
         target, hasConnection, hasDatabase, hasCollection,
-        openShell, browse, aggregation, collectionStats, databaseStats, serverStatus, indexes,
+        openShell, browse, aggregation, collectionStats, databaseStats, collectionsStats, serverStatus, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         refresh, connect, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()

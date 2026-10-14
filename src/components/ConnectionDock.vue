@@ -80,6 +80,7 @@ const manageEntries = computed<MenuEntry[]>(() => [
     { label: t("index.list"), icon: "i-lucide-key-round", action: () => actions.indexes(), disabled: !actions.hasCollection.value },
     { label: t("collection.stats"), action: () => actions.collectionStats(), disabled: !actions.hasCollection.value },
     { label: t("database.stats"), action: () => actions.databaseStats(), disabled: !actions.hasDatabase.value },
+    { label: t("database.collectionsStats"), action: () => actions.collectionsStats(), disabled: !actions.hasDatabase.value },
     { label: t("connection.status"), action: () => actions.serverStatus(), disabled: !actions.hasConnection.value }
 ]);
 
@@ -135,6 +136,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("database.drop"), hotkey: "Del", danger: true, action: () => void actions.dropDatabase(at) },
             "separator",
             { label: t("database.stats"), action: () => actions.databaseStats(at) },
+            { label: t("database.collectionsStats"), action: () => actions.collectionsStats(at) },
             ...tail
         ];
     } else {

@@ -191,6 +191,16 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
     });
 
     const panel = page.locator("[data-testid=tab-panel]:visible");
+    await step("the statistics of all collections are a table without the views", async () => {
+        await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
+        await chooseMenu("Collections statistics");
+        const table = panel.locator("[data-testid=result-table]");
+        await table.waitFor();
+        assert.match(await table.locator("thead").innerText(), /storageSize/);
+        await table.locator("[data-testid=table-cell]", { hasText: new RegExp(`^${COLLECTION}_capped$`) }).waitFor();
+        assert.equal(await table.locator("[data-testid=table-cell]", { hasText: `${COLLECTION}_view` }).count(), 0);
+    });
+
     await step("double click opens the collection with its documents", async () => {
         await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).dblclick();
         await visible("browse-title").waitFor();

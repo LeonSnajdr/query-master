@@ -130,6 +130,7 @@
   "copy.document": "Dokument kopieren",
   "copy.path": "Feldpfad kopieren",
   "copy.value": "Wert kopieren",
+  "database.collectionsStats": "Statistik der Collections",
   "database.create": "Datenbank anlegen",
   "database.create.collection": "Erste Collection von „{database}“",
   "database.create.title": "Datenbank anlegen",
