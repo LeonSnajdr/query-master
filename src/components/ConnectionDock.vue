@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ButtonContent, ButtonRoot, PopoverActivator, PopoverContent, PopoverRoot } from "@vuetify/v0";
-import { computed, shallowRef, useTemplateRef } from "vue";
+import { ButtonRoot, PopoverActivator, PopoverContent, PopoverRoot } from "@vuetify/v0";
+import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import type { Profile } from "@/api";
 import ContextMenu from "@/components/ContextMenu.vue";
@@ -181,6 +181,55 @@ async function toggleCollection(profile: Profile, database: DatabaseNode, collec
 async function choose(profile: Profile) {
     listOpen.value = false;
     await actions.connect(profile);
+}
+
+/** The list of saved connections: a toolbar, a search and one folder of them. */
+const listSearch = shallowRef("");
+const listFolderOpen = shallowRef(true);
+const picked = shallowRef<string>();
+const listed = computed(() => {
+    const term = listSearch.value.trim().toLowerCase();
+    return connections.saved.filter(profile => !term || profile.name.toLowerCase().includes(term) || profile.address.toLowerCase().includes(term));
+});
+const pickedProfile = computed(() => connections.saved.find(profile => profile.id === picked.value));
+
+// Color and read-only of a connection show in the list before it is connected.
+watch(listOpen, (open) => {
+    if (!open) return;
+    listSearch.value = "";
+    for (const profile of connections.saved) {
+        if (!notes.notes[profile.id]) void notes.load(profile.id).catch(report);
+    }
+});
+
+function editPicked() {
+    const profile = pickedProfile.value;
+    if (!profile) return;
+    listOpen.value = false;
+    dialogs.editConnection(profile);
+}
+
+function deletePicked() {
+    const profile = pickedProfile.value;
+    if (!profile) return;
+    listOpen.value = false;
+    void actions.deleteConnection(profile);
+}
+
+/** Up and down pick, Enter connects, Del deletes. */
+function onListKey(event: KeyboardEvent) {
+    const at = listed.value.findIndex(profile => profile.id === picked.value);
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        const next = listed.value[Math.min(listed.value.length - 1, Math.max(0, at + (event.key === "ArrowDown" ? 1 : -1)))];
+        if (next) picked.value = next.id;
+    } else if (event.key === "Enter" && pickedProfile.value) {
+        void choose(pickedProfile.value);
+    } else if (event.key === "Delete") {
+        deletePicked();
+    } else {
+        return;
+    }
+    event.preventDefault();
 }
 
 const createEntries = computed<MenuEntry[]>(() => [
@@ -374,55 +423,126 @@ defineExpose({
                     {{ $t("connection.connect") }}
                     <span class="i-lucide-chevron-down size-3.5" />
                 </PopoverActivator>
+                <!-- Resizable at its corner, like the window. -->
                 <PopoverContent
-                    class="menu-panel w-80"
+                    class="menu-panel w-[340px] h-[530px] min-w-64 min-h-48 max-w-[90vw] max-h-[85vh] resize overflow-hidden flex-col [&:popover-open]:flex"
+                    data-testid="connection-panel"
                     positionArea="bottom span-right"
                 >
-                    <p
-                        v-if="connections.saved.length === 0"
-                        class="m-0 px-3 py-3 text-[13px] text-on-surface-variant"
-                    >
-                        {{ $t("connection.empty") }}
-                    </p>
-                    <div
-                        v-for="profile in connections.saved"
-                        :key="profile.id"
-                        class="group flex items-center hover:bg-primary/25"
-                        data-testid="connection-item"
-                    >
-                        <ButtonRoot
-                            @click="choose(profile)"
-                            class="grow min-w-0 h-8 pl-2.5 flex items-center gap-2 text-left text-[13px]"
-                        >
-                            <span
-                                :class="connections.sessions[profile.id] ? 'text-success' : 'text-on-surface'"
-                                class="i-lucide-server size-4 shrink-0"
-                            />
-                            <ButtonContent class="truncate text-on-surface-strong">
-                                {{ profile.name }}
-                            </ButtonContent>
-                            <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>
-                        </ButtonRoot>
+                    <div class="h-10 shrink-0 flex items-center gap-0.5 px-4">
                         <IconButton
-                            @click="listOpen = false; dialogs.editConnection(profile)"
+                            @click="listOpen = false; actions.newConnection()"
+                            :label="`${$t('connection.add')} (Ctrl + F2)`"
+                            icon="i-lucide-plus"
+                            tint="text-success"
+                        >
+                            {{ $t("connection.add") }}
+                        </IconButton>
+                        <span class="toolbar-rule" />
+                        <IconButton
+                            @click="listOpen = false; actions.connectFromUri()"
+                            :label="$t('connection.connectFromUri')"
+                            icon="i-lucide-link"
+                        />
+                        <span class="toolbar-rule" />
+                        <IconButton
+                            @click="deletePicked()"
+                            :disabled="!pickedProfile"
+                            :label="`${$t('action.delete')} (Del)`"
+                            data-testid="connection-delete"
+                            icon="i-lucide-x"
+                            tint="text-error"
+                        />
+                        <IconButton
+                            @click="editPicked()"
+                            :disabled="!pickedProfile"
                             :label="$t('connection.edit')"
+                            data-testid="connection-edit"
                             icon="i-lucide-pencil"
                         />
-                        <IconButton
-                            @click="listOpen = false; actions.deleteConnection(profile)"
-                            :label="$t('action.delete')"
-                            class="mr-1"
-                            icon="i-lucide-trash-2"
-                        />
                     </div>
-                    <div class="my-1 mx-2 border-t border-divider" />
-                    <ButtonRoot
-                        @click="listOpen = false; actions.newConnection()"
-                        class="w-full h-8 px-2.5 mb-1 flex items-center gap-2 text-left text-[13px] text-on-surface-strong hover:bg-primary/25"
+                    <label class="mx-4 mb-2 h-7 shrink-0 flex items-center gap-1.5 px-2 rounded-sm bg-surface-variant border border-divider focus-within:border-primary">
+                        <span class="i-lucide-search size-3.5 shrink-0 text-on-surface-variant" />
+                        <input
+                            v-model="listSearch"
+                            :aria-label="$t('tree.search')"
+                            :placeholder="`${$t('tree.search')} …`"
+                            class="grow min-w-0 bg-transparent outline-none text-[13px] text-on-surface-strong placeholder:italic placeholder:text-on-surface-variant"
+                            data-testid="connection-search"
+                        />
+                        <ButtonRoot
+                            v-if="listSearch"
+                            @click="listSearch = ''"
+                            :ariaLabel="$t('choice.clear')"
+                            class="i-lucide-x size-3.5 shrink-0 text-on-surface-variant hover:text-on-surface-strong"
+                        />
+                    </label>
+                    <div
+                        @keydown="onListKey"
+                        class="grow min-h-0 overflow-auto pb-2 text-[13px]"
+                        role="tree"
                     >
-                        <span class="i-lucide-plus size-4 text-success" />
-                        <ButtonContent>{{ $t("connection.add") }}</ButtonContent>
-                    </ButtonRoot>
+                        <div
+                            @click="listFolderOpen = !listFolderOpen"
+                            @keydown.enter.self.stop="listFolderOpen = !listFolderOpen"
+                            class="tree-row pl-5"
+                            role="treeitem"
+                            tabindex="0"
+                        >
+                            <span
+                                :class="listFolderOpen ? 'rotate-90' : ''"
+                                class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
+                            />
+                            <span
+                                :class="listFolderOpen ? 'i-lucide-folder-open' : 'i-lucide-folder'"
+                                class="size-4 shrink-0 text-on-surface"
+                            />
+                            <span class="truncate font-bold text-on-surface-strong">{{ $t("connection.mine") }}</span>
+                        </div>
+                        <template v-if="listFolderOpen">
+                            <p
+                                v-if="connections.saved.length === 0"
+                                class="m-0 pl-14 py-1 text-on-surface-variant"
+                            >
+                                {{ $t("connection.empty") }}
+                            </p>
+                            <div
+                                v-for="profile in listed"
+                                :key="profile.id"
+                                @click="picked = profile.id"
+                                @dblclick="choose(profile)"
+                                :class="picked === profile.id ? 'tree-row-on' : ''"
+                                :title="profile.address"
+                                class="tree-row relative h-[21px] pl-11"
+                                data-testid="connection-item"
+                                role="treeitem"
+                                tabindex="0"
+                            >
+                                <!-- The color of the connection, as a bar at the left edge. -->
+                                <span
+                                    v-if="notes.noteOf({ connectionId: profile.id })?.color"
+                                    :class="`note-${notes.noteOf({ connectionId: profile.id })?.color}`"
+                                    class="absolute left-4 inset-y-0 w-1"
+                                />
+                                <span class="relative size-4 shrink-0">
+                                    <span
+                                        :class="[
+                                            connections.connecting.has(profile.id) ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-server',
+                                            connections.sessions[profile.id] ? 'text-success' : 'text-on-surface'
+                                        ]"
+                                        class="size-4 block"
+                                    />
+                                    <span
+                                        v-if="notes.noteOf({ connectionId: profile.id })?.readonly"
+                                        :title="$t('note.readonly')"
+                                        class="i-lucide-lock absolute -right-0.5 -bottom-0.5 size-2.5 text-warning"
+                                    />
+                                </span>
+                                <span class="shrink-0 text-on-surface-strong">{{ profile.name }}</span>
+                                <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>
+                            </div>
+                        </template>
+                    </div>
                 </PopoverContent>
             </PopoverRoot>
             <IconButton
