@@ -15,7 +15,7 @@ const COLLECTIONS: Record<string, string[]> = {
 
 const history = new Map<string, string[]>();
 const notes = new Map<string, Map<string, TreeNote>>();
-let setting: Setting = { language: null, theme: null };
+let setting: Setting = { language: null, theme: null, pageSize: null, resultView: null, editorFontSize: null };
 
 const STATUS = ["open", "paid", "shipped", "cancelled"];
 

@@ -4,6 +4,7 @@ import { useI18n } from "vue-i18n";
 import { LOCALES } from "../../i18n/i18n.config";
 import DropMenu from "@/components/DropMenu.vue";
 import { useActions } from "@/composables/actions";
+import { useDialogs } from "@/composables/dialogs";
 import { useAppearance } from "@/composables/appearance";
 import { appWindow } from "@/files";
 import type { MenuEntry } from "@/menu";
@@ -19,6 +20,7 @@ const emit = defineEmits<{
 /** The menus at the top left: File, Edit, View, Help. */
 const { t } = useI18n();
 const actions = useActions();
+const dialogs = useDialogs();
 const tabs = useTabsStore();
 const { theme, language, setTheme, setLanguage } = useAppearance();
 
@@ -62,7 +64,9 @@ const menus = computed<{ name: string; entries: MenuEntry[] }[]>(() => [
             { label: t("validator.edit"), hotkey: "Ctrl + Alt + V", action: () => actions.editValidator(), disabled: !actions.hasCollection.value },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", danger: true, action: () => void actions.dropCollection(), disabled: !actions.hasCollection.value },
             "separator",
-            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(), disabled: !actions.hasCollection.value }
+            { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => actions.createIndex(), disabled: !actions.hasCollection.value },
+            "separator",
+            { label: t("settings.open"), icon: "i-lucide-settings", hotkey: "Ctrl + Alt + P", action: () => dialogs.openSettings() }
         ]
     },
     {

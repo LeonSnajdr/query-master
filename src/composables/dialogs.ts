@@ -55,6 +55,7 @@ export interface IndexRequest {
 
 // One dialog of each kind for the whole app (`AppDialogs.vue` renders them).
 const state = reactive({
+    settingsOpen: false,
     indexOpen: false,
     index: undefined as IndexRequest | undefined,
     prompt: undefined as PromptRequest | undefined,
@@ -105,7 +106,11 @@ export function useDialogs() {
         state.indexOpen = true;
     }
 
-    return { ask, confirm, showText, editConnection, editCollection, editIndex };
+    function openSettings(): void {
+        state.settingsOpen = true;
+    }
+
+    return { ask, confirm, showText, editConnection, editCollection, editIndex, openSettings };
 }
 
 /** For `AppDialogs.vue` only. */

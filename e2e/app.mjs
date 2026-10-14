@@ -653,6 +653,28 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.keyboard.press("Escape");
     });
 
+    await step("the settings give new tabs their page size and view", async () => {
+        const choose = async (field, label) => {
+            await page.locator("dialog[open] [data-testid=select-field]").nth(field).click();
+            await page.locator("[data-testid=menu-item]:visible", { hasText: label }).first().click();
+        };
+        await page.keyboard.press("Control+Alt+P");
+        await visible("settings").waitFor();
+        await choose(2, "50");
+        await choose(3, "Table view");
+        await visible("settings-close").click();
+        await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).dblclick();
+        await panel.locator("[data-testid=table-row]").first().waitFor();
+        assert.equal((await panel.locator("[data-testid=page-size]").innerText()).trim(), "50");
+        await page.keyboard.press("Control+w");
+
+        // Back to the defaults: later runs, and the app's own data, start as before.
+        await page.keyboard.press("Control+Alt+P");
+        await choose(2, "20");
+        await choose(3, "Tree view");
+        await visible("settings-close").click();
+    });
+
     await step("Ctrl+Shift+U folds the whole tree", async () => {
         await id("database-row").first().waitFor();
         await page.keyboard.press("Control+Shift+U");

@@ -14,6 +14,12 @@ use crate::error::Result;
 pub struct Setting {
     pub language: Option<String>,
     pub theme: Option<String>,
+    /// Documents per page in new tabs.
+    pub page_size: Option<i64>,
+    /// `tree`, `table` or `json`: the view new tabs start with.
+    pub result_view: Option<String>,
+    /// Pixels.
+    pub editor_font_size: Option<i64>,
 }
 
 pub async fn get(pool: &SqlitePool) -> Result<Setting> {

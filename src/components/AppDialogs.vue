@@ -6,6 +6,7 @@ import CollectionDialog from "@/components/CollectionDialog.vue";
 import ConnectionDialog from "@/components/ConnectionDialog.vue";
 import TaskProgress from "@/components/TaskProgress.vue";
 import IndexDialog from "@/components/IndexDialog.vue";
+import SettingsDialog from "@/components/SettingsDialog.vue";
 import { useDialogState } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 
@@ -209,4 +210,5 @@ async function copyText() {
         :request="state.index"
     />
     <TaskProgress />
+    <SettingsDialog v-model="state.settingsOpen" />
 </template>

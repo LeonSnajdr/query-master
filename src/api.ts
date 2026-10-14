@@ -23,6 +23,12 @@ export interface Setting {
     /** `null`: not chosen, the language of the system is used. */
     language: string | null;
     theme: string | null;
+    /** Documents per page in new tabs. */
+    pageSize: number | null;
+    /** `tree`, `table` or `json`: the view new tabs start with. */
+    resultView: string | null;
+    /** Pixels of the code font. */
+    editorFontSize: number | null;
 }
 
 /** What a script left behind: its last value and what it printed. */

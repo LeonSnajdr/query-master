@@ -91,7 +91,7 @@ const highlight = HighlightStyle.define([
 ]);
 
 const theme = EditorView.theme({
-    "&": { height: "100%", fontSize: "13px", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
+    "&": { height: "100%", fontSize: "var(--editor-font-size, 13px)", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
     "&.cm-focused": { outline: "none" },
     ".cm-content": { caretColor: "var(--v0-primary)", padding: props.singleLine ? "5px 0" : "8px 0" },
     ".cm-line": { padding: props.singleLine ? "0 2px" : "0 6px" },

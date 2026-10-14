@@ -1,4 +1,4 @@
-<script setup lang="ts" generic="T extends string">
+<script setup lang="ts" generic="T extends string | number">
 import { computed } from "vue";
 import DropMenu from "@/components/DropMenu.vue";
 import type { MenuEntry } from "@/menu";

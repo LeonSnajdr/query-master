@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, markRaw, reactive, ref } from "vue";
 import type { Ref } from "vue";
 import { backend, errorMessage } from "@/api";
+import { preferences } from "@/composables/appearance";
 import { isDoc, toNumber, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
@@ -16,7 +17,6 @@ import { useNotesStore } from "./notes";
 
 /** Sizes offered for a page of results. */
 export const PAGE_SIZES = [10, 20, 50, 100, 200, 500];
-const DEFAULT_PAGE_SIZE = 20;
 /** Read at most from a cursor whose result is not paged (index lists, counts …). */
 const UNPAGED_LIMIT = 10_000;
 /** Commands after which the tree of databases and collections may have changed. */
@@ -143,8 +143,9 @@ export const useTabsStore = defineStore("tabs", () => {
                 { name: "projection", text: "{ }", enabled: true },
                 { name: "sort", text: "{ }", enabled: true }
             ],
-            view: "tree",
-            pageSize: DEFAULT_PAGE_SIZE,
+            // As chosen in the settings.
+            view: preferences.resultView,
+            pageSize: preferences.pageSize,
             readonly: false,
             search: "",
             running: false,
