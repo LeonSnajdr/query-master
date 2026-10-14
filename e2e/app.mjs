@@ -644,6 +644,18 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await panel.locator("[data-testid=table-column]", { hasText: "0 - tags.0" }).waitFor();
         await panel.locator("[data-testid=table-step-back]").click();
         await panel.locator("[data-testid=table-column]", { hasText: "tags" }).first().waitFor();
+        // The same by keys: Ctrl+Enter steps into the chosen cell, Backspace back; Ctrl+K hides its column.
+        await panel.locator("[data-testid=table-cell]", { hasText: "[2 elements]" }).click();
+        await page.keyboard.press("Control+Enter");
+        await panel.locator("[data-testid=table-column]", { hasText: "0 - tags.0" }).waitFor();
+        await page.keyboard.press("Backspace");
+        await panel.locator("[data-testid=table-column]", { hasText: "tags" }).first().waitFor();
+        const columns = await panel.locator("[data-testid=table-column]").count();
+        await panel.locator("[data-testid=table-cell]", { hasText: "[2 elements]" }).click();
+        await page.keyboard.press("Control+k");
+        await page.waitForFunction(count => document.querySelectorAll("[data-testid=tab-panel]:not([style*='none']) [data-testid=table-column]").length === count - 1, columns);
+        await page.keyboard.press("Control+Shift+k");
+        await page.waitForFunction(count => document.querySelectorAll("[data-testid=tab-panel]:not([style*='none']) [data-testid=table-column]").length === count, columns);
         await panel.locator("[data-testid=view-tree]").click();
         await write(rows.nth(0), "{ n: { $gte: 2 } }");
         await panel.locator("[data-testid=query-run]").click();

@@ -234,33 +234,92 @@ function select(index: number, column: string) {
     context.selected.value = index;
 }
 
+const unfoldable = computed(() => columns.value.filter(name => levels.value.some(level => children(cell(level.value, name)).length > 0)));
+
+/** What the menu of a cell and the keys do, column by column. */
+const commands = {
+    showEmbedded: (column: string) => (embedded.value = toggle(embedded.value, column, true)),
+    showAllEmbedded: () => (embedded.value = new Set([...embedded.value, ...unfoldable.value])),
+    hideAllEmbedded: () => (embedded.value = new Set()),
+    togglePin: (column: string) => (pinned.value = pinned.value.includes(column) ? pinned.value.filter(name => name !== column) : [...pinned.value, column]),
+    hide: (column: string) => (hidden.value = toggle(hidden.value, column, true)),
+    hideOthers: (column: string) => (hidden.value = new Set(columns.value.filter(name => name !== column))),
+    showAll: () => (hidden.value = new Set())
+};
+
 function openMenu(event: MouseEvent, index: number, column: string) {
     select(index, column);
     const value = cellAt(index, column);
     const nested = children(value).length > 0;
-    const unfoldable = columns.value.filter(name => levels.value.some(level => children(cell(level.value, name)).length > 0));
     const extra: MenuEntry[] = [
-        { label: t("table.embedded.show"), hotkey: "Ctrl + J", disabled: !nested, action: () => (embedded.value = toggle(embedded.value, column, true)) },
-        { label: t("table.embedded.showAll"), hotkey: "Ctrl + Shift + J", disabled: unfoldable.length === 0, action: () => (embedded.value = new Set([...embedded.value, ...unfoldable])) },
-        { label: t("table.embedded.hideAll"), hotkey: "Ctrl + Alt + J", disabled: embedded.value.size === 0, action: () => (embedded.value = new Set()) },
+        { label: t("table.embedded.show"), hotkey: "Ctrl + J", disabled: !nested, action: () => commands.showEmbedded(column) },
+        { label: t("table.embedded.showAll"), hotkey: "Ctrl + Shift + J", disabled: unfoldable.value.length === 0, action: commands.showAllEmbedded },
+        { label: t("table.embedded.hideAll"), hotkey: "Ctrl + Alt + J", disabled: embedded.value.size === 0, action: commands.hideAllEmbedded },
         "separator",
         { label: t("table.stepInto"), icon: "i-lucide-corner-down-right", hotkey: "Ctrl + Enter", disabled: !nested, action: () => stepInto(column) },
-        ...(stack.value.length > 0 ? [{ label: t("table.stepBack"), icon: "i-lucide-arrow-left", action: stepBack }] : []),
+        ...(stack.value.length > 0 ? [{ label: t("table.stepBack"), icon: "i-lucide-arrow-left", hotkey: "Backspace", action: stepBack }] : []),
         pinned.value.includes(column)
-            ? { label: t("table.unpin"), icon: "i-lucide-pin-off", action: () => (pinned.value = pinned.value.filter(name => name !== column)) }
-            : { label: t("table.pin"), icon: "i-lucide-pin", hotkey: "Ctrl + P", action: () => (pinned.value = [...pinned.value, column]) },
+            ? { label: t("table.unpin"), icon: "i-lucide-pin-off", hotkey: "Ctrl + P", action: () => commands.togglePin(column) }
+            : { label: t("table.pin"), icon: "i-lucide-pin", hotkey: "Ctrl + P", action: () => commands.togglePin(column) },
         "separator",
-        { label: t("table.hide"), hotkey: "Ctrl + K", action: () => (hidden.value = toggle(hidden.value, column, true)) },
-        { label: t("table.hideOthers"), hotkey: "Ctrl + Alt + K", action: () => (hidden.value = new Set(columns.value.filter(name => name !== column))) },
-        { label: t("table.showAll"), icon: "i-lucide-eye", hotkey: "Ctrl + Shift + K", disabled: hidden.value.size === 0, action: () => (hidden.value = new Set()) },
+        { label: t("table.hide"), hotkey: "Ctrl + K", action: () => commands.hide(column) },
+        { label: t("table.hideOthers"), hotkey: "Ctrl + Alt + K", action: () => commands.hideOthers(column) },
+        { label: t("table.showAll"), icon: "i-lucide-eye", hotkey: "Ctrl + Shift + K", disabled: hidden.value.size === 0, action: commands.showAll },
         { label: t("table.restore"), action: restore }
     ];
     context.menu(event, { index, path: fullPath(column), value: value ?? null }, extra);
 }
+
+/**
+ * Keys on the table: arrows move the chosen cell, Enter opens it (edit, step into), Backspace
+ * steps back, and the shortcuts of the cell menu act on the chosen cell's column.
+ */
+function onKey(event: KeyboardEvent) {
+    if (editing.value) return;
+    const at = current.value;
+    const key = event.key.toLowerCase();
+    const control = event.ctrlKey || event.metaKey;
+    if (!control && key === "backspace" && stack.value.length > 0) {
+        stepBack();
+    } else if (!control && at && ["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
+        const rows = levels.value.map(level => level.index);
+        const row = rows.indexOf(at.index) + (key === "arrowdown" ? 1 : key === "arrowup" ? -1 : 0);
+        const column = columns.value.indexOf(at.column) + (key === "arrowright" ? 1 : key === "arrowleft" ? -1 : 0);
+        const index = rows[Math.min(Math.max(row, 0), rows.length - 1)];
+        const name = columns.value[Math.min(Math.max(column, 0), columns.value.length - 1)];
+        if (index !== undefined && name !== undefined) select(index, name);
+    } else if (at && key === "enter") {
+        if (control) {
+            if (children(cellAt(at.index, at.column)).length > 0) stepInto(at.column);
+        } else {
+            void activate(at.index, at.column);
+        }
+    } else if (control && key === "j") {
+        if (event.altKey) commands.hideAllEmbedded();
+        else if (event.shiftKey) commands.showAllEmbedded();
+        else if (at) commands.showEmbedded(at.column);
+    } else if (control && key === "k") {
+        if (event.shiftKey) commands.showAll();
+        else if (at && event.altKey) commands.hideOthers(at.column);
+        else if (at) commands.hide(at.column);
+    } else if (control && key === "p" && at) {
+        commands.togglePin(at.column);
+    } else {
+        return;
+    }
+    // Ctrl+P would print, Ctrl+J open the downloads of the web view.
+    event.preventDefault();
+    event.stopPropagation();
+}
 </script>
 
 <template>
-    <div>
+    <div
+        @keydown="onKey"
+        class="outline-none"
+        data-testid="result-table-keys"
+        tabindex="0"
+    >
         <div
             v-if="stack.length > 0"
             class="h-7 flex items-center gap-2 px-2"
@@ -338,7 +397,7 @@ function openMenu(event: MouseEvent, index: number, column: string) {
                             ref="input"
                             v-model="draft"
                             @blur="editing = undefined"
-                            @keydown.enter.prevent="commit"
+                            @keydown.enter.prevent.stop="commit"
                             @keydown.esc.stop="editing = undefined"
                             :aria-label="column"
                             class="w-full min-w-32 h-[17px] px-1 bg-surface-variant border border-primary outline-none font-mono text-on-surface-strong"

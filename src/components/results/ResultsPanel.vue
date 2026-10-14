@@ -76,6 +76,14 @@ function setFold(open: boolean, index?: number) {
     fold.value = { version: fold.value.version + 1, open, index };
 }
 
+/** Ctrl+J unfolds the chosen document, Ctrl+Shift+J folds it, as the menu says. */
+function onTreeKey(event: KeyboardEvent) {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "j" || selected.value === undefined) return;
+    setFold(!event.shiftKey, selected.value);
+    // Without it the web view opens its downloads.
+    event.preventDefault();
+}
+
 /** The value a text stands for, or the message why it is none. */
 function parse(text: string): { value: Json } | { error: string } {
     try {
@@ -552,6 +560,7 @@ provideResultContext({ editable, selected, fold, commit: (target, text) => void 
             </p>
             <div
                 v-else-if="tab.view === 'tree'"
+                @keydown="onTreeKey"
                 class="px-2 pt-1"
                 role="tree"
             >
