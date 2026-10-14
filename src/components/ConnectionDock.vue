@@ -292,6 +292,15 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("database.stats"), action: () => actions.databaseStats(at) },
             { label: t("database.collectionsStats"), action: () => actions.collectionsStats(at) },
+            {
+                label: t("database.export"),
+                icon: "i-lucide-folder-up",
+                children: TRANSFER_FORMATS.map(({ format }): MenuEntry => ({
+                    label: t(`database.export.${format}`),
+                    icon: "i-lucide-upload",
+                    action: () => void transfer.exportDatabase({ connectionId: at.connectionId, database: at.database! }, format)
+                }))
+            },
             "separator",
             { label: t("users.manage"), icon: "i-lucide-users", hotkey: "Ctrl + Alt + U", action: () => actions.manageUsers(at) },
             { label: t("roles.manage"), icon: "i-lucide-shield", hotkey: "Ctrl + Alt + R", action: () => actions.manageRoles(at) },

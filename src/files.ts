@@ -37,6 +37,12 @@ export async function pickFilePath(): Promise<string | undefined> {
     return typeof path === "string" ? path : undefined;
 }
 
+/** Lets the user pick a folder; its path, `undefined` when they cancel. */
+export async function pickFolder(): Promise<string | undefined> {
+    const path = await open({ directory: true, multiple: false });
+    return typeof path === "string" ? path : undefined;
+}
+
 /** Lets the user pick a file of one of the kinds; its path, `undefined` when they cancel. */
 export async function pickOpenPath(kinds: FileKind[]): Promise<string | undefined> {
     const path = await open({ multiple: false, filters: kinds });
