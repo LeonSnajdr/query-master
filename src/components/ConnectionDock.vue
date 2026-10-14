@@ -210,6 +210,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("tab.shell"), icon: "i-lucide-square-terminal", hotkey: "Ctrl + T", action: () => actions.openShell(at) },
             { label: t("tab.aggregation"), icon: "i-lucide-network", hotkey: "Ctrl + Shift + Q", action: () => actions.aggregation(at) },
+            { label: t("tab.sql"), icon: "i-lucide-file-code-2", hotkey: "Ctrl + Alt + Q", action: () => actions.openSql(at) },
             "separator",
             { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(at) },
             { label: t("view.create"), icon: "i-lucide-file-search", hotkey: "Ctrl + Shift + H", action: () => actions.createView(at) },

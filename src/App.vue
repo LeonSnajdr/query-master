@@ -13,6 +13,7 @@ import ContextMenu from "@/components/ContextMenu.vue";
 import IconButton from "@/components/IconButton.vue";
 import ServerPanel from "@/components/server/ServerPanel.vue";
 import ShellPanel from "@/components/ShellPanel.vue";
+import SqlPanel from "@/components/SqlPanel.vue";
 import StartPage from "@/components/StartPage.vue";
 import { useActions } from "@/composables/actions";
 import { useDialogs } from "@/composables/dialogs";
@@ -38,7 +39,7 @@ const tabs = useTabsStore();
 const dock = useTemplateRef("dock");
 const tabMenu = useTemplateRef("tabMenu");
 
-const TAB_ICONS = { start: "i-lucide-info", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", server: "i-lucide-activity" } as const;
+const TAB_ICONS = { start: "i-lucide-info", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", sql: "i-lucide-file-code-2", server: "i-lucide-activity" } as const;
 
 const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield", gridfs: "i-lucide-folder-archive" } as const;
 
@@ -55,6 +56,7 @@ const activeTab = computed({
 function titleOf(tab: WorkTab): string {
     if (tab.kind === "start") return t("start.title");
     if (tab.kind === "server") return t(`server.tab.${tab.page ?? "status"}`, { name: connections.profiles.find(item => item.id === tab.connectionId)?.name ?? "", database: tab.database, bucket: tab.collection ?? "" });
+    if (tab.kind === "sql") return `SQL · ${tab.database}`;
     return tab.kind === "browse" || tab.kind === "aggregate" ? tab.collection ?? "" : tab.database;
 }
 
@@ -96,6 +98,7 @@ useHotkey("ctrl+f2", () => actions.newConnection(), everywhere);
 useHotkey("ctrl+q", () => actions.browse(), everywhere);
 useHotkey("ctrl+t", () => actions.openShell(), everywhere);
 useHotkey("ctrl+shift+q", () => actions.aggregation(), everywhere);
+useHotkey("ctrl+alt+q", () => actions.openSql(), everywhere);
 useHotkey("ctrl+h", () => void actions.createCollection(), everywhere);
 useHotkey("ctrl+shift+h", () => actions.createView(), everywhere);
 useHotkey("ctrl+alt+v", () => actions.editValidator(), everywhere);
@@ -266,6 +269,10 @@ onMounted(async () => {
                     />
                     <AggregatePanel
                         v-else-if="tab.kind === 'aggregate'"
+                        :tabId="tab.id"
+                    />
+                    <SqlPanel
+                        v-else-if="tab.kind === 'sql'"
                         :tabId="tab.id"
                     />
                     <ServerPanel

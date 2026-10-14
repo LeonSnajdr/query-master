@@ -535,6 +535,32 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("browse-title").waitFor();
     });
 
+    await step("the SQL builder turns SELECTs into find and aggregate, and points at mistakes", async () => {
+        await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).click({ button: "right" });
+        await chooseMenu("Open SQL builder");
+        await visible("sql-title").waitFor();
+        const editor = page.locator("[data-testid=tab-panel]:visible [data-testid=code-editor]").first();
+        const sqlRun = async (text) => {
+            await write(editor, text);
+            await panel.locator("[data-testid=query-run]").click();
+            await page.waitForTimeout(150);
+            await panel.locator("[data-testid=query-run]:not([disabled])").waitFor();
+        };
+        await sqlRun(`SELECT name, n FROM ${COLLECTION} WHERE n >= 2 ORDER BY n DESC`);
+        await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 2"));
+        await shot("sql");
+        assert.match(await visible("sql-statement").innerText(), /\.find\(\{ n: \{ \$gte: 2 \} \}, \{ name: 1, n: 1 \}\)\.sort\(\{ n: -1 \}\)/);
+
+        await sqlRun(`SELECT count(*) AS total FROM ${COLLECTION}`);
+        assert.match(await panel.locator("[data-testid=query-result]").innerText(), /total/);
+
+        await sqlRun(`SELECT * ${COLLECTION}`);
+        await panel.locator("[data-testid=query-error]").waitFor();
+        assert.match(await panel.locator("[data-testid=query-error]").innerText(), /Expected FROM/);
+        await page.keyboard.press("Control+w");
+        await visible("browse-title").waitFor();
+    });
+
     await step("filter and sort narrow and order the result", async () => {
         const rows = panel.locator("[data-testid=stage-row]");
         await write(rows.nth(0), "{ n: { $gte: 2 } }");

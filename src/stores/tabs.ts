@@ -12,6 +12,7 @@ import { isWrite, pageCommand, planStatement, replyError } from "@/shell/plan";
 import type { Plan } from "@/shell/plan";
 import { aggregateStatement, keepsDocuments, newStage, previewStages } from "@/shell/pipeline";
 import type { PipelineStage } from "@/shell/pipeline";
+import { sqlToShell } from "@/sql/sql";
 import { useConnectionsStore } from "./connections";
 import { useNotesStore } from "./notes";
 
@@ -24,7 +25,7 @@ const STRUCTURE_COMMANDS = ["create", "drop", "dropDatabase", "renameCollection"
 
 export type ResultView = "tree" | "table" | "json";
 /** The start page, a collection with its query fields, a shell, a pipeline, or a page about the server. */
-export type TabKind = "start" | "browse" | "shell" | "aggregate" | "server";
+export type TabKind = "start" | "browse" | "shell" | "aggregate" | "sql" | "server";
 /** What a server tab shows. */
 /** What a server tab shows; `gridfs` the files of the bucket named in `collection`. */
 export type ServerPage = "status" | "log" | "users" | "roles" | "gridfs";
@@ -89,7 +90,7 @@ export interface WorkTab {
 
 /** Tabs with a query or a script, results and a result view. */
 export function isQueryTab(tab: WorkTab | undefined): tab is WorkTab {
-    return tab?.kind === "browse" || tab?.kind === "shell" || tab?.kind === "aggregate";
+    return tab?.kind === "browse" || tab?.kind === "shell" || tab?.kind === "aggregate" || tab?.kind === "sql";
 }
 
 /** A failed write the server reports in a reply that is otherwise fine. */
@@ -172,6 +173,12 @@ export const useTabsStore = defineStore("tabs", () => {
     function openShell(target: { connectionId: string; database: string; collection?: string; text?: string }): WorkTab {
         const text = target.text ?? (target.collection ? `db.getCollection(${JSON.stringify(target.collection)}).find({})` : "db.");
         return create("shell", { connectionId: target.connectionId, database: target.database, text });
+    }
+
+    /** The SQL builder on a database, with a first SELECT on the collection if one is given. */
+    function openSql(target: { connectionId: string; database: string; collection?: string }): WorkTab {
+        const text = `SELECT *\nFROM ${target.collection ?? "collection"}\nLIMIT 100`;
+        return create("sql", { connectionId: target.connectionId, database: target.database, text });
     }
 
     /** The aggregation builder on a collection, with the stages given or one empty $match. */
@@ -429,8 +436,21 @@ export const useTabsStore = defineStore("tabs", () => {
         });
     }
 
+    /** SQL tabs: the SELECT becomes a shell statement, which runs like one typed in the shell. */
+    function runSql(tab: WorkTab): Promise<boolean> {
+        return guarded(tab, async () => {
+            // A mistake in the SQL keeps its place in the SQL text.
+            const text = sqlToShell(tab.text);
+            const [statement] = parseStatements(text);
+            if (!statement) throw new ShellError("error.plan.nothing");
+            await fetch(tab, planStatement(statement, tab.database), 0, text);
+            remember(tab, tab.text);
+        });
+    }
+
     function runTab(tab: WorkTab): Promise<boolean> {
         if (tab.kind === "aggregate") return runAggregate(tab);
+        if (tab.kind === "sql") return runSql(tab);
         return tab.kind === "browse" ? runBrowse(tab) : run(tab, 0, undefined, true);
     }
 
@@ -534,8 +554,8 @@ export const useTabsStore = defineStore("tabs", () => {
 
     return {
         tabs, activeId, active, historyOf, clearHistory,
-        openStart, openBrowse, openShell, openAggregate, openServer, duplicate, close, closeOthers, closeAll, closeConnection, step,
-        run, stop, runBrowse, runAggregate, runTab, showPage, refresh, count, sourceCollection, editable, locked, lockedByTree, resultText,
+        openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, step,
+        run, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, sourceCollection, editable, locked, lockedByTree, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument
     };
 });

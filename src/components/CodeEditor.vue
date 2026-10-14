@@ -3,8 +3,9 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap, s
 import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { javascript } from "@codemirror/lang-javascript";
+import { sql } from "@codemirror/lang-sql";
 import { HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
 import { EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
@@ -29,9 +30,18 @@ const props = defineProps<{
     readonly?: boolean;
     /** Place of an error to show the cursor at. */
     errorPosition?: number;
+    /** SQL instead of shell code: keywords, and the collections with their fields to suggest. */
+    sqlSchema?: Record<string, string[]>;
 }>();
+
 const text = defineModel<string>({ required: true });
 
+/** The language part, swapped when the SQL schema (collections, fields) becomes known. */
+const language = new Compartment();
+
+function languageExtension(): Extension {
+    return props.sqlSchema ? sql({ schema: props.sqlSchema, upperCaseKeywords: true }) : javascript();
+}
 const { say } = useMessages();
 const host = useTemplateRef<HTMLDivElement>("host");
 let view: EditorView | undefined;
@@ -124,7 +134,7 @@ function extensions(): Extension[] {
         drawSelection(),
         bracketMatching(),
         indentUnit.of("    "),
-        javascript(),
+        language.of(languageExtension()),
         syntaxHighlighting(highlight),
         EditorView.contentAttributes.of({ "aria-label": props.label }),
         theme
@@ -136,7 +146,8 @@ function extensions(): Extension[] {
         history(),
         indentOnInput(),
         closeBrackets(),
-        autocompletion({ override: [complete], icons: true }),
+        // SQL completes from its language (keywords, schema); shell code from the shell's catalog.
+        props.sqlSchema ? autocompletion({ icons: true }) : autocompletion({ override: [complete], icons: true }),
         // Before the default keys, so Ctrl+Enter is not taken as "new line below".
         keymap.of([
             { key: "Mod-Enter", run },
@@ -171,6 +182,8 @@ watch(text, (value) => {
     if (!view || value === view.state.doc.toString()) return;
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
 });
+
+watch(() => props.sqlSchema, () => view?.dispatch({ effects: language.reconfigure(languageExtension()) }));
 
 watch(() => props.errorPosition, (position) => {
     if (!view || position === undefined) return;

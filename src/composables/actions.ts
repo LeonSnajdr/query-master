@@ -96,6 +96,13 @@ export function useActions() {
         }
     }
 
+    /** The SQL builder on the database, starting with a SELECT on the collection if one is chosen. */
+    function openSql(at = target.value) {
+        if (!at) return;
+        const database = at.database ?? connections.sessions[at.connectionId]?.databases[0]?.name ?? "test";
+        tabs.openSql({ connectionId: at.connectionId, database, collection: at.collection });
+    }
+
     /** A shell that runs one statement right away (statistics, server status …). */
     function inspect(at: TreeSelection, database: string, text: string) {
         const tab = tabs.openShell({ connectionId: at.connectionId, database, text });
@@ -351,7 +358,7 @@ export function useActions() {
 
     return {
         target, hasConnection, hasDatabase, hasCollection,
-        openShell, browse, aggregation, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
+        openShell, browse, aggregation, openSql, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable,
         refresh, connect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
