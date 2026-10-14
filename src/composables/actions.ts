@@ -1,4 +1,3 @@
-import { useNotifications } from "@vuetify/v0";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend } from "@/api";
@@ -7,6 +6,7 @@ import { useDialogs } from "@/composables/dialogs";
 import { useExportWizard } from "@/composables/exportWizard";
 import { useImportWizard } from "@/composables/importWizard";
 import { useMessages } from "@/composables/messages";
+import { useNotices } from "@/composables/notices";
 import type { Doc } from "@/shell/ejson";
 import { toShell } from "@/shell/ejson";
 import { bucketIndexes } from "@/shell/gridfs";
@@ -39,7 +39,7 @@ db.getCollectionInfos({ type: "collection" }).map(info => {
 export function useActions() {
     const { t } = useI18n();
     const { say, report } = useMessages();
-    const notifications = useNotifications();
+    const notices = useNotices();
     const dialogs = useDialogs();
     const connections = useConnectionsStore();
     const notes = useNotesStore();
@@ -275,7 +275,7 @@ export function useActions() {
         const hidden = index.hidden !== true;
         if (await command(at.connectionId, at.database, { collMod: at.collection, index: { name: at.index, hidden } })) {
             await connections.loadIndexes(at.connectionId, at.database, at.collection).catch(report);
-            notifications.send({ subject: t(hidden ? "index.hidden" : "index.shown", { name: at.index }), timeout: 3000 });
+            notices.answer(t(hidden ? "index.hidden" : "index.shown", { name: at.index }));
         }
     }
 

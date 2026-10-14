@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SplitterHandle, SplitterPanel, SplitterRoot, useNotifications } from "@vuetify/v0";
+import { SplitterHandle, SplitterPanel, SplitterRoot } from "@vuetify/v0";
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import CodeEditor from "@/components/CodeEditor.vue";
@@ -9,6 +9,7 @@ import ReadonlyToggle from "@/components/ReadonlyToggle.vue";
 import ResultsPanel from "@/components/results/ResultsPanel.vue";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
+import { useNotices } from "@/composables/notices";
 import { sqlCollection, sqlToShell } from "@/sql/sql";
 import { useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
@@ -22,7 +23,7 @@ const props = defineProps<{
 const { t } = useI18n();
 const { report } = useMessages();
 const keymap = useKeymap();
-const notifications = useNotifications();
+const notices = useNotices();
 const { layout } = useLayout();
 const connections = useConnectionsStore();
 const tabs = useTabsStore();
@@ -62,7 +63,7 @@ async function copyStatement() {
     if (!statement.value) return;
     try {
         await navigator.clipboard.writeText(statement.value);
-        notifications.send({ subject: t("action.copied"), timeout: 1500 });
+        notices.answer(t("action.copied"));
     } catch (error) {
         report(error);
     }

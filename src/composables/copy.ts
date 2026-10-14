@@ -1,10 +1,10 @@
-import { useNotifications } from "@vuetify/v0";
 import { shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend } from "@/api";
 import type { Place } from "@/api";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
+import { useNotices } from "@/composables/notices";
 import { useTask } from "@/composables/task";
 import { ShellError } from "@/shell/message";
 import { useConnectionsStore } from "@/stores/connections";
@@ -20,7 +20,7 @@ const copied = shallowRef<Place[]>();
 export function useCopy() {
     const { t } = useI18n();
     const { report } = useMessages();
-    const notifications = useNotifications();
+    const notices = useNotices();
     const dialogs = useDialogs();
     const connections = useConnectionsStore();
     const notes = useNotesStore();
@@ -28,7 +28,7 @@ export function useCopy() {
 
     function copy(place: Place) {
         copied.value = [{ ...place }];
-        notifications.send({ subject: t("copy.picked", { name: place.collection }), timeout: 3000 });
+        notices.answer(t("copy.picked", { name: place.collection }));
     }
 
     /** Every collection and view of a database; the server's own (`system.*`) can not be created anew. */
@@ -42,12 +42,12 @@ export function useCopy() {
         const types = connections.sessions[connectionId]?.databases.find(item => item.name === database)?.types ?? {};
         const names = connections.collectionsOf(connectionId, database).filter(name => !name.startsWith("system."));
         if (names.length === 0) {
-            notifications.send({ subject: t("copy.nothing", { database }), timeout: 3000 });
+            notices.answer(t("copy.nothing", { database }), "info");
             return;
         }
         const ordered = [...names.filter(name => types[name] !== "view"), ...names.filter(name => types[name] === "view")];
         copied.value = ordered.map(collection => ({ connectionId, database, collection }));
-        notifications.send({ subject: t("copy.pickedMany", { count: ordered.length, database }, ordered.length), timeout: 3000 });
+        notices.answer(t("copy.pickedMany", { count: ordered.length, database }, ordered.length));
     }
 
     /** The name the copy gets in `database`, and whether it replaces a collection of that name. */
@@ -89,14 +89,15 @@ export function useCopy() {
                 );
                 done += 1;
                 if (sources.length > 1) continue;
-                notifications.send({
-                    subject: result.view
+                notices.notify({
+                    kind: "success",
+                    title: result.view
                         ? t("copy.doneView", { name: choice.name })
                         : t("copy.done", { name: choice.name, documents: result.documents.toLocaleString(), indexes: result.indexes }),
-                    timeout: 4000
+                    detail: `${source.database}.${source.collection} → ${database}.${choice.name}`
                 });
             }
-            if (sources.length > 1) notifications.send({ subject: t("copy.doneMany", { count: done, database }, done), timeout: 4000 });
+            if (sources.length > 1) notices.notify({ kind: "success", title: t("copy.doneMany", { count: done, database }, done) });
         } catch (error) {
             // A failed or stopped copy ends the run; what was copied before stays.
             report(error);

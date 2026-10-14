@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SwitchRoot, SwitchThumb, SwitchTrack, useNotifications } from "@vuetify/v0";
+import { SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
 import { computed, reactive, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend } from "@/api";
@@ -12,6 +12,7 @@ import ResultsPanel from "@/components/results/ResultsPanel.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
+import { useNotices } from "@/composables/notices";
 import type { MenuEntry } from "@/menu";
 import { STAGES } from "@/shell/catalog";
 import type { Environment } from "@/shell/complete";
@@ -34,7 +35,7 @@ const MAX_LINES = 14;
 const { t } = useI18n();
 const keymap = useKeymap();
 const { report } = useMessages();
-const notifications = useNotifications();
+const notices = useNotices();
 const dialogs = useDialogs();
 const { layout } = useLayout();
 const connections = useConnectionsStore();
@@ -153,7 +154,7 @@ function move(by: -1 | 1) {
 async function copyPipeline() {
     try {
         await navigator.clipboard.writeText(wholeStatement());
-        notifications.send({ subject: t("action.copied"), timeout: 1500 });
+        notices.answer(t("action.copied"));
     } catch (error) {
         report(error);
     }

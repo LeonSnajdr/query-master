@@ -1,9 +1,9 @@
-import { useNotifications } from "@vuetify/v0";
 import { reactive, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
 import type { ExportOutcome } from "@/api";
 import { useMessages } from "@/composables/messages";
+import { useNotices } from "@/composables/notices";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
@@ -48,7 +48,7 @@ const wizard = reactive({
 export function useExportWizard() {
     const { t } = useI18n();
     const { say, report } = useMessages();
-    const notifications = useNotifications();
+    const notices = useNotices();
     const connections = useConnectionsStore();
     const notes = useNotesStore();
     const busy = shallowRef(false);
@@ -143,10 +143,10 @@ export function useExportWizard() {
             });
             wizard.outcome = outcome;
             if (outcome.clipboard !== null) await navigator.clipboard.writeText(outcome.clipboard);
-            notifications.send({
-                subject: t(outcome.failed > 0 ? "export.doneWithFailures" : "export.done", { documents: outcome.documents.toLocaleString(), failed: outcome.failed }, outcome.documents),
-                severity: outcome.failed > 0 ? "error" : undefined,
-                timeout: 5000
+            // Rows that failed leave a warning that stays; the rows show why in the wizard.
+            notices.notify({
+                kind: outcome.failed > 0 ? "warning" : "success",
+                title: t(outcome.failed > 0 ? "export.doneWithFailures" : "export.done", { documents: outcome.documents.toLocaleString(), failed: outcome.failed }, outcome.documents)
             });
             if (state.format === "database") await connections.loadDatabases(state.database.connectionId).catch(() => undefined);
         } catch (error) {

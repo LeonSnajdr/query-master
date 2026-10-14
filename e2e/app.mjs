@@ -78,9 +78,9 @@ async function choose(field, text) {
     await valueBecomes(input, text);
 }
 
-/** Closes every toast, so none lies over what is clicked next. */
+/** Closes every notice card, so none lies over what is clicked next. */
 async function dismissToasts() {
-    const close = page.locator("button[aria-label=Dismiss]:visible");
+    const close = page.locator("[data-testid=notice-close]:visible");
     for (let round = 0; round < 20 && await close.count() > 0; round++) await close.first().click().catch(() => undefined);
 }
 
@@ -272,7 +272,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.match(text, /\nat\n:\n[^\n]*2024[^\n]*\ndate\n/);
         // Without a filter the count comes from the collection itself.
         await panel.locator("[data-testid=result-count]").click();
-        await page.locator("text=/matches 3 documents/").first().waitFor();
+        await page.locator("[data-testid=status-message]", { hasText: /matches 3 documents/ }).waitFor();
         // The export of the result opens the wizard with its collection, as one row; so does Ctrl+S.
         await visible("result-export").click();
         await id("export-wizard").waitFor();
@@ -542,7 +542,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.equal(await id("prompt-input").inputValue(), `${COLLECTION}_copy`);
         await id("prompt-submit").click();
         await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_copy` }).waitFor();
-        await page.getByText(`Copied to ${COLLECTION}_copy: 3 documents, 0 indexes.`).first().waitFor();
+        await page.locator("[data-testid=notice-title]", { hasText: `Copied to ${COLLECTION}_copy: 3 documents, 0 indexes.` }).waitFor();
     });
 
     await step("a collection marked read-only in the tree refuses changes until the mark is gone", async () => {
@@ -564,8 +564,10 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         // Neither the tree nor a tab on the collection may change it now.
         await row.click({ button: "right" });
         await chooseMenu("Drop collection");
-        await page.getByText("is marked read-only in the connection tree").first().waitFor();
+        await page.locator("[data-testid=notice-title]", { hasText: "is marked read-only in the connection tree" }).first().waitFor();
         assert.equal(await page.locator("dialog[open]").count(), 0);
+        // A problem's card stays until it is closed: closed here, so it lies over nothing later on.
+        await dismissToasts();
         await row.dblclick();
         await visible("browse-title").waitFor();
         const lock = visible("query-readonly");
@@ -961,7 +963,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
 
     await step("counting reports all matching documents", async () => {
         await panel.locator("[data-testid=result-count]").click();
-        await page.locator("text=/matches 2 documents/").first().waitFor();
+        await page.locator("[data-testid=status-message]", { hasText: /matches 2 documents/ }).waitFor();
     });
 
     await step("a document is removed after confirming", async () => {
@@ -1005,6 +1007,45 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.locator("dialog[open]", { hasText: "Remove 2 documents?" }).waitFor();
         await id("confirm-action").click();
         await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 1"));
+    });
+
+    await step("notices: an answer in the status bar, cards that close, the session's list behind the bell", async () => {
+        // An answer to a click: only in the status bar, no card.
+        await panel.locator("[data-testid=result-count]").click();
+        await page.locator("[data-testid=status-message]", { hasText: /matches 1 document/ }).waitFor();
+        // A problem: a card that stays, with "Copy", until it is closed. The clipboard holds no document.
+        await page.evaluate(() => navigator.clipboard.writeText("not a document"));
+        await page.keyboard.press("Control+Shift+V");
+        const error = page.locator("[data-testid=notice][data-kind=error]").first();
+        await error.waitFor();
+        await error.locator("[data-testid=notice-action]", { hasText: "Copy" }).waitFor();
+        await page.waitForTimeout(4500);
+        assert.equal(await error.isVisible(), true, "an error went away by itself");
+        // With a dialog open the stack moves to the top right, over the dialog, away from its buttons.
+        await page.keyboard.press("Control+Alt+P");
+        await visible("settings").waitFor();
+        await page.locator("[data-testid=notice-stack][data-placement=top]").waitFor();
+        const onTop = await error.evaluate((card) => {
+            const box = card.getBoundingClientRect();
+            return card.contains(document.elementFromPoint(box.left + box.width / 2, box.top + 12));
+        });
+        assert.equal(onTop, true, "the card lies under the dialog's backdrop");
+        await shot("notice-over-dialog");
+        await visible("settings-close").click();
+        await page.locator("[data-testid=notice-stack][data-placement=bottom]").waitFor();
+        await error.locator("[data-testid=notice-close]").click();
+        await error.waitFor({ state: "hidden" });
+        // Behind the bell: the session's notices, the error among them; opening reads them.
+        assert.match(await id("notice-count").innerText(), /^\d+$/);
+        await id("notice-bell").click();
+        const entries = page.locator("[data-testid=notice-entry]:visible");
+        assert.ok(await entries.count() >= 2);
+        await entries.filter({ hasText: /matches 1 document/ }).first().waitFor();
+        await shot("notice-center");
+        await visible("notice-clear").click();
+        assert.equal(await entries.count(), 0);
+        await page.keyboard.press("Escape");
+        assert.equal(await id("notice-count").count(), 0);
     });
 
     await step("the history offers the statements that ran", async () => {

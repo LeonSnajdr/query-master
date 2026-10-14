@@ -6,7 +6,9 @@ import { inApp } from "@/api";
 import AppMenuBar from "@/components/AppMenuBar.vue";
 import AggregatePanel from "@/components/AggregatePanel.vue";
 import AppDialogs from "@/components/AppDialogs.vue";
-import AppSnackbars from "@/components/AppSnackbars.vue";
+import NoticeBell from "@/components/NoticeBell.vue";
+import NoticeStack from "@/components/NoticeStack.vue";
+import StatusMessage from "@/components/StatusMessage.vue";
 import BrowsePanel from "@/components/BrowsePanel.vue";
 import ConnectionDock from "@/components/ConnectionDock.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
@@ -357,7 +359,10 @@ onMounted(async () => {
                 <span class="text-on-surface-variant">»</span>
                 <span class="truncate">{{ fieldPath }}</span>
             </span>
+            <StatusMessage />
             <span class="grow" />
+            <NoticeBell />
+            <span class="toolbar-rule" />
             <span
                 class="tabular-nums text-on-surface-variant"
                 data-testid="status-time"
@@ -385,6 +390,6 @@ onMounted(async () => {
 
         <ContextMenu ref="tabMenu" />
         <AppDialogs />
-        <AppSnackbars />
+        <NoticeStack />
     </div>
 </template>

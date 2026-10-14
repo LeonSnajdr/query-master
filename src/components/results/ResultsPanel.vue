@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ToggleGroup, ToggleRoot, useNotifications } from "@vuetify/v0";
+import { ToggleGroup, ToggleRoot } from "@vuetify/v0";
 import { computed, ref, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage, inApp } from "@/api";
@@ -11,6 +11,7 @@ import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import { useExportWizard } from "@/composables/exportWizard";
 import { useImportWizard } from "@/composables/importWizard";
+import { useNotices } from "@/composables/notices";
 import { useKeymap, useShortcut } from "@/keys/keymap";
 import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
@@ -38,7 +39,7 @@ const { t } = useI18n();
 const { say, report } = useMessages();
 const dialogs = useDialogs();
 const keymap = useKeymap();
-const notifications = useNotifications();
+const notices = useNotices();
 const tabs = useTabsStore();
 const importWizard = useImportWizard();
 const exportWizard = useExportWizard();
@@ -227,7 +228,7 @@ async function commit(target: ResultTarget, text: string) {
     if (!document) return;
     const parsed = parse(text);
     if ("error" in parsed) {
-        notifications.send({ subject: parsed.error, severity: "error", timeout: 8000 });
+        notices.notify({ kind: "error", title: parsed.error });
         return;
     }
     if (!await tabs.setField(tab.value, document._id!, target.path, parsed.value)) report(tab.value.error);
@@ -241,7 +242,7 @@ async function removeField(target: ResultTarget) {
 async function copy(text: string) {
     try {
         await navigator.clipboard.writeText(text);
-        notifications.send({ subject: t("action.copied"), timeout: 1500 });
+        notices.answer(t("action.copied"));
     } catch (error) {
         report(error);
     }
@@ -309,7 +310,7 @@ async function openExport() {
     const documents = result.value.items;
     try {
         if (await saveTextFile(`${collection.value ?? tab.value.database}.json`, JSON_FILES, JSON.stringify(documents, null, 2))) {
-            notifications.send({ subject: t("result.exported", { count: documents.length }, documents.length), timeout: 3000 });
+            notices.notify({ kind: "success", title: t("result.exported", { count: documents.length }, documents.length) });
         }
     } catch (error) {
         report(error);
@@ -371,7 +372,7 @@ async function importClipboard() {
         });
         if (!confirmed) return;
         if (await tabs.insertDocuments(tab.value, documents)) {
-            notifications.send({ subject: t("result.imported", { count: documents.length }, documents.length), timeout: 3000 });
+            notices.notify({ kind: "success", title: t("result.imported", { count: documents.length }, documents.length) });
         } else report(tab.value.error);
     } catch (error) {
         report(error);
@@ -386,7 +387,7 @@ async function importShown() {
         const documents = readDocuments(text);
         if (documents.length === 0) return;
         if (await tabs.insertDocuments(tab.value, documents)) {
-            notifications.send({ subject: t("result.imported", { count: documents.length }, documents.length), timeout: 3000 });
+            notices.notify({ kind: "success", title: t("result.imported", { count: documents.length }, documents.length) });
         } else report(tab.value.error);
     } catch (error) {
         report(error);
@@ -396,7 +397,7 @@ async function importShown() {
 async function countDocuments() {
     try {
         const count = await tabs.count(tab.value);
-        if (count !== undefined) notifications.send({ subject: t("result.counted", { count }, count), timeout: 4000 });
+        if (count !== undefined) notices.answer(t("result.counted", { count }, count));
     } catch (error) {
         report(error);
     }

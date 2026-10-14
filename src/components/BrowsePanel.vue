@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SwitchRoot, SwitchThumb, SwitchTrack, useNotifications } from "@vuetify/v0";
+import { SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
 import { computed, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import CodeEditor from "@/components/CodeEditor.vue";
@@ -10,6 +10,7 @@ import ReadonlyToggle from "@/components/ReadonlyToggle.vue";
 import ResultsPanel from "@/components/results/ResultsPanel.vue";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
+import { useNotices } from "@/composables/notices";
 import type { MenuEntry } from "@/menu";
 import type { Environment } from "@/shell/complete";
 import { preview } from "@/shell/ejson";
@@ -29,7 +30,7 @@ const props = defineProps<{
 const { t } = useI18n();
 const keymap = useKeymap();
 const { report } = useMessages();
-const notifications = useNotifications();
+const notices = useNotices();
 const { layout } = useLayout();
 const connections = useConnectionsStore();
 const tabs = useTabsStore();
@@ -89,7 +90,7 @@ function resetFields() {
 async function copyQuery() {
     try {
         await navigator.clipboard.writeText(browseStatement(tab.value));
-        notifications.send({ subject: t("action.copied"), timeout: 1500 });
+        notices.answer(t("action.copied"));
     } catch (error) {
         report(error);
     }

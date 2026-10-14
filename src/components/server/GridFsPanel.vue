@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { useNotifications } from "@vuetify/v0";
 import { computed, onMounted, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage, inApp } from "@/api";
 import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
+import { useNotices } from "@/composables/notices";
 import { useTask } from "@/composables/task";
 import { pickFilePath, pickSavePath } from "@/files";
 import { isDoc, preview, toNumber } from "@/shell/ejson";
@@ -24,7 +24,7 @@ const LISTED = 1000;
 
 const { t, n } = useI18n();
 const { say, report } = useMessages();
-const notifications = useNotifications();
+const notices = useNotices();
 const dialogs = useDialogs();
 const task = useTask();
 const tabs = useTabsStore();
@@ -85,7 +85,7 @@ async function upload() {
         if (!path) return;
         await task.track(t("gridfs.uploading"), path, (runId, progress) =>
             backend.gridfsUpload(runId, props.tab.connectionId, props.tab.database, bucket.value, path, progress));
-        notifications.send({ subject: t("gridfs.uploaded", { name: path.split(/[\\/]/).pop() ?? path }), timeout: 3000 });
+        notices.notify({ kind: "success", title: t("gridfs.uploaded", { name: path.split(/[\\/]/).pop() ?? path }), detail: `${bucket.value} @ ${props.tab.database}` });
         await load();
     } catch (cause) {
         report(cause);
@@ -101,7 +101,7 @@ async function download() {
         if (!path) return;
         await task.track(t("gridfs.downloading"), path, (runId, progress) =>
             backend.gridfsDownload(runId, props.tab.connectionId, props.tab.database, bucket.value, file._id ?? null, toNumber(file.length) ?? 0, path, progress));
-        notifications.send({ subject: t("gridfs.downloaded", { name: nameOf(file) }), timeout: 3000 });
+        notices.notify({ kind: "success", title: t("gridfs.downloaded", { name: nameOf(file) }), detail: path });
     } catch (cause) {
         report(cause);
     }

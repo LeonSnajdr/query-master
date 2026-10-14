@@ -1,29 +1,31 @@
 import { reactive } from "vue";
+import { useI18n } from "vue-i18n";
 import { backend } from "@/api";
+import { useNotices } from "@/composables/notices";
 
-/** The long piece of work that is running (a copy, an export, an import), for the progress dialog. */
+/** The long piece of work that is running (a copy, an upload, a download): one at a time. */
 const running = reactive({
-    runId: undefined as string | undefined,
-    title: "",
-    text: "",
-    done: 0,
-    /** `0` when the end is not known beforehand. */
-    total: 0
+    runId: undefined as string | undefined
 });
 
-/** One long piece of work at a time, shown with its progress and a way to stop it. */
+/**
+ * One long piece of work at a time, shown as a notice with its progress and "Stop"; the app stays
+ * usable meanwhile. Closed, the notice goes on in the status bar.
+ */
 export function useTask() {
-    /** Runs `work` with a new run id; the dialog shows while it lasts. */
+    const { t } = useI18n();
+    const notices = useNotices();
+
+    /** Runs `work` with a new run id; the notice shows while it lasts. */
     async function track<T>(title: string, text: string, work: (runId: string, progress: (done: number, total?: number) => void) => Promise<T>): Promise<T> {
         const runId = `task-${Date.now()}`;
-        Object.assign(running, { runId, title, text, done: 0, total: 0 });
+        running.runId = runId;
+        const shown = notices.progress(title, text, { label: t("action.stop"), run: () => void backend.stopRun(runId) });
         try {
-            return await work(runId, (done, total) => {
-                running.done = done;
-                if (total !== undefined) running.total = total;
-            });
+            return await work(runId, (done, total) => shown.update(done, total));
         } finally {
             running.runId = undefined;
+            shown.finish();
         }
     }
 
