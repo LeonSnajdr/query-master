@@ -9,6 +9,7 @@ import IconButton from "@/components/IconButton.vue";
 import NoteMarks from "@/components/NoteMarks.vue";
 import { useActions } from "@/composables/actions";
 import { useCopy } from "@/composables/copy";
+import { TRANSFER_FORMATS, useTransfer } from "@/composables/transfer";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import type { MenuEntry } from "@/menu";
@@ -23,6 +24,7 @@ const { report } = useMessages();
 const dialogs = useDialogs();
 const actions = useActions();
 const copying = useCopy();
+const transfer = useTransfer();
 const connections = useConnectionsStore();
 const notes = useNotesStore();
 const menu = useTemplateRef("menu");
@@ -195,6 +197,13 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("collection.copy"), icon: "i-lucide-copy", hotkey: "Ctrl + C", action: () => copying.copy({ connectionId: at.connectionId, database: at.database!, collection: at.collection! }) },
             paste(at.database!),
+            ...TRANSFER_FORMATS.map(({ format }): MenuEntry => ({
+                label: t(`collection.export.${format}`),
+                icon: "i-lucide-upload",
+                action: () => void transfer.exportCollection({ connectionId: at.connectionId, database: at.database! }, at.collection!, format)
+            })),
+            { label: t("collection.import"), icon: "i-lucide-download", action: () => void transfer.importCollection({ connectionId: at.connectionId, database: at.database! }, at.collection!), disabled: isView(at) },
+            "separator",
             { label: t("collection.rename"), action: () => void actions.renameCollection(at) },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", hotkey: "Del", danger: true, action: () => void actions.dropCollection(at) },
             "separator",

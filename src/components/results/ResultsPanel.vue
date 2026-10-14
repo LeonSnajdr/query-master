@@ -10,9 +10,8 @@ import DropMenu from "@/components/DropMenu.vue";
 import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
-import { useTask } from "@/composables/task";
-import { CSV_FILES, JSON_FILES, JSON_LINES_FILES, openTextFile, pickOpenPath, pickSavePath, saveTextFile } from "@/files";
-import type { FileKind } from "@/files";
+import { TRANSFER_FORMATS, useTransfer } from "@/composables/transfer";
+import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { isDoc, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
@@ -39,7 +38,7 @@ const { say, report } = useMessages();
 const dialogs = useDialogs();
 const notifications = useNotifications();
 const tabs = useTabsStore();
-const task = useTask();
+const transfer = useTransfer();
 // The store's own object: the view, the page size and the search are changed here.
 const tab = computed(() => tabs.tabs.find(item => item.id === props.tabId)!);
 const result = computed(() => tab.value.result);
@@ -195,12 +194,7 @@ function showQueryCode() {
     dialogs.showText({ title: t("result.code"), text: statement, variants });
 }
 
-const FORMATS: { format: TransferFormat; kind: FileKind; extension: string }[] = [
-    { format: "json", kind: JSON_FILES, extension: "json" },
-    { format: "jsonLines", kind: JSON_LINES_FILES, extension: "jsonl" },
-    { format: "csv", kind: CSV_FILES, extension: "csv" }
-];
-const exportEntries = computed<MenuEntry[]>(() => FORMATS.map(({ format }) => ({
+const exportEntries = computed<MenuEntry[]>(() => TRANSFER_FORMATS.map(({ format }) => ({
     label: t(`result.export.${format}`),
     action: () => void exportDocuments(format)
 })));
@@ -219,25 +213,17 @@ function exportCommand(): Doc | undefined {
 async function exportDocuments(format: TransferFormat) {
     const plan = tab.value.plan;
     if (!result.value) return;
-    const { kind, extension } = FORMATS.find(item => item.format === format)!;
-    const name = `${collection.value ?? tab.value.database}.${extension}`;
+    const name = collection.value ?? tab.value.database;
     try {
         const command = exportCommand();
         if (!inApp || !plan || !command) {
             const documents = result.value.items;
-            if (await saveTextFile(name, JSON_FILES, JSON.stringify(documents, null, 2))) {
+            if (await saveTextFile(`${name}.json`, JSON_FILES, JSON.stringify(documents, null, 2))) {
                 notifications.send({ subject: t("result.exported", { count: documents.length }, documents.length), timeout: 3000 });
             }
             return;
         }
-        const path = await pickSavePath(name, kind);
-        if (!path) return;
-        const outcome = await task.track(t("result.export.running"), path, (runId, progress) =>
-            backend.exportDocuments(runId, tab.value.connectionId, plan.database, command, path, format, progress));
-        notifications.send({ subject: t("result.exported", { count: outcome.documents }, outcome.documents), timeout: 3000 });
-        if (outcome.skippedFields.length > 0) {
-            notifications.send({ subject: t("result.export.skipped", { fields: outcome.skippedFields.join(", ") }), timeout: 8000 });
-        }
+        await transfer.exportCommand({ connectionId: tab.value.connectionId, database: plan.database }, command, name, format);
     } catch (error) {
         report(error);
     }
@@ -268,15 +254,8 @@ async function importDocuments() {
     if (!inApp) return importShown();
     const database = tab.value.plan?.database ?? tab.value.database;
     try {
-        if (tabs.locked(tab.value) || tabs.lockedByTree(tab.value, database, target)) throw new ShellError("error.plan.readonly");
-        const path = await pickOpenPath(FORMATS.map(item => item.kind));
-        if (!path) return;
-        const extension = path.split(".").pop()?.toLowerCase() ?? "";
-        const format: TransferFormat = extension === "csv" ? "csv" : "json";
-        const outcome = await task.track(t("result.import.running"), path, (runId, progress) =>
-            backend.importDocuments(runId, tab.value.connectionId, database, target, path, format, progress));
-        notifications.send({ subject: t("result.imported", { count: outcome.documents }, outcome.documents), timeout: 3000 });
-        await tabs.refresh(tab.value);
+        if (tabs.locked(tab.value)) throw new ShellError("error.plan.readonly");
+        if (await transfer.importInto({ connectionId: tab.value.connectionId, database }, target)) await tabs.refresh(tab.value);
     } catch (error) {
         report(error);
     }
@@ -359,7 +338,7 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
         { label: t("result.expand.all"), action: () => setFold(true) },
         { label: t("result.collapse.all"), action: () => setFold(false) },
         "separator",
-        ...FORMATS.map(({ format }): MenuEntry => ({ label: t(`result.export.${format}`), icon: "i-lucide-upload", action: () => void exportDocuments(format) })),
+        ...TRANSFER_FORMATS.map(({ format }): MenuEntry => ({ label: t(`result.export.${format}`), icon: "i-lucide-upload", action: () => void exportDocuments(format) })),
         { label: t("result.import"), icon: "i-lucide-download", action: () => void importDocuments(), disabled: collection.value === undefined || tabs.locked(tab.value) },
         { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", action: () => void importClipboard(), disabled: collection.value === undefined || tabs.locked(tab.value) },
         { label: t("document.refresh"), icon: "i-lucide-rotate-cw", action: () => void tabs.refreshDocument(tab.value, target.index).catch(report), disabled: !document || collection.value === undefined },
