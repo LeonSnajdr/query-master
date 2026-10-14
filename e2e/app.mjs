@@ -362,7 +362,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("browse-title").waitFor();
     });
 
-    await step("a role and a user with it are created, changed and dropped", async () => {
+    await step("a role and a user with it are created, signed in with, changed and dropped", async () => {
         const role = `${COLLECTION}_role`;
         const user = `${COLLECTION}_user`;
         await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
@@ -379,7 +379,8 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await chooseMenu("Manage users");
         await visible("user-new").click();
         await visible("user-name").fill(user);
-        await visible("user-password").fill(`pw-${Math.random().toString(36).slice(2)}`);
+        const password = `pw-${Math.random().toString(36).slice(2)}`;
+        await visible("user-password").fill(password);
         await page.locator("[data-testid=role-name]:visible").first().fill(role);
         await visible("user-save").click();
         const item = page.locator("[data-testid=user-item]:visible", { hasText: user });
@@ -394,6 +395,41 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("user-save").click();
         await page.locator("[data-testid=role-row]:visible").nth(1).waitFor();
         await valueBecomes(page.locator("[data-testid=role-name]:visible").nth(1), "read");
+
+        // The new user signs in with a connection of its own and sees only what the role grants.
+        const limited = new URL(uri);
+        limited.username = user;
+        limited.password = password;
+        limited.pathname = `/${DATABASE}`;
+        limited.searchParams.set("authSource", DATABASE);
+        const limitedName = `Limited ${process.pid}`;
+        await page.locator("[data-testid=tab]", { hasText: "Startup page" }).click();
+        await id("start-create").click();
+        await id("connection-name").fill(limitedName);
+        await id("connection-from-uri").click();
+        await id("prompt-input").fill(limited.toString());
+        await id("prompt-submit").click();
+        await id("connection-save").click();
+        // Folded first: the databases that show afterwards are those of the new connection only.
+        await page.keyboard.press("Control+Shift+U");
+        await id("database-row").first().waitFor({ state: "detached" });
+        await page.locator("[data-testid=recent-connection]", { hasText: limitedName }).click();
+        const limitedRow = page.locator("[data-testid=connection-row]", { hasText: limitedName });
+        await limitedRow.waitFor();
+        await id("database-row").first().waitFor();
+        assert.deepEqual((await id("database-row").allInnerTexts()).map(text => text.trim().split(/\s/)[0]), [DATABASE]);
+        await limitedRow.click({ button: "right" });
+        await chooseMenu("Disconnect");
+        await id("connection-list").click();
+        const limitedItem = page.locator("[data-testid=connection-item]:visible", { hasText: limitedName });
+        await limitedItem.locator("button[aria-label=Delete]").click();
+        await id("confirm-action").click();
+        await page.locator("[data-testid=recent-connection]", { hasText: limitedName }).waitFor({ state: "detached" });
+        // The tree as the later steps expect it: the test database open.
+        await page.locator("[data-testid=connection-row]", { hasText: NAME }).dblclick();
+        await page.locator("[data-testid=database-row]", { hasText: DATABASE }).locator("[data-testid=database-toggle]").click();
+        await page.locator("[data-testid=collection-row]").first().waitFor();
+        await page.locator("[data-testid=tab]", { hasText: "Users of" }).click();
 
         await visible("user-drop").click();
         await id("confirm-action").click();
