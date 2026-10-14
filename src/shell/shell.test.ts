@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { suggest } from "./complete";
+import { scriptPlace, suggest } from "./complete";
 import type { Environment } from "./complete";
 import { preview, toShell } from "./ejson";
 import { ShellError } from "./message";
@@ -269,6 +269,50 @@ describe("suggest", () => {
     it("is not confused by strings, comments and regular expressions", () => {
         expect(labels("db.orders.find({ a: \"}) { [\", b: /[{(]/, // })\n ")).toContain("status");
         expect(labels("/* db.x.find({ */ db.orders.")).toContain("find");
+    });
+
+    it("reads blocks of a script as statements, not documents", () => {
+        expect(labels("db.orders.find().forEach(function (o) {\n    db.")).toContain("orders");
+        expect(labels("if (x > 1) {\n    db.orders.")).toContain("find");
+        expect(labels("for (var i = 0; i < 3; i++) {\n    var a = 1; db.orders.find({ sta")).toContain("status");
+        expect(labels("[1, 2].forEach(n => {\n    db.orders.updateOne({ _id: n }, { $")).toContain("$set");
+        expect(labels("function f() { return 1; }\ndb.orders.")).toContain("find");
+        expect(labels("var q = { sta")).toEqual([]);
+    });
+
+    it("knows variables that hold a collection or a cursor", () => {
+        expect(labels("var c = db.orders;\nc.")).toContain("find");
+        expect(labels("const c = db.getCollection(\"order-items\")\nc.")).toContain("updateMany");
+        expect(labels("var cur = db.orders.find({});\ncur.")).toEqual(expect.arrayContaining(["sort", "forEach", "hasNext"]));
+        expect(labels("let c = db.orders;\nc.find({ sta")).toContain("status");
+        expect(labels("var c = db.orders;\nc = 5;\nc.")).toEqual([]);
+        expect(labels("var c = db.orders, n = 1;\nn.")).toEqual([]);
+    });
+
+    it("offers the fields of the documents a script reads", () => {
+        expect(labels("db.orders.find().forEach(function (o) {\n    o.")).toEqual(["_id", "status", "customer", "items"]);
+        expect(labels("db.orders.find().forEach(function (o) { print(o.customer.")).toEqual(["name"]);
+        expect(labels("db.orders.find({}).map(o => o.")).toContain("status");
+        expect(labels("db.orders.find().forEach((o) => { o.")).toContain("status");
+        expect(labels("for (const o of db.orders.find()) {\n    o.")).toContain("status");
+        expect(labels("var o = db.orders.findOne();\no.")).toContain("status");
+        expect(labels("var c = db.orders.find();\nwhile (c.hasNext()) { var o = c.next(); o.")).toContain("status");
+    });
+
+    it("offers what a script has besides db", () => {
+        expect(labels("pr")).toEqual(expect.arrayContaining(["db", "print", "printjson", "ObjectId"]));
+        expect(suggest("pr", environment)?.auto).toBe(true);
+        expect(option("", "print")?.snippet).toBe("print(${1:})");
+        expect(labels("console.")).toEqual(["log", "error", "warn"]);
+        expect(labels("db.orders.find({ a: pr")).not.toContain("print");
+    });
+
+    it("tells where JavaScript completes by itself", () => {
+        expect(scriptPlace("var total = 0;\nto")).toBe("statement");
+        expect(scriptPlace("print(to")).toBe("value");
+        expect(scriptPlace("db.orders.find({ to")).toBeUndefined();
+        expect(scriptPlace("db.orders.")).toBeUndefined();
+        expect(scriptPlace("print(\"to")).toBeUndefined();
     });
 });
 

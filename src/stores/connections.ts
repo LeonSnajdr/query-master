@@ -1,9 +1,11 @@
 import { defineStore } from "pinia";
-import { computed, reactive, ref } from "vue";
-import { backend } from "@/api";
+import { computed, reactive, ref, shallowReactive } from "vue";
+import { backend, errorMessage } from "@/api";
 import type { Profile, ProfileInput } from "@/api";
 import { isDoc, scalar } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
+import { SEARCH_LIMIT, collectValues, combineSearches, searchCommand, searchHints } from "@/shell/values";
+import type { ValueHint, ValueIndex, ValueSearch } from "@/shell/values";
 import { useNotesStore } from "@/stores/notes";
 
 /** What the tree knows about a collection once it was unfolded. */
@@ -76,6 +78,10 @@ export const useConnectionsStore = defineStore("connections", () => {
     /** Field paths per `connection/database/collection`; filled when the editor first asks. */
     const fields = reactive(new Map<string, string[]>());
     const fieldRequests = new Set<string>();
+    /** Values of the fields in the same sample, for the editor to suggest. */
+    const sampleValues = shallowReactive(new Map<string, ValueIndex>());
+    /** Searches of all data for values, per `connection/database/collection/field` and the prefix searched for. */
+    const valueSearches = shallowReactive(new Map<string, ValueSearch>());
     /** The row of the tree the toolbar and the menus act on. */
     const selected = ref<TreeSelection>();
 
@@ -205,7 +211,7 @@ export const useConnectionsStore = defineStore("connections", () => {
         const uri = transientUris.get(id);
         if (sessions[id]) {
             delete sessions[id];
-            for (const key of [...fields.keys()]) if (key.startsWith(`${id}/`)) fields.delete(key);
+            forgetFields(id);
         }
         connecting.delete(id);
         await open(id, () => (uri === undefined ? backend.connect(id) : backend.connectUri(id, uri)));
@@ -222,7 +228,7 @@ export const useConnectionsStore = defineStore("connections", () => {
             return;
         }
         delete sessions[id];
-        for (const key of [...fields.keys()]) if (key.startsWith(`${id}/`)) fields.delete(key);
+        forgetFields(id);
         await backend.disconnect(id);
         dropTransient(id);
     }
@@ -254,6 +260,13 @@ export const useConnectionsStore = defineStore("connections", () => {
         }
     }
 
+    /** What the samples of a connection taught: read again when it is opened again. */
+    function forgetFields(id: string): void {
+        for (const key of [...fields.keys()]) if (key.startsWith(`${id}/`)) fields.delete(key);
+        for (const key of [...sampleValues.keys()]) if (key.startsWith(`${id}/`)) sampleValues.delete(key);
+        for (const key of [...valueSearches.keys()]) if (key.startsWith(`${id}/`)) valueSearches.delete(key);
+    }
+
     /** The field paths of a collection as far as known; a sample is read on the first call. */
     function fieldsOf(id: string, database: string, collection: string): string[] {
         const key = `${id}/${database}/${collection}`;
@@ -264,6 +277,7 @@ export const useConnectionsStore = defineStore("connections", () => {
                     const found = new Set<string>();
                     for (const document of page.documents) collectFields(document, "", 1, found);
                     fields.set(key, [...found].sort((a, b) => a.localeCompare(b)));
+                    sampleValues.set(key, collectValues(page.documents));
                 })
                 // A view that can not be sampled, or missing rights: then no fields are suggested.
                 .catch(() => fields.set(key, []))
@@ -272,5 +286,58 @@ export const useConnectionsStore = defineStore("connections", () => {
         return fields.get(key) ?? [];
     }
 
-    return { profiles, saved, sessions, connecting, failed, selected, inTree, load, save, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, collapseAll };
+    function searchKey(id: string, database: string, collection: string, field: string): string {
+        return `${id}/${database}/${collection}/${field}\u0000`;
+    }
+
+    /**
+     * Searches all documents for the values of a field (`searchCommand`). When that takes longer
+     * than the server is given, it looks at a sample instead and says so.
+     */
+    async function searchValues(id: string, database: string, collection: string, field: string, prefix: string): Promise<ValueSearch> {
+        const key = searchKey(id, database, collection, field) + prefix;
+        const current = valueSearches.get(key);
+        if (current?.running) return current;
+        valueSearches.set(key, { running: true, hints: current?.hints ?? [], truncated: false, sampled: false });
+        const read = async (sample: boolean) => {
+            const page = await backend.runCursorCommand(id, database, searchCommand(collection, field, prefix, sample), SEARCH_LIMIT + 1);
+            return searchHints(page.documents);
+        };
+        let done: ValueSearch;
+        try {
+            done = { running: false, sampled: false, ...await read(false) };
+        } catch {
+            try {
+                done = { running: false, sampled: true, ...await read(true) };
+            } catch (error) {
+                done = { running: false, sampled: false, hints: [], truncated: false, error: errorMessage(error) };
+            }
+        }
+        valueSearches.set(key, done);
+        return done;
+    }
+
+    function valueSearchOf(id: string, database: string, collection: string, field: string, prefix: string): ValueSearch | undefined {
+        return valueSearches.get(searchKey(id, database, collection, field) + prefix);
+    }
+
+    /**
+     * What the searches of a field found, each value once; `whole` when one of them searched all
+     * documents for all values, so that nothing else needs to be added.
+     */
+    function searchedValuesOf(id: string, database: string, collection: string, field: string): { hints: ValueHint[]; whole: boolean } | undefined {
+        const start = searchKey(id, database, collection, field);
+        const searches = [...valueSearches].filter(([key, search]) => key.startsWith(start) && !search.running).map(([, search]) => search);
+        if (searches.length === 0) return undefined;
+        const whole = valueSearches.get(start);
+        return { hints: combineSearches(searches), whole: whole !== undefined && !whole.running && !whole.sampled && !whole.truncated && !whole.error };
+    }
+
+    /** Values of a field in the sample `fieldsOf` reads (and reads now, if it has not yet). */
+    function sampleValuesOf(id: string, database: string, collection: string, field: string): ValueHint[] | undefined {
+        fieldsOf(id, database, collection);
+        return sampleValues.get(`${id}/${database}/${collection}`)?.get(field);
+    }
+
+    return { profiles, saved, sessions, connecting, failed, selected, inTree, load, save, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, sampleValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
 });

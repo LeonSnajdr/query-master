@@ -1,13 +1,16 @@
 import {
-    ACCUMULATORS, AGGREGATE_MODIFIERS, AGGREGATE_OPTIONS, BSON_HELPERS, BSON_TYPES, COLLECTION_METHODS, COMMANDS,
-    CREATE_COLLECTION_OPTIONS, DATABASE_METHODS, DELETE_OPTIONS, EXPRESSIONS, FIND_AND_MODIFY_OPTIONS, FIND_MODIFIERS,
-    FIND_OPTIONS, INDEX_OPTIONS, PROJECTION_OPERATORS, QUERY_FIELD, QUERY_LOGICAL, STAGES, SYSTEM_VARIABLES,
+    ACCUMULATORS, AGGREGATE_MODIFIERS, AGGREGATE_OPTIONS, BSON_HELPERS, BSON_TYPES, COLLECTION_METHODS, COMMANDS, CONSOLE_METHODS,
+    CREATE_COLLECTION_OPTIONS, CURSOR_METHODS, DATABASE_METHODS, DELETE_OPTIONS, EXPRESSIONS, FIND_AND_MODIFY_OPTIONS, FIND_MODIFIERS,
+    FIND_OPTIONS, INDEX_OPTIONS, PROJECTION_OPERATORS, QUERY_FIELD, QUERY_LOGICAL, SCRIPT_GLOBALS, STAGES, SYSTEM_VARIABLES,
     UPDATE_MODIFIERS, UPDATE_OPERATORS, UPDATE_OPTIONS, UPDATE_PIPELINE_STAGES, WINDOW_OPERATORS, available, docKey
 } from "./catalog";
 import type { Entry } from "./catalog";
+import { scalar } from "./ejson";
 import type { Message } from "./message";
 import { chainTarget, cursorContext } from "./context";
-import type { Target } from "./context";
+import type { CursorContext, Target } from "./context";
+import { filterField } from "./values";
+import type { ValueHint, ValueSearcher, ValueSource } from "./values";
 
 export type SuggestionType = "method" | "collection" | "database" | "field" | "operator" | "stage" | "option" | "value" | "variable";
 
@@ -41,6 +44,19 @@ export interface Environment {
     collections: string[];
     /** Field paths seen in a collection (`address.city`); empty until they are loaded. */
     fields: (collection: string) => string[];
+    /** Values seen in a field of a collection, the most frequent first; see `values.ts`. */
+    values?: ValueSource;
+    /** Searches all data for the values of a field, when asked (the last entry of the list). */
+    search?: ValueSearcher;
+}
+
+/** A value of a field where the cursor is: in which collection, and the text typed in its string. */
+export interface ValuePlace {
+    collection: string;
+    field: string;
+    /** What is typed in the string so far; empty outside a string. */
+    prefix: string;
+    inString: boolean;
 }
 
 const PLAIN_NAME = /^[A-Za-z_$][\w$]*$/;
@@ -196,6 +212,70 @@ function keyChoices(target: Target, argument: number, path: string[]): KeyChoice
     }
 }
 
+/** The next part of the field paths below `path`: behind `o.` `customer` for `customer.name`, behind `o.customer.` `name`. */
+function fieldParts(fields: string[], path: string[]): string[] {
+    const prefix = path.length === 0 ? "" : `${path.join(".")}.`;
+    const parts = fields.filter(field => field.startsWith(prefix)).map(field => field.slice(prefix.length).split(".")[0]!);
+    return [...new Set(parts)].filter(part => PLAIN_NAME.test(part));
+}
+
+/** Where a statement starts: `db`, `print`, a keyword can stand here. */
+function atStatement(context: CursorContext): boolean {
+    return context.kind === "value" && context.chain.length === 0 && context.path.length === 0;
+}
+
+/**
+ * What JavaScript itself can complete at the end of the text: variables at a value, keywords
+ * where a statement starts; nothing at a key, behind a dot or in a string.
+ */
+export function scriptPlace(text: string): "statement" | "value" | undefined {
+    const context = cursorContext(text);
+    if (context.kind !== "value") return undefined;
+    return atStatement(context) ? "statement" : "value";
+}
+
+/** Methods whose first argument is a filter. */
+const FILTER_METHODS = [
+    "find", "findOne", "countDocuments", "count", "deleteOne", "deleteMany", "remove", "findOneAndDelete",
+    "findOneAndUpdate", "findOneAndReplace", "updateOne", "updateMany", "update", "replaceOne"
+];
+const UPDATE_METHODS = ["updateOne", "updateMany", "update", "findOneAndUpdate"];
+
+/**
+ * The field whose values fit where the cursor is: a value in a filter, in a `$match` stage or in
+ * the `$set` of an update. `path` leads from the argument to the value, its key included.
+ */
+function valueField(target: Target | undefined, argument: number, path: string[]): string | undefined {
+    if (!target?.method || target.modifiers.length > 0) return undefined;
+    if (FILTER_METHODS.includes(target.method) && argument === 0) return filterField(path);
+    if (UPDATE_METHODS.includes(target.method) && argument === 1 && path[0] === "$set") return filterField(path.slice(1));
+    if (target.method === "distinct" && argument === 1) return filterField(path);
+    if (target.method === "aggregate" && argument === 0 && path[0] === "[]" && path[1] === "$match") return filterField(path.slice(2));
+    return undefined;
+}
+
+function placeIn(context: CursorContext): ValuePlace | undefined {
+    if (context.kind !== "value" && context.kind !== "string") return undefined;
+    const target = chainTarget([...context.chain, { call: true }], context.variables);
+    const field = valueField(target, context.argument, context.key === undefined ? context.path : [...context.path, context.key]);
+    if (field === undefined || !target?.collection) return undefined;
+    const inString = context.kind === "string";
+    return { collection: target.collection, field, prefix: inString ? context.word : "", inString };
+}
+
+/** The value of a field at the end of the text, for the search of all data; `undefined` elsewhere. */
+export function valuePlace(text: string): ValuePlace | undefined {
+    return placeIn(cursorContext(text));
+}
+
+/** A value as a suggestion: strings without quotes in the list, with them when inserted outside a string. */
+function valueSuggestion(hint: ValueHint, rank: number, inString: boolean): Suggestion {
+    const text = typeof hint.value === "string" ? hint.value : scalar(hint.value)?.text ?? "";
+    const quoted = typeof hint.value === "string" ? JSON.stringify(hint.value) : text;
+    // The most frequent first, as long as the typed text fits them equally well.
+    return { label: text, type: "value", detail: `${hint.count}×`, apply: inString ? quoted.slice(1, -1) : quoted, boost: Math.max(0, 30 - rank) };
+}
+
 /** Numbers the places of a snippet in the order they are written, so Tab walks them that way. */
 function orderedSnippet(snippet: string): string {
     let count = 0;
@@ -222,18 +302,35 @@ export function suggest(text: string, environment: Environment): Suggestions | u
         snippet: entry.snippet ? orderedSnippet(entry.snippet) : undefined
     });
     const keySuffix = context.quoted ? "" : ": ";
+    /** Values of the field the cursor is at, as far as the sources know them. */
+    const valuesHere = (): Suggestion[] => {
+        const place = placeIn(context);
+        if (!place || !environment.values) return [];
+        return (environment.values(place.collection, place.field) ?? [])
+            .filter(hint => !place.inString || typeof hint.value === "string")
+            .map((hint, rank) => valueSuggestion(hint, rank, place.inString));
+    };
     const fieldsOf = (collection: string | undefined) => (collection ? environment.fields(collection) : []);
 
     if (context.kind === "member") {
-        const target = chainTarget(context.chain);
+        const [root] = context.chain;
+        if (context.chain.length === 1 && root && "name" in root && root.name === "console") {
+            return { from: context.from, options: CONSOLE_METHODS.map(entry => snippetOf(entry, "method")), auto: true };
+        }
+        const target = chainTarget(context.chain, context.variables);
         if (!target) return undefined;
+        if (target.document) {
+            options.push(...fieldParts(fieldsOf(target.collection), target.document).map((label): Suggestion => ({ label, type: "field", boost: 10 })));
+            if (options.length === 0) return undefined;
+            return { from: context.from, options, auto: true };
+        }
         if (target.open && target.method !== undefined) return undefined;
         if (target.method === "explain") {
             options.push(...COLLECTION_METHODS.filter(entry => EXPLAINABLE.includes(entry.name)).map(entry => snippetOf(entry, "method")));
         } else if (target.method === "find") {
-            options.push(...FIND_MODIFIERS.map(entry => snippetOf(entry, "method")));
+            options.push(...[...FIND_MODIFIERS, ...CURSOR_METHODS].map(entry => snippetOf(entry, "method")));
         } else if (target.method === "aggregate") {
-            options.push(...AGGREGATE_MODIFIERS.map(entry => snippetOf(entry, "method")));
+            options.push(...[...AGGREGATE_MODIFIERS, ...CURSOR_METHODS].map(entry => snippetOf(entry, "method")));
         } else if (target.method === undefined && target.collection !== undefined) {
             options.push(...COLLECTION_METHODS.map(entry => snippetOf(entry, "method")));
         } else if (target.method === undefined) {
@@ -250,7 +347,7 @@ export function suggest(text: string, environment: Environment): Suggestions | u
 
     const callee = context.chain.at(-1);
     const calleeName = callee && "name" in callee ? callee.name : undefined;
-    const target = chainTarget([...context.chain, { call: true }]);
+    const target = chainTarget([...context.chain, { call: true }], context.variables);
 
     if (context.kind === "string") {
         const names = (list: string[], type: SuggestionType) => options.push(...list.map((label): Suggestion => ({ label, type, boost: 0 })));
@@ -262,16 +359,17 @@ export function suggest(text: string, environment: Environment): Suggestions | u
         else if (context.word.startsWith("$")) names(fieldsOf(target?.collection).map(field => `$${field}`), "field");
         else if (target?.method === "distinct" && context.argument === 0) names(fieldsOf(target.collection), "field");
         else if (context.key !== undefined && FIELD_KEYS.includes(context.key)) names(fieldsOf(target?.collection), "field");
+        else options.push(...valuesHere());
         if (options.length === 0) return undefined;
         return { from: context.from, options, auto: true };
     }
 
     if (context.kind === "value") {
-        if (!target && context.chain.length === 0 && context.path.length === 0 && "db".startsWith(context.word)) {
-            // An empty line, or the start of a statement.
-            return { from: context.from, options: [{ label: "db", type: "value", boost: 0 }], auto: context.word !== "" };
+        if (atStatement(context)) {
+            // An empty line, or the start of a statement: `db`, then what else a script has.
+            options.push({ label: "db", type: "value", boost: 20 }, ...SCRIPT_GLOBALS.map(entry => snippetOf(entry, "value", 10)));
         }
-        options.push(...BSON_HELPERS.map(entry => snippetOf(entry, "value")));
+        options.push(...valuesHere(), ...BSON_HELPERS.map(entry => snippetOf(entry, "value")));
         return { from: context.from, options, auto: context.word !== "" };
     }
 
