@@ -23,10 +23,17 @@ watch(() => state.prompt, request => (answer.value = request?.value ?? ""));
 const text = shallowRef("");
 const textError = shallowRef<string>();
 const busy = shallowRef(false);
+const variant = shallowRef(0);
 watch(() => state.text, (request) => {
-    text.value = request?.text ?? "";
+    text.value = request?.variants?.[0]?.text ?? request?.text ?? "";
     textError.value = undefined;
+    variant.value = 0;
 });
+
+function showVariant(index: number) {
+    variant.value = index;
+    text.value = state.text?.variants?.[index]?.text ?? text.value;
+}
 
 async function submitText() {
     const request = state.text;
@@ -131,9 +138,26 @@ async function copyText() {
                 <DialogTitle class="dialog-title">
                     {{ state.text.title }}
                 </DialogTitle>
+                <div
+                    v-if="state.text.variants"
+                    :aria-label="state.text.title"
+                    class="flex border-b border-divider"
+                    role="group"
+                >
+                    <ButtonRoot
+                        v-for="(item, index) in state.text.variants"
+                        :key="item.label"
+                        @click="showVariant(index)"
+                        :class="variant === index ? 'text-primary border-primary' : 'text-on-surface border-transparent hover:text-on-surface-strong'"
+                        :data-testid="`text-variant-${index}`"
+                        class="h-8 px-3 text-[13px] border-b-2"
+                    >
+                        <ButtonContent>{{ item.label }}</ButtonContent>
+                    </ButtonRoot>
+                </div>
                 <div class="h-[min(60vh,34rem)] rounded border border-divider bg-background">
                     <CodeEditor
-                        :key="state.text.title + state.text.text.length"
+                        :key="state.text.title + state.text.text.length + variant"
                         v-model="text"
                         @run="submitText"
                         :label="state.text.title"

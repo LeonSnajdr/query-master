@@ -27,6 +27,8 @@ export interface TextRequest {
     action?: string;
     /** Checks the edited text; a string is shown as the error and the dialog stays open. */
     submit?: (text: string) => Promise<string | undefined> | string | undefined;
+    /** Other forms of the text to switch between (the query in other languages); `text` is the first. */
+    variants?: { label: string; text: string }[];
 }
 
 /** The collection dialog: a new collection, a new view, or the validator of a collection. */

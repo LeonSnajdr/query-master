@@ -18,6 +18,7 @@ import { isDoc, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
 import { parseStatements, parseValue } from "@/shell/parse";
+import { CODE_LANGUAGES, queryCode } from "@/shell/code";
 import { isWrite, pageCommand, planStatement } from "@/shell/plan";
 import { PAGE_SIZES, useTabsStore } from "@/stores/tabs";
 import type { ResultView } from "@/stores/tabs";
@@ -184,8 +185,14 @@ async function explain() {
     }
 }
 
-function queryCode() {
-    if (result.value) dialogs.showText({ title: t("result.code"), text: result.value.statement });
+/** The query as shell statement and as code of the drivers for Node.js, Python, Java and C#. */
+function showQueryCode() {
+    const plan = tab.value.plan;
+    if (!result.value) return;
+    const statement = result.value.statement;
+    // A script has no single plan: then only the text that ran.
+    const variants = plan ? CODE_LANGUAGES.map(language => ({ label: t(`code.${language}`), text: queryCode(language, plan, statement) })) : undefined;
+    dialogs.showText({ title: t("result.code"), text: statement, variants });
 }
 
 const FORMATS: { format: TransferFormat; kind: FileKind; extension: string }[] = [
@@ -436,7 +443,8 @@ provideResultContext({ editable, selected, fold, commit: (target, text) => void 
                 tint="text-warning"
             />
             <IconButton
-                @click="queryCode"
+                @click="showQueryCode"
+                data-testid="result-code"
                 :disabled="!result"
                 :label="$t('result.code')"
                 icon="i-lucide-braces"

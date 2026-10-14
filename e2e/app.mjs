@@ -505,6 +505,13 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 2"));
         assert.match(await panel.locator("[data-testid=tree-value]").first().innerText(), /./);
         assert.equal(await panel.locator("[data-testid=query-error]").count(), 0);
+        // The same query as code of a driver.
+        await panel.locator("[data-testid=result-code]").click();
+        await id("text-variant-1").click();
+        const code = await page.locator("dialog[open] .cm-content").innerText();
+        assert.match(code, /\.find\(EJSON\.parse\(/);
+        assert.match(code, /\.sort\(EJSON\.parse\(/);
+        await page.keyboard.press("Escape");
     });
 
     await step("table and JSON views show the same documents", async () => {
