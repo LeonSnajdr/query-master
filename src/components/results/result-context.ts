@@ -18,6 +18,10 @@ export interface ResultContext {
     editable: Ref<boolean>;
     /** Index of the selected document on the page. */
     selected: Ref<number | undefined>;
+    /** Indexes of the documents marked together (Ctrl or Shift click); the selected one among them. */
+    marked: Ref<Set<number>>;
+    /** A click on a document: Ctrl adds or takes it away, Shift marks the range, else it alone. */
+    choose: (index: number, event?: MouseEvent) => void;
     /** Counts up to unfold (`open`) or fold all documents, or the one at `index`. */
     fold: Ref<{ version: number; open: boolean; index?: number }>;
     /** Writes a value typed in place; the text is in shell notation. */

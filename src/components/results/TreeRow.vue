@@ -101,10 +101,11 @@ function commit() {
 <template>
     <div role="treeitem">
         <div
-            @click="context.selected.value = index"
+            @click="context.choose(index, $event)"
             @contextmenu="context.menu($event, target)"
             @dblclick="startEdit"
-            :class="root && selected ? 'outline outline-1 -outline-offset-1 outline-primary/70 bg-on-surface/4' : 'hover:bg-on-surface/4'"
+            :class="root && selected ? 'outline outline-1 -outline-offset-1 outline-primary/70 bg-on-surface/4' : root && context.marked.value.has(index) && context.marked.value.size > 1 ? 'bg-primary/15' : 'hover:bg-on-surface/4'"
+            :data-root="root || undefined"
             class="flex items-center h-[19px] pr-3 whitespace-nowrap"
             data-testid="tree-row"
         >

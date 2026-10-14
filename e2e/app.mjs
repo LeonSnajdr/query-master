@@ -737,6 +737,17 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.waitForTimeout(300);
         assert.equal(await panel.locator("[data-testid=query-error]").count(), 0);
         assert.equal(await panel.locator("[data-testid=tree-row]").count() >= 3, true);
+
+        // The two documents from the clipboard (first, sorted by n), marked with Ctrl, go together.
+        const clips = panel.locator("[data-testid=tree-row][data-root]");
+        await clips.nth(0).click();
+        await clips.nth(1).click({ modifiers: ["Control"] });
+        await clips.nth(1).click({ button: "right" });
+        await openGroup("Documents");
+        await chooseMenu("Remove document");
+        await page.locator("dialog[open]", { hasText: "Remove 2 documents?" }).waitFor();
+        await id("confirm-action").click();
+        await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 1"));
     });
 
     await step("the history offers the statements that ran", async () => {

@@ -141,7 +141,46 @@ function editDocument(index: number | undefined) {
     });
 }
 
+const marked = shallowRef(new Set<number>());
+watch(result, () => (marked.value = new Set()));
+
+function choose(index: number, event?: MouseEvent) {
+    const anchor = selected.value;
+    if (event?.ctrlKey || event?.metaKey) {
+        const next = new Set(marked.value);
+        if (next.has(index)) next.delete(index);
+        else next.add(index);
+        // The one selected before stays marked when the second is added.
+        if (anchor !== undefined && next.size > 0 && marked.value.size === 0) next.add(anchor);
+        marked.value = next;
+    } else if (event?.shiftKey && anchor !== undefined) {
+        const order = rows.value.map(row => row.index);
+        const [from, to] = [order.indexOf(anchor), order.indexOf(index)].sort((a, b) => a - b);
+        marked.value = new Set(order.slice(Math.max(0, from!), to! + 1));
+        return;
+    } else {
+        marked.value = new Set([index]);
+    }
+    selected.value = index;
+}
+
+/** The documents marked together, in page order; at least the one at `index`. */
+function markedDocuments(index: number | undefined): Doc[] {
+    const indexes = index !== undefined && marked.value.size > 1 && marked.value.has(index) ? [...marked.value].sort((a, b) => a - b) : [index];
+    return indexes.map(documentAt).filter((document): document is Doc => document !== undefined);
+}
+
 async function removeDocument(index: number | undefined) {
+    const documents = markedDocuments(index);
+    if (documents.length > 1 && editable.value) {
+        const confirmed = await dialogs.confirm({
+            title: t("document.removeMany.title", { count: documents.length }),
+            text: t("document.removeMany.text", { count: documents.length }, documents.length),
+            action: t("action.delete")
+        });
+        if (confirmed && !await tabs.removeDocuments(tab.value, documents.map(document => document._id!))) report(tab.value.error);
+        return;
+    }
     const document = documentAt(index);
     if (!document || !editable.value) return;
     const confirmed = await dialogs.confirm({
@@ -325,6 +364,9 @@ async function lastPage() {
 
 function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = []) {
     selected.value = target.index;
+    // A click outside the marked documents marks only the one clicked.
+    if (!marked.value.has(target.index)) marked.value = new Set([target.index]);
+    const several = markedDocuments(target.index);
     const document = documentAt(target.index);
     const field = target.path !== "";
     const locked = collection.value === undefined || tabs.locked(tab.value);
@@ -365,7 +407,8 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
                 { label: t("copy.value"), icon: "i-lucide-copy", action: () => void copy(toShell(target.value)) },
                 { label: t("copy.path"), action: () => void copy(target.path), disabled: !field },
                 { label: t("copy.document"), action: () => void copy(toShell(document ?? target.value)) },
-                { label: t("copy.json"), action: () => void copy(JSON.stringify(document ?? target.value, null, 2)) }
+                { label: t("copy.json"), action: () => void copy(JSON.stringify(document ?? target.value, null, 2)) },
+                ...(several.length > 1 ? [{ label: t("copy.documents", { count: several.length }), action: () => void copy(JSON.stringify(several, null, 2)) }] : [])
             ]
         },
         ...(extra.length > 0 ? ["separator" as const, ...extra] : []),
@@ -375,7 +418,7 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
     void menu.value?.open(event, entries);
 }
 
-provideResultContext({ editable, selected, fold, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument });
+provideResultContext({ editable, selected, marked, choose, fold, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument });
 </script>
 
 <template>

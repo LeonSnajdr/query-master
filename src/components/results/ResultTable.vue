@@ -229,9 +229,9 @@ function commit() {
     }
 }
 
-function select(index: number, column: string) {
+function select(index: number, column: string, event?: MouseEvent) {
     current.value = { index, column };
-    context.selected.value = index;
+    context.choose(index, event);
 }
 
 const unfoldable = computed(() => columns.value.filter(name => levels.value.some(level => children(cell(level.value, name)).length > 0)));
@@ -371,7 +371,7 @@ function onKey(event: KeyboardEvent) {
                 <tr
                     v-for="{ value, index } in levels"
                     :key="index"
-                    :class="context.selected.value === index ? 'bg-on-surface/5' : 'hover:bg-on-surface/4'"
+                    :class="context.marked.value.has(index) && context.marked.value.size > 1 ? 'bg-primary/15' : context.selected.value === index ? 'bg-on-surface/5' : 'hover:bg-on-surface/4'"
                     data-testid="table-row"
                 >
                     <td class="sticky left-0 z-2 w-9 pr-2 h-[19px] bg-background text-right text-[11px] text-on-surface-variant/70 tabular-nums select-none">
@@ -380,7 +380,7 @@ function onKey(event: KeyboardEvent) {
                     <td
                         v-for="column in columns"
                         :key="column"
-                        @click="select(index, column)"
+                        @click="select(index, column, $event)"
                         @contextmenu="openMenu($event, index, column)"
                         @dblclick="activate(index, column)"
                         :class="[
