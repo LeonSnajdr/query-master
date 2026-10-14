@@ -57,7 +57,9 @@ const menus = computed<{ name: string; entries: MenuEntry[] }[]>(() => [
             { label: t("database.create"), hotkey: "Ctrl + Shift + D", action: () => void actions.createDatabase(), disabled: !actions.hasConnection.value },
             "separator",
             { label: t("collection.create"), icon: "i-lucide-file-plus-2", hotkey: "Ctrl + H", action: () => void actions.createCollection(), disabled: !actions.hasDatabase.value },
+            { label: t("view.create"), icon: "i-lucide-file-search", hotkey: "Ctrl + Shift + H", action: () => actions.createView(), disabled: !actions.hasDatabase.value },
             { label: t("collection.rename"), action: () => void actions.renameCollection(), disabled: !actions.hasCollection.value },
+            { label: t("validator.edit"), hotkey: "Ctrl + Alt + V", action: () => actions.editValidator(), disabled: !actions.hasCollection.value },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", danger: true, action: () => void actions.dropCollection(), disabled: !actions.hasCollection.value },
             "separator",
             { label: t("index.create"), icon: "i-lucide-key-round", hotkey: "Ctrl + I", action: () => void actions.createIndex(), disabled: !actions.hasCollection.value }

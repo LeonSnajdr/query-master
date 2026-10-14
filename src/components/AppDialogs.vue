@@ -2,6 +2,7 @@
 import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogDescription, DialogRoot, DialogTitle, useTimer } from "@vuetify/v0";
 import { computed, shallowRef, watch } from "vue";
 import CodeEditor from "@/components/CodeEditor.vue";
+import CollectionDialog from "@/components/CollectionDialog.vue";
 import ConnectionDialog from "@/components/ConnectionDialog.vue";
 import { useDialogState } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
@@ -172,5 +173,9 @@ async function copyText() {
     <ConnectionDialog
         v-model="state.connectionOpen"
         :profile="state.connection"
+    />
+    <CollectionDialog
+        v-model="state.collectionOpen"
+        :request="state.collection"
     />
 </template>

@@ -28,12 +28,23 @@ export interface TextRequest {
     submit?: (text: string) => Promise<string | undefined> | string | undefined;
 }
 
+/** The collection dialog: a new collection, a new view, or the validator of a collection. */
+export interface CollectionRequest {
+    mode: "collection" | "view" | "validator";
+    connectionId: string;
+    database: string;
+    /** The collection whose validator is edited, or the source of a new view. */
+    collection?: string;
+}
+
 // One dialog of each kind for the whole app (`AppDialogs.vue` renders them).
 const state = reactive({
     prompt: undefined as PromptRequest | undefined,
     confirm: undefined as ConfirmRequest | undefined,
     text: undefined as TextRequest | undefined,
     connectionOpen: false,
+    collectionOpen: false,
+    collection: undefined as CollectionRequest | undefined,
     connection: undefined as Profile | undefined
 });
 
@@ -65,7 +76,13 @@ export function useDialogs() {
         state.connectionOpen = true;
     }
 
-    return { ask, confirm, showText, editConnection };
+    function editCollection(request: CollectionRequest): void {
+        // A new object every time: the dialog starts afresh even for the same collection.
+        state.collection = { ...request };
+        state.collectionOpen = true;
+    }
+
+    return { ask, confirm, showText, editConnection, editCollection };
 }
 
 /** For `AppDialogs.vue` only. */

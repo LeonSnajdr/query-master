@@ -88,10 +88,18 @@ export function useActions() {
         if (at?.database !== undefined && at.collection !== undefined) inspect(at, at.database, `db.getCollection(${JSON.stringify(at.collection)}).getIndexes()`);
     }
 
-    async function createCollection(at = target.value) {
-        if (at?.database === undefined) return;
-        const name = await dialogs.ask({ title: t("collection.create.title"), label: t("collection.name"), action: t("action.create") });
-        if (name) await command(at.connectionId, at.database, { create: name });
+    function createCollection(at = target.value) {
+        if (at?.database !== undefined) dialogs.editCollection({ mode: "collection", connectionId: at.connectionId, database: at.database });
+    }
+
+    function createView(at = target.value) {
+        if (at?.database !== undefined) dialogs.editCollection({ mode: "view", connectionId: at.connectionId, database: at.database, collection: at.collection });
+    }
+
+    function editValidator(at = target.value) {
+        if (at?.database !== undefined && at.collection !== undefined) {
+            dialogs.editCollection({ mode: "validator", connectionId: at.connectionId, database: at.database, collection: at.collection });
+        }
     }
 
     /** A database comes into being with its first collection. */
@@ -207,7 +215,7 @@ export function useActions() {
     return {
         target, hasConnection, hasDatabase, hasCollection,
         openShell, browse, aggregation, collectionStats, databaseStats, serverStatus, indexes,
-        createCollection, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, dropIndex, indexInfo,
+        createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, dropIndex, indexInfo,
         refresh, connect, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };

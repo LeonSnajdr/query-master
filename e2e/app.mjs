@@ -28,13 +28,17 @@ async function step(name, action) {
     } catch (error) {
         // The first lines say what was waited for; the rest is Playwright's retry log.
         steps.push(`FAIL  ${name}: ${String(error.message).split("\n").slice(0, 3).join(" | ")}`);
+        // What dialogs were open says most about a failure in one.
+        const open = await page.locator("dialog[open]").evaluateAll(dialogs => dialogs.map(dialog => dialog.innerText.replace(/\s+/g, " ").slice(0, 400))).catch(() => []);
+        if (open.length > 0) steps.push(`      open dialogs: ${open.join(" || ")}`);
         throw error;
     }
 }
 
 /** Replaces the text of the code editor inside `scope`. */
 async function write(scope, text) {
-    const editor = scope.locator(".cm-content").first();
+    // Tabs keep their hidden panels in the page: only the editor that shows is meant.
+    const editor = scope.locator(".cm-content:visible").first();
     await editor.click();
     await page.keyboard.press("Control+A");
     // Inserted as one piece: no completion list opens and no bracket is closed for us.
@@ -156,9 +160,39 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.locator("[data-testid=collection-row]", { hasText: COLLECTION }).waitFor();
     });
 
+    await step("a capped collection, its validator and a view are made through the dialogs", async () => {
+        const database = page.locator("[data-testid=database-row]", { hasText: DATABASE });
+        await database.click({ button: "right" });
+        await chooseMenu("Create collection");
+        await id("collection-name").fill(`${COLLECTION}_capped`);
+        await page.locator("dialog[open] [role=switch]").first().click();
+        await page.locator("dialog[open] input[inputmode=numeric]").first().fill("100000");
+        await id("collection-save").click();
+        const capped = page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_capped` });
+        await capped.waitFor();
+
+        await capped.click({ button: "right" });
+        await chooseMenu("Create/edit validator");
+        const dialog = page.locator("dialog[open]");
+        await write(dialog, "{ n: { $type: \"int\" } }");
+        await id("collection-save").click();
+        await dialog.waitFor({ state: "detached", timeout: 5000 }).catch(() => undefined);
+        await capped.click({ button: "right" });
+        await chooseMenu("Create/edit validator");
+        assert.match(await page.locator("dialog[open] .cm-content:visible").innerText(), /\$type/);
+        await page.keyboard.press("Escape");
+
+        await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).click({ button: "right" });
+        await chooseMenu("Create view");
+        await id("collection-name").fill(`${COLLECTION}_view`);
+        await write(page.locator("dialog[open]"), "[{ $match: { n: { $gte: 2 } } }]");
+        await id("collection-save").click();
+        await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_view` }).waitFor();
+    });
+
     const panel = page.locator("[data-testid=tab-panel]:visible");
     await step("double click opens the collection with its documents", async () => {
-        await page.locator("[data-testid=collection-row]", { hasText: COLLECTION }).dblclick();
+        await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).dblclick();
         await visible("browse-title").waitFor();
         await panel.locator("[data-testid=tree-row]").first().waitFor();
         assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 3");
@@ -168,7 +202,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
     });
 
     await step("a collection unfolds to its indexes; one is created and dropped", async () => {
-        const row = page.locator("[data-testid=collection-row]", { hasText: COLLECTION });
+        const row = page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) });
         await row.locator("[data-testid=collection-toggle]").click();
         await page.locator("[data-testid=index-row]", { hasText: "_id_" }).waitFor();
         await row.click({ button: "right" });
@@ -288,7 +322,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         if (await id("connection-row").count() > 0) {
             await id("connection-row").first().click();
             await id("dock-shell").click();
-            await runShell(`db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}").drop()`).catch(() => undefined);
+            await runShell(`db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}_view").drop(); db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}_capped").drop(); db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}").drop()`).catch(() => undefined);
         }
         await id("connection-list").click();
         const item = page.locator("[data-testid=connection-item]:visible", { hasText: NAME });
