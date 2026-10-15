@@ -188,6 +188,7 @@ const SHORTCUTS: Partial<Record<CommandId, () => void>> = {
     "view.tree": () => setView("tree"),
     "view.table": () => setView("table"),
     "view.json": () => setView("json"),
+    "view.plan": () => setView("plan"),
     "help.shortcuts": () => dialogs.openHelp("shortcuts"),
     "keys.open": () => dialogs.openSettings("keys"),
     "focus.tree": () => focus.focusTree(),

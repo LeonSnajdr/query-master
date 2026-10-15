@@ -2,7 +2,7 @@
 import { ToggleGroup, ToggleRoot } from "@vuetify/v0";
 import { computed, ref, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { backend, errorMessage, inApp } from "@/api";
+import { errorMessage, inApp } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import DropMenu from "@/components/DropMenu.vue";
@@ -20,13 +20,14 @@ import { isDoc, scalar, toShell } from "@/shell/ejson";
 import { valueAtPath } from "@/shell/values";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
-import { parseStatements, parseValue } from "@/shell/parse";
+import { parseValue } from "@/shell/parse";
 import { CODE_LANGUAGES, queryCode } from "@/shell/code";
-import { isWrite, planStatement } from "@/shell/plan";
+import { isWrite } from "@/shell/plan";
 import { PAGE_SIZES, useTabsStore } from "@/stores/tabs";
 import type { ResultView } from "@/stores/tabs";
 import { noFold, provideResultContext } from "./result-context";
 import type { Fold, ResultTarget } from "./result-context";
+import PlanView from "./PlanView.vue";
 import ResultTable from "./ResultTable.vue";
 import TreeRow from "./TreeRow.vue";
 
@@ -35,7 +36,7 @@ const props = defineProps<{
     tabId: string;
 }>();
 
-const VIEWS: ResultView[] = ["tree", "table", "json"];
+const VIEWS: ResultView[] = ["tree", "table", "json", "plan"];
 
 const { t } = useI18n();
 const { say, report } = useMessages();
@@ -250,20 +251,15 @@ async function copy(text: string) {
     }
 }
 
-async function explain() {
-    const current = result.value;
-    if (!current) return;
-    try {
-        const [statement] = parseStatements(current.statement);
-        if (!statement) return;
-        statement.modifiers.push({ name: "explain", args: ["executionStats"] });
-        const plan = planStatement(statement, tab.value.database);
-        const reply = await backend.runCommand(tab.value.connectionId, plan.database, plan.command);
-        dialogs.showText({ title: t("result.explain"), text: toShell(reply) });
-    } catch (error) {
-        report(error);
-    }
+/** The bulb: the view "Plan" (stage 19), which reads the plan when it shows. */
+function explain() {
+    tab.value.view = "plan";
 }
+
+// The view "Plan" reads the plan of what the tab shows, again when that changes.
+watch(() => [tab.value.view, result.value] as const, ([view, current]) => {
+    if (view === "plan" && current && tab.value.explain?.statement !== current.statement && !tab.value.running) void tabs.explainResult(tab.value);
+}, { immediate: true });
 
 /** The query as shell statement and as code of the drivers for Node.js, Python, Java and C#. */
 function showQueryCode() {
@@ -603,6 +599,7 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
                 @click="explain"
                 :disabled="!result"
                 :label="$t('result.explain')"
+                data-testid="result-explain"
                 icon="i-lucide-lightbulb"
                 tint="text-warning"
             />
@@ -704,6 +701,10 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
             >
                 {{ tab.running ? $t("query.running") : runHint }}
             </p>
+            <PlanView
+                v-else-if="tab.view === 'plan'"
+                :tabId
+            />
             <p
                 v-else-if="rows.length === 0"
                 class="m-0 px-4 py-3 font-sans text-[13px] text-on-surface-variant"

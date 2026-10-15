@@ -1031,6 +1031,19 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.keyboard.press("Escape");
     });
 
+    await step("the bulb shows the plan of the query as a flow; a stage shows its details", async () => {
+        await panel.locator("[data-testid=result-explain]").click();
+        await panel.locator("[data-testid=plan-node]").first().waitFor();
+        // Source, at least one stage, result; the numbers above.
+        assert.ok(await panel.locator("[data-testid=plan-node]").count() >= 3);
+        assert.match(await panel.locator("[data-testid=plan-returned]").innerText(), /2/);
+        await panel.locator("[data-testid=plan-node]").nth(1).click();
+        await panel.locator("[data-testid=plan-view] .cm-content").first().waitFor();
+        assert.match(await panel.locator("[data-testid=plan-view] .cm-content").first().innerText(), /stage/);
+        await panel.locator("[data-testid=view-tree]").click();
+        await panel.locator("[data-testid=tree-row]").first().waitFor();
+    });
+
     await step("table and JSON views show the same documents", async () => {
         await panel.locator("[data-testid=view-table]").click();
         assert.equal(await panel.locator("[data-testid=table-row]").count(), 2);

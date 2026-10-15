@@ -10,6 +10,8 @@ import { ShellError, scriptErrorPosition } from "@/shell/message";
 import type { Message } from "@/shell/message";
 import { convertQueryText, parseStatements, statementAt } from "@/shell/parse";
 import type { Statement } from "@/shell/parse";
+import { hintsOf, isExplain, readExplain } from "@/shell/explain";
+import type { ExplainResult } from "@/shell/explain";
 import { isWrite, pageCommand, planStatement, replyError } from "@/shell/plan";
 import type { Plan } from "@/shell/plan";
 import { aggregateStatement, keepsDocuments, newStage, previewStages } from "@/shell/pipeline";
@@ -26,7 +28,20 @@ const UNPAGED_LIMIT = 10_000;
 /** Commands after which the tree of databases and collections may have changed. */
 const STRUCTURE_COMMANDS = ["create", "drop", "dropDatabase", "renameCollection"];
 
-export type ResultView = "tree" | "table" | "json";
+export type ResultView = "tree" | "table" | "json" | "plan";
+
+/** The plan of the query a tab shows, as the view "Plan" draws it (stage 19). */
+export interface TabExplain {
+    /** The statement explained; a new result of another one makes the plan stale. */
+    statement: string;
+    /** The index forced with `hint`, by name; absent: the server chose. */
+    hint?: string;
+    plan: ExplainResult;
+    /** The response of the server, for the details and the export. */
+    reply: Json;
+    /** The time before the hint changed, to compare. */
+    previousMs?: number;
+}
 /** The start page, a collection with its query fields, a shell, a pipeline, or a page about the server. */
 export type TabKind = "start" | "browse" | "shell" | "aggregate" | "sql" | "server";
 /** What a server tab shows. */
@@ -107,6 +122,8 @@ export interface WorkTab {
     pipeline?: PipelineStage[];
     /** Aggregate tabs: shell text of the options (`allowDiskUse`, `maxTimeMS` …). */
     aggregateOptions?: string;
+    /** The plan of the result (view "Plan"), read when that view shows. */
+    explain?: TabExplain;
     /** Dotted path of the field chosen in the result; the status bar shows it. */
     fieldPath?: string;
 }
@@ -381,6 +398,7 @@ export const useTabsStore = defineStore("tabs", () => {
         }
         tab.plan = markRaw(plan);
         tab.result = markRaw({ items, offset, hasMore, statement, milliseconds: Math.round(performance.now() - started) });
+        if (tab.explain?.statement !== statement) tab.explain = undefined;
     }
 
     async function guarded(tab: WorkTab, work: () => Promise<void>): Promise<boolean> {
@@ -588,6 +606,44 @@ export const useTabsStore = defineStore("tabs", () => {
         return tab.kind === "browse" ? runBrowse(tab) : run(tab, 0, undefined, true);
     }
 
+    /**
+     * Reads the plan of the query the tab shows (`explain("executionStats")`), for the view "Plan".
+     * `hint` forces an index by name (`null`: the server chooses again). A result that is a plan
+     * itself (`.explain()` typed in the shell) is read as it is.
+     */
+    function explainResult(tab: WorkTab, hint?: string | null): Promise<boolean> {
+        return guarded(tab, async () => {
+            const result = tab.result;
+            if (!result) return;
+            const before = tab.explain;
+            const first = result.items[0];
+            if (result.items.length === 1 && isExplain(first)) {
+                const plan = readExplain(first, tab.collection ?? "");
+                if (plan) tab.explain = markRaw({ statement: result.statement, plan: { ...plan, hints: hintsOf(plan, tab.plan?.command ?? {}) }, reply: first });
+                return;
+            }
+            const [statement] = parseStatements(result.statement);
+            if (!statement) throw new ShellError("error.plan.nothing");
+            const modifiers = statement.modifiers.filter(modifier => modifier.name !== "explain" && modifier.name !== "hint");
+            const forced = hint === undefined ? before?.hint : hint ?? undefined;
+            if (forced) modifiers.push({ name: "hint", args: [forced] });
+            modifiers.push({ name: "explain", args: ["executionStats"] });
+            const plan = planStatement({ ...statement, modifiers }, tab.database);
+            const reply = await backend.runCommand(tab.connectionId, plan.database, plan.command);
+            const failure = replyError(reply);
+            if (failure) throw new ReplyError(failure);
+            const read = readExplain(reply, statement.collection ?? tab.collection ?? "");
+            if (!read) throw new ShellError("error.explain.none");
+            tab.explain = markRaw({
+                statement: result.statement,
+                hint: forced,
+                plan: { ...read, hints: hintsOf(read, plan.command) },
+                reply,
+                previousMs: hint !== undefined && before ? before.plan.ms : before?.previousMs
+            });
+        });
+    }
+
     /** Shows the page that starts at `offset`. */
     function showPage(tab: WorkTab, offset: number): Promise<boolean> {
         const { plan, result } = tab;
@@ -719,7 +775,7 @@ export const useTabsStore = defineStore("tabs", () => {
     return {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, move, step,
-        restoreTab, run, showResult, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
+        restoreTab, run, showResult, explainResult, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument
     };
 });

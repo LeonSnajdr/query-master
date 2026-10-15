@@ -111,6 +111,20 @@ export const mockBackend: Backend = {
         if ("count" in command) return { n: { $numberInt: String(ORDERS.length) }, ok: 1 };
         if ("distinct" in command) return { values: STATUS, ok: 1 };
         if ("ping" in command) return { ok: { $numberDouble: "1.0" } };
+        // A plan as MongoDB 7.0 gives it: a scan of the whole collection under a sort in memory.
+        if ("explain" in command) {
+            return {
+                queryPlanner: { namespace: "shop.orders" },
+                executionStats: {
+                    nReturned: 312, executionTimeMillis: 842, totalDocsExamined: 48210,
+                    executionStages: {
+                        stage: "SORT", nReturned: 312, executionTimeMillisEstimate: 840, sortPattern: { createdAt: -1 }, memLimit: 104857600, totalDataSizeSorted: 4299776, usedDisk: false,
+                        inputStage: { stage: "COLLSCAN", filter: { status: { $eq: "paid" } }, nReturned: 312, executionTimeMillisEstimate: 610, docsExamined: 48210 }
+                    }
+                },
+                ok: 1
+            };
+        }
         return { ok: 1, n: { $numberInt: "1" }, nModified: { $numberInt: "1" } };
     },
     readTextFile: async () => "",

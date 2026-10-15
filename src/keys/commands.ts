@@ -83,6 +83,7 @@ const LIST = [
     command({ id: "view.tree", label: "view.tree.long", group: "view", scope: "global", keys: ["alt+1"] }),
     command({ id: "view.table", label: "view.table.long", group: "view", scope: "global", keys: ["alt+2"] }),
     command({ id: "view.json", label: "view.json.long", group: "view", scope: "global", keys: ["alt+3"] }),
+    command({ id: "view.plan", label: "view.plan.long", group: "view", scope: "global", keys: ["alt+4"] }),
     command({ id: "help.shortcuts", label: "help.shortcuts", group: "view", scope: "global", keys: ["f12"] }),
     command({ id: "palette.open", label: "palette.open", group: "view", scope: "global", keys: ["ctrl+shift+p"] }),
     command({ id: "keys.open", label: "keys.open", group: "view", scope: "global", keys: [] }),
