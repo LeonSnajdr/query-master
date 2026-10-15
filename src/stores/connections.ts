@@ -4,7 +4,7 @@ import { backend, errorMessage } from "@/api";
 import type { Profile, ProfileInput } from "@/api";
 import { isDoc, scalar } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
-import { SEARCH_LIMIT, collectValues, combineSearches, searchCommand, searchHints } from "@/shell/values";
+import { SEARCH_LIMIT, collectValues, combineSearches, searchCommand, searchHints, validatorValues } from "@/shell/values";
 import type { ValueHint, ValueIndex, ValueSearch } from "@/shell/values";
 import { useNotesStore } from "@/stores/notes";
 import { sameRow } from "@/tree/selection";
@@ -81,6 +81,8 @@ export const useConnectionsStore = defineStore("connections", () => {
     const fieldRequests = new Set<string>();
     /** Values of the fields in the same sample, for the editor to suggest. */
     const sampleValues = shallowReactive(new Map<string, ValueIndex>());
+    /** Values the validator of a collection allows, per field; read with the sample. */
+    const allowedValues = shallowReactive(new Map<string, ValueIndex>());
     /** Searches of all data for values, per `connection/database/collection/field` and the prefix searched for. */
     const valueSearches = shallowReactive(new Map<string, ValueSearch>());
     /** The row of the tree the toolbar and the menus act on. */
@@ -276,6 +278,7 @@ export const useConnectionsStore = defineStore("connections", () => {
     function forgetFields(id: string): void {
         for (const key of [...fields.keys()]) if (key.startsWith(`${id}/`)) fields.delete(key);
         for (const key of [...sampleValues.keys()]) if (key.startsWith(`${id}/`)) sampleValues.delete(key);
+        for (const key of [...allowedValues.keys()]) if (key.startsWith(`${id}/`)) allowedValues.delete(key);
         for (const key of [...valueSearches.keys()]) if (key.startsWith(`${id}/`)) valueSearches.delete(key);
     }
 
@@ -294,6 +297,10 @@ export const useConnectionsStore = defineStore("connections", () => {
                 // A view that can not be sampled, or missing rights: then no fields are suggested.
                 .catch(() => fields.set(key, []))
                 .finally(() => fieldRequests.delete(key));
+            // The validator lists the allowed values of a field completely (`enum`, `$in`).
+            backend.runCursorCommand(id, database, { listCollections: 1, filter: { name: collection } }, 1)
+                .then(page => allowedValues.set(key, validatorValues((page.documents[0]?.options as Doc | undefined)?.validator)))
+                .catch(() => undefined);
         }
         return fields.get(key) ?? [];
     }
@@ -345,11 +352,17 @@ export const useConnectionsStore = defineStore("connections", () => {
         return { hints: combineSearches(searches), whole: whole !== undefined && !whole.running && !whole.sampled && !whole.truncated && !whole.error };
     }
 
+    /** Values the validator of the collection allows for a field; read with the sample of `fieldsOf`. */
+    function allowedValuesOf(id: string, database: string, collection: string, field: string): ValueHint[] | undefined {
+        fieldsOf(id, database, collection);
+        return allowedValues.get(`${id}/${database}/${collection}`)?.get(field);
+    }
+
     /** Values of a field in the sample `fieldsOf` reads (and reads now, if it has not yet). */
     function sampleValuesOf(id: string, database: string, collection: string, field: string): ValueHint[] | undefined {
         fieldsOf(id, database, collection);
         return sampleValues.get(`${id}/${database}/${collection}`)?.get(field);
     }
 
-    return { profiles, saved, sessions, connecting, failed, selected, marked, inTree, load, save, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, sampleValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
+    return { profiles, saved, sessions, connecting, failed, selected, marked, inTree, load, save, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
 });

@@ -36,12 +36,25 @@ export function useValueSources(tab: () => WorkTab | undefined): ValueSource {
         return current ? connections.searchedValuesOf(current.connectionId, current.database, collection, field) : undefined;
     };
 
+    const allowed: ValueSource = (collection, field) => {
+        const current = tab();
+        return current ? connections.allowedValuesOf(current.connectionId, current.database, collection, field) : undefined;
+    };
+
     // The server's counts first; once a search covered every document, the rest adds nothing.
     const known = mergeValues([shown, sample]);
-    return preferValues(
+    const found = preferValues(
         (collection, field) => searched(collection, field)?.hints,
         (collection, field) => (searched(collection, field)?.whole ? [] : known(collection, field))
     );
+    // What the validator allows comes first, with the counts seen; values outside it (old data) after.
+    return (collection, field) => {
+        const values = found(collection, field) ?? [];
+        const listed = allowed(collection, field);
+        if (!listed?.length) return values;
+        const seen = mergeValues([() => listed, () => values])(collection, field) ?? [];
+        return [...seen.filter(hint => hint.allowed), ...seen.filter(hint => !hint.allowed)];
+    };
 }
 
 /** The search of all data the editor of a tab offers as the last entry of its suggestions. */

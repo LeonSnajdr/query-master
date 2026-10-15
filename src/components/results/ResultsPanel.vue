@@ -16,6 +16,7 @@ import { useKeymap, useShortcut } from "@/keys/keymap";
 import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { isDoc, scalar, toShell } from "@/shell/ejson";
+import { valueAtPath } from "@/shell/values";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
 import { parseStatements, parseValue } from "@/shell/parse";
@@ -423,6 +424,11 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
     const document = documentAt(target.index);
     const field = target.path !== "";
     const locked = collection.value === undefined || tabs.locked(tab.value);
+    // The value of the field in each marked document that has one to filter by.
+    const filterValues = several.length > 1
+        ? several.map(item => valueAtPath(item, target.path)).filter((value): value is Json => value !== undefined && scalar(value) !== undefined)
+        : scalar(target.value) ? [target.value] : [];
+    const canFilter = field && collection.value !== undefined && filterValues.length > 0;
     // The table pins its columns itself (`extra`); the tree pins fields here.
     const isPinned = pinned.value.includes(target.path);
     const pin: MenuEntry[] = field && tab.value.view === "tree"
@@ -432,13 +438,20 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
     const entries: MenuEntry[] = [
         { label: t("document.view"), icon: "i-lucide-file-search", action: () => viewDocument(target.index), disabled: !document },
         { label: t("document.edit"), icon: "i-lucide-file-pen-line", action: () => editDocument(target.index), disabled: !document || !editable.value },
-        // As in Compass: a value of a field becomes a condition of the filter.
+        // As in Compass: a value of a field becomes a condition of the filter; of several marked
+        // documents, their values of the field together (`$in`), or all but them.
         {
-            label: t("result.filterByValue"),
+            label: filterValues.length > 1 ? t("result.filterByValues", { count: filterValues.length }) : t("result.filterByValue"),
             icon: "i-lucide-filter",
             // A failed run shows its error in the tab it ran in; a filter that does not parse is said here.
-            action: () => void tabs.filterByValue(tab.value, target.path, target.value).catch(report),
-            disabled: !field || collection.value === undefined || !scalar(target.value)
+            action: () => void tabs.filterByValue(tab.value, target.path, filterValues).catch(report),
+            disabled: !canFilter
+        },
+        {
+            label: filterValues.length > 1 ? t("result.excludeValues", { count: filterValues.length }) : t("result.excludeValue"),
+            icon: "i-lucide-filter-x",
+            action: () => void tabs.filterByValue(tab.value, target.path, filterValues, true).catch(report),
+            disabled: !canFilter
         },
         "separator",
         {

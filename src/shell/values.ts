@@ -14,6 +14,8 @@ import { parseValue } from "./parse";
 export interface ValueHint {
     value: Json;
     count: number;
+    /** Listed by the validator of the collection (`enum`, `$in`): one of all allowed values. */
+    allowed?: boolean;
 }
 
 /** Somewhere values of fields are known: `undefined` or empty when it knows nothing of the field. */
@@ -94,6 +96,50 @@ export function collectValues(documents: Json[]): ValueIndex {
         index.set(path, [...field.values()].sort((a, b) => b.count - a.count));
     }
     return index;
+}
+
+/**
+ * The values a validator allows per field: `enum` of `$jsonSchema` (also below `properties`,
+ * `items`, `anyOf`, `oneOf`, `allOf`) and `$in` or `$eq` of a validator written as a query. These
+ * lists are complete, so they come before everything else (`allowed`, without a count).
+ */
+export function validatorValues(validator: Json | undefined): ValueIndex {
+    const found = new Map<string, Map<string, ValueHint>>();
+    const add = (path: string, values: Json[]) => {
+        if (!path) return;
+        let field = found.get(path);
+        if (!field) found.set(path, (field = new Map()));
+        for (const value of values) {
+            if (suggestible(value) && !field.has(identity(value))) field.set(identity(value), { value, count: 0, allowed: true });
+        }
+    };
+    const schema = (node: Json | undefined, path: string, depth: number) => {
+        if (!isDoc(node) || depth > DEPTH * 2) return;
+        if (Array.isArray(node.enum)) add(path, node.enum);
+        if (isDoc(node.properties)) {
+            for (const [key, child] of Object.entries(node.properties)) schema(child, path ? `${path}.${key}` : key, depth + 1);
+        }
+        // Elements of an array match on the path of the array.
+        for (const items of Array.isArray(node.items) ? node.items : [node.items]) schema(items, path, depth + 1);
+        for (const keyword of ["anyOf", "oneOf", "allOf"]) {
+            const choices = node[keyword];
+            if (Array.isArray(choices)) for (const choice of choices) schema(choice, path, depth + 1);
+        }
+    };
+    const query = (node: Json, depth: number) => {
+        if (!isDoc(node) || depth > DEPTH) return;
+        for (const [key, condition] of Object.entries(node)) {
+            if (key === "$jsonSchema") schema(condition, "", 0);
+            else if (key === "$and" || key === "$or") {
+                if (Array.isArray(condition)) for (const part of condition) query(part, depth + 1);
+            } else if (!key.startsWith("$")) {
+                if (isDoc(condition) && Array.isArray(condition.$in)) add(key, condition.$in);
+                else if (isDoc(condition) && condition.$eq !== undefined) add(key, [condition.$eq]);
+            }
+        }
+    };
+    if (validator !== undefined) query(validator, 0);
+    return new Map([...found].map(([path, field]) => [path, [...field.values()]]));
 }
 
 /** The values of `primary`, then those of `secondary` it does not have. */
@@ -208,6 +254,27 @@ export function addToFilter(text: string, field: string, value: Json): string {
     if (!isDoc(parsed) || scalar(parsed)) throw new ShellError("error.plan.document", { what: "filter" });
     const filter: Doc = { ...parsed, [field]: value };
     return preview(filter, Number.POSITIVE_INFINITY);
+}
+
+/**
+ * The condition "Filter by this value" puts on a field: the value itself, `$in` for several
+ * values; with `exclude` (as Compass' "exclude") `$ne` or `$nin`. Each value counts once.
+ */
+export function valueCondition(values: Json[], exclude = false): Json {
+    const unique = [...new Map(values.map(value => [identity(value), value])).values()];
+    if (unique.length === 1) return exclude ? { $ne: unique[0]! } : unique[0]!;
+    return exclude ? { $nin: unique } : { $in: unique };
+}
+
+/** The value at a dotted path of a document (`items.0.name`); `undefined` when there is none. */
+export function valueAtPath(document: Json, path: string): Json | undefined {
+    let current: Json | undefined = document;
+    for (const part of path.split(".")) {
+        if (Array.isArray(current) && /^\d+$/.test(part)) current = current[Number(part)];
+        else if (isDoc(current) && !scalar(current)) current = current[part];
+        else return undefined;
+    }
+    return current;
 }
 
 /** The dotted path of a field in a result as a filter takes it: without the places in arrays. */

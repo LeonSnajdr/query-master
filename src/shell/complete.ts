@@ -273,7 +273,9 @@ function valueSuggestion(hint: ValueHint, rank: number, inString: boolean): Sugg
     const text = typeof hint.value === "string" ? hint.value : scalar(hint.value)?.text ?? "";
     const quoted = typeof hint.value === "string" ? JSON.stringify(hint.value) : text;
     // The most frequent first, as long as the typed text fits them equally well.
-    return { label: text, type: "value", detail: `${hint.count}×`, apply: inString ? quoted.slice(1, -1) : quoted, boost: Math.max(0, 30 - rank) };
+    // Allowed by the validator: no count when none was seen, a mark either way.
+    const detail = hint.allowed ? (hint.count > 0 ? `✓ ${hint.count}×` : "✓") : `${hint.count}×`;
+    return { label: text, type: "value", detail, apply: inString ? quoted.slice(1, -1) : quoted, boost: Math.max(0, 30 - rank) };
 }
 
 /** Numbers the places of a snippet in the order they are written, so Tab walks them that way. */

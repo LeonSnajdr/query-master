@@ -3,7 +3,7 @@ import { suggest, valuePlace } from "./complete";
 import type { Environment } from "./complete";
 import type { Json } from "./ejson";
 import {
-    SEARCH_LIMIT, addToFilter, collectValues, combineSearches, filterField, filterPath, mergeValues, preferValues, searchCommand, searchHints
+    SEARCH_LIMIT, addToFilter, collectValues, combineSearches, filterField, filterPath, mergeValues, preferValues, searchCommand, searchHints, validatorValues, valueAtPath, valueCondition
 } from "./values";
 import type { ValueSearch, ValueSource } from "./values";
 
@@ -155,5 +155,51 @@ describe("search of all data", () => {
         expect(valuePlace("db.orders.find({ sta")).toBeUndefined();
         expect(valuePlace("db.orders.find({}).sort({ status: ")).toBeUndefined();
         expect(valuePlace("db.getCollection(\"\").find({ status: \"")).toBeUndefined();
+    });
+});
+
+describe("validatorValues", () => {
+    it("reads enum of a JSON schema, also nested, in arrays and alternatives", () => {
+        const index = validatorValues({
+            $jsonSchema: {
+                bsonType: "object",
+                properties: {
+                    status: { enum: ["new", "paid", "shipped"] },
+                    address: { properties: { country: { anyOf: [{ enum: ["DE", "AT"] }, { enum: ["CH", "DE"] }] } } },
+                    tags: { bsonType: "array", items: { enum: ["a", "b"] } },
+                    note: { bsonType: "string" }
+                }
+            }
+        });
+        expect(index.get("status")?.map(hint => hint.value)).toEqual(["new", "paid", "shipped"]);
+        expect(index.get("address.country")?.map(hint => hint.value)).toEqual(["DE", "AT", "CH"]);
+        expect(index.get("tags")?.map(hint => hint.value)).toEqual(["a", "b"]);
+        expect(index.has("note")).toBe(false);
+        expect(index.get("status")?.[0]).toEqual({ value: "new", count: 0, allowed: true });
+    });
+
+    it("reads $in and $eq of a validator written as a query", () => {
+        const index = validatorValues({ $and: [{ kind: { $in: ["x", "y"] } }, { $or: [{ level: { $eq: 3 } }] }], $jsonSchema: { properties: { s: { enum: [true] } } } });
+        expect(index.get("kind")?.map(hint => hint.value)).toEqual(["x", "y"]);
+        expect(index.get("level")?.map(hint => hint.value)).toEqual([3]);
+        expect(index.get("s")?.map(hint => hint.value)).toEqual([true]);
+        expect(validatorValues(undefined).size).toBe(0);
+    });
+});
+
+describe("valueCondition", () => {
+    it("is the value, $in, $ne or $nin, each value once", () => {
+        expect(valueCondition(["a"])).toBe("a");
+        expect(valueCondition(["a", "b", "a"])).toEqual({ $in: ["a", "b"] });
+        expect(valueCondition(["a", "a"], true)).toEqual({ $ne: "a" });
+        expect(valueCondition([1, 2], true)).toEqual({ $nin: [1, 2] });
+    });
+
+    it("reads the value at a path of a result", () => {
+        const document = { items: [{ name: "x" }, { name: "y" }], at: { $date: "2024-01-01T00:00:00Z" } };
+        expect(valueAtPath(document, "items.1.name")).toBe("y");
+        expect(valueAtPath(document, "at")).toEqual({ $date: "2024-01-01T00:00:00Z" });
+        expect(valueAtPath(document, "at.$date")).toBeUndefined();
+        expect(valueAtPath(document, "missing.x")).toBeUndefined();
     });
 });

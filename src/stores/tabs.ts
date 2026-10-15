@@ -12,7 +12,7 @@ import type { Statement } from "@/shell/parse";
 import { isWrite, pageCommand, planStatement, replyError } from "@/shell/plan";
 import type { Plan } from "@/shell/plan";
 import { aggregateStatement, keepsDocuments, newStage, previewStages } from "@/shell/pipeline";
-import { addToFilter, filterPath } from "@/shell/values";
+import { addToFilter, filterPath, valueCondition } from "@/shell/values";
 import type { PipelineStage } from "@/shell/pipeline";
 import { sqlToShell } from "@/sql/sql";
 import { useConnectionsStore } from "./connections";
@@ -573,9 +573,11 @@ export const useTabsStore = defineStore("tabs", () => {
     /**
      * "Filter by this value" (as Compass does from its schema view): a browse tab gets `field: value`
      * in its filter and runs again; any other tab with documents of a collection opens a browse tab
-     * on it, with the filter of its `find` and the value.
+     * on it, with the filter of its `find` and the value. Several values become `$in`; `exclude`
+     * keeps the documents without them (`$ne`, `$nin`).
      */
-    async function filterByValue(tab: WorkTab, path: string, value: Json): Promise<boolean> {
+    async function filterByValue(tab: WorkTab, path: string, values: Json[], exclude = false): Promise<boolean> {
+        const value = valueCondition(values, exclude);
         const field = filterPath(path);
         const collection = sourceCollection(tab);
         if (!field || collection === undefined) return false;
