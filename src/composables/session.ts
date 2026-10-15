@@ -6,6 +6,7 @@ import { startupChoice, useAppearance } from "@/composables/appearance";
 import { useNotices } from "@/composables/notices";
 import { isDoc } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
+import { storedStages } from "@/shell/pipeline";
 import { useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
 import type { TabKind, WorkTab } from "@/stores/tabs";
@@ -23,10 +24,7 @@ export function sessionContent(tab: WorkTab): Json {
         database: tab.database,
         ...(tab.collection === undefined ? {} : { collection: tab.collection }),
         ...(tab.kind === "shell" || tab.kind === "sql" ? { text: tab.text } : {}),
-        ...(tab.kind === "browse" ? { stages: tab.stages.map(stage => ({ ...stage })) } : {}),
-        ...(tab.kind === "aggregate"
-            ? { pipeline: (tab.pipeline ?? []).map(stage => ({ operator: stage.operator, text: stage.text, enabled: stage.enabled })), options: tab.aggregateOptions ?? "" }
-            : {}),
+        ...(tab.kind === "browse" || tab.kind === "aggregate" ? { pipeline: storedStages(tab.pipeline ?? []), options: tab.aggregateOptions ?? "" } : {}),
         ...(tab.page === undefined ? {} : { page: tab.page }),
         ...(tab.file === undefined ? {} : { file: tab.file }),
         view: tab.view,

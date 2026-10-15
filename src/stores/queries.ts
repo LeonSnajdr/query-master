@@ -4,9 +4,9 @@ import { backend } from "@/api";
 import type { SavedQuery } from "@/api";
 import { isDoc } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
-import { newStage } from "@/shell/pipeline";
+import { activeStages, readStages, storedStages } from "@/shell/pipeline";
 import { useTabsStore } from "./tabs";
-import type { Stage, WorkTab } from "./tabs";
+import type { WorkTab } from "./tabs";
 
 /** The kinds of tab whose query can be saved. */
 export type QueryKind = SavedQuery["kind"];
@@ -15,14 +15,10 @@ export function isQueryKind(kind: string): kind is QueryKind {
     return kind === "browse" || kind === "aggregate" || kind === "shell" || kind === "sql";
 }
 
-/** What a tab needs to run its query again: query rows, stages and options, or the text. */
+/** What a tab needs to run its query again: stages and options, or the text. */
 export function queryContent(tab: WorkTab): Json {
-    if (tab.kind === "browse") return { stages: tab.stages.map(stage => ({ name: stage.name, text: stage.text, enabled: stage.enabled, ...(stage.json ? { json: true } : {}) })) };
-    if (tab.kind === "aggregate") {
-        return {
-            pipeline: (tab.pipeline ?? []).map(stage => ({ operator: stage.operator, text: stage.text, enabled: stage.enabled })),
-            options: tab.aggregateOptions ?? ""
-        };
+    if (tab.kind === "browse" || tab.kind === "aggregate") {
+        return { pipeline: storedStages(tab.pipeline ?? []), options: tab.aggregateOptions ?? "" };
     }
     return { text: tab.text };
 }
@@ -49,7 +45,7 @@ export function draftOf(tab: WorkTab): SavedQuery | undefined {
 /** A name to start with: the filter (`status: open`), else the first line of the text. */
 export function suggestedName(tab: WorkTab): string {
     if (tab.kind === "browse") {
-        const filter = tab.stages.find(stage => stage.name === "filter" && stage.enabled)?.text.replace(/^\s*\{\s*|\s*\}\s*$/g, "").replace(/\s+/g, " ").trim();
+        const filter = activeStages(tab.pipeline ?? []).find(stage => stage.operator === "$match")?.text.replace(/^\s*\{\s*|\s*\}\s*$/g, "").replace(/\s+/g, " ").trim();
         return (filter || tab.collection || "").slice(0, 60);
     }
     if (tab.kind === "aggregate") return `${tab.collection ?? ""} ${(tab.pipeline ?? []).map(stage => stage.operator).join(" ")}`.trim().slice(0, 60);
@@ -118,11 +114,9 @@ export const useQueriesStore = defineStore("queries", () => {
     function apply(tab: WorkTab, query: SavedQuery): void {
         const tabs = useTabsStore();
         const content = isDoc(query.content) ? query.content : {};
-        if (query.kind === "browse" && Array.isArray(content.stages)) {
-            tab.stages = (content.stages as unknown as Stage[]).map(stage => ({ ...stage }));
-        } else if (query.kind === "aggregate") {
-            const stages = Array.isArray(content.pipeline) ? content.pipeline as unknown as { operator: string; text: string; enabled: boolean }[] : [];
-            tab.pipeline = stages.map(stage => newStage(stage.operator, stage.text, stage.enabled));
+        if (query.kind === "browse" || query.kind === "aggregate") {
+            // Queries saved before the collection had stages keep their rows as `stages`.
+            tab.pipeline = readStages(content) ?? [];
             tab.aggregateOptions = typeof content.options === "string" && content.options ? content.options : undefined;
         } else if (typeof content.text === "string") {
             tab.text = content.text;

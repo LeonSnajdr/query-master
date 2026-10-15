@@ -18,15 +18,19 @@ import { useValueSearch, useValueSources } from "@/composables/values";
 import type { MenuEntry } from "@/menu";
 import { STAGES } from "@/shell/catalog";
 import type { Environment } from "@/shell/complete";
-import { parseStatements, parseValue } from "@/shell/parse";
+import { convertQueryText, parseStatements, parseValue } from "@/shell/parse";
 import type { Json } from "@/shell/ejson";
-import { aggregateStatement, keepsDocuments, moveItem, newStage, optionsOf, pipelineText, stagesOf, WRITING_STAGES } from "@/shell/pipeline";
+import { browseStages, keepsDocuments, moveItem, newStage, optionsOf, pipelineText, stagesOfQuery, WRITING_STAGES } from "@/shell/pipeline";
 import type { PipelineStage } from "@/shell/pipeline";
 import { collectFields, useConnectionsStore } from "@/stores/connections";
-import { useTabsStore } from "@/stores/tabs";
+import { stagesStatement, useTabsStore } from "@/stores/tabs";
 import { useKeymap } from "@/keys/keymap";
 
-/** The aggregation builder: the stages of a pipeline as rows above, the result below. */
+/**
+ * The stage builder of a collection and of the aggregation: the stages as rows above, the result
+ * below. Both offer the same: any stage, moved by its grip or the arrows, switched off, in Json
+ * mode. A collection runs as `find` while its stages are those of one, else as a pipeline.
+ */
 const props = defineProps<{
     tabId: string;
 }>();
@@ -47,6 +51,7 @@ const tab = computed(() => tabs.tabs.find(item => item.id === props.tabId)!);
 const profile = computed(() => connections.profiles.find(item => item.id === tab.value.connectionId));
 const collection = computed(() => tab.value.collection ?? "");
 const stages = computed(() => tab.value.pipeline ?? []);
+const isBrowse = computed(() => tab.value.kind === "browse");
 
 /** The stage that was clicked last; remove and move act on it. */
 const current = shallowRef<number>();
@@ -56,7 +61,8 @@ const options = computed({
     get: () => tab.value.aggregateOptions ?? "{ }",
     set: (text: string) => (tab.value.aggregateOptions = text)
 });
-const wholeStatement = () => aggregateStatement(collection.value, stages.value, tab.value.aggregateOptions);
+const wholeStatement = () => stagesStatement(tab.value);
+const run = (upTo?: number) => tabs.runStages(tab.value, upTo);
 const currentIndex = computed(() => stages.value.findIndex(stage => stage.id === current.value));
 
 const values = useValueSources(() => tab.value);
@@ -144,6 +150,25 @@ function changeStage(stage: PipelineStage, operator: string) {
     stage.operator = operator;
 }
 
+/** The Json mode of a row (as the "Mongo JSON mode"): the text is written anew in the other notation. */
+function toggleJson(stage: PipelineStage) {
+    try {
+        stage.text = convertQueryText(stage.text, !stage.json);
+        stage.json = !stage.json;
+    } catch (error) {
+        report(error);
+    }
+}
+
+/** The stages a new tab of this kind starts with; runs again. */
+function resetStages() {
+    tab.value.pipeline = isBrowse.value ? browseStages() : [newStage("$match", "{ }")];
+    tab.value.aggregateOptions = undefined;
+    showOptions.value = false;
+    current.value = undefined;
+    void run();
+}
+
 function removeStage() {
     const index = currentIndex.value;
     if (index === -1) return;
@@ -203,16 +228,16 @@ async function copyPipeline() {
     }
 }
 
-/** Takes an `aggregate` statement apart into rows: one copied here, or one of the history. */
+/** Takes a `find` or `aggregate` statement apart into rows: one copied here, or one of the history. */
 function applyStatement(text: string) {
     try {
         const [statement] = parseStatements(text);
         if (!statement) return;
-        tab.value.pipeline = stagesOf(statement);
-        tab.value.aggregateOptions = optionsOf(statement) || undefined;
+        tab.value.pipeline = stagesOfQuery(statement);
+        tab.value.aggregateOptions = statement.method === "aggregate" ? optionsOf(statement) || undefined : undefined;
         showOptions.value = tab.value.aggregateOptions !== undefined;
         current.value = undefined;
-        void tabs.runAggregate(tab.value);
+        void run();
     } catch (error) {
         report(error);
     }
@@ -246,14 +271,21 @@ function createView() {
 <template>
     <section class="h-full min-h-0 flex flex-col">
         <h1 class="m-0 shrink-0 h-13 flex items-end gap-3 px-5.5 pb-1.5 text-[21px] font-normal text-on-surface whitespace-nowrap overflow-hidden">
-            <span data-testid="aggregate-title">{{ collection }}</span>
-            <span class="text-on-surface/80">{{ $t("aggregate.title") }} · {{ tab.database }} @ {{ profile?.name }}</span>
+            <span :data-testid="isBrowse ? 'browse-title' : 'aggregate-title'">{{ collection }}</span>
+            <span
+                v-if="isBrowse"
+                class="text-on-surface/80"
+            >{{ tab.database }} @ {{ profile?.name }}</span>
+            <span
+                v-else
+                class="text-on-surface/80"
+            >{{ $t("aggregate.title") }} · {{ tab.database }} @ {{ profile?.name }}</span>
         </h1>
 
         <template v-if="layout !== 'results'">
             <div class="h-8 shrink-0 flex items-center gap-0.5 px-5">
                 <IconButton
-                    @click="tabs.runAggregate(tab)"
+                    @click="run()"
                     :disabled="tab.running"
                     :icon="tab.running ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-play'"
                     :label="keymap.titled($t('query.run'), 'query.run')"
@@ -263,7 +295,7 @@ function createView() {
                     {{ $t("query.run") }}
                 </IconButton>
                 <IconButton
-                    @click="tabs.runAggregate(tab, currentIndex)"
+                    @click="run(currentIndex)"
                     :disabled="tab.running || currentIndex === -1"
                     :label="$t('aggregate.preview')"
                     data-testid="stage-preview"
@@ -302,6 +334,7 @@ function createView() {
                     @click="move(1)"
                     :disabled="currentIndex === -1 || currentIndex === stages.length - 1"
                     :label="$t('stage.down')"
+                    data-testid="stage-down"
                     icon="i-lucide-arrow-down"
                 />
                 <span class="toolbar-rule" />
@@ -316,12 +349,12 @@ function createView() {
                 <span class="toolbar-rule" />
                 <IconButton
                     @click="copyPipeline"
-                    :label="$t('aggregate.copy')"
+                    :label="isBrowse ? $t('query.copy') : $t('aggregate.copy')"
                     icon="i-lucide-copy"
                 />
                 <IconButton
                     @click="pastePipeline"
-                    :label="$t('aggregate.paste')"
+                    :label="isBrowse ? $t('query.paste') : $t('aggregate.paste')"
                     icon="i-lucide-clipboard-paste"
                 />
                 <IconButton
@@ -343,6 +376,12 @@ function createView() {
                     :label="$t('aggregate.options')"
                     data-testid="aggregate-options"
                     icon="i-lucide-sliders-horizontal"
+                />
+                <IconButton
+                    @click="resetStages"
+                    :label="$t('stage.reset')"
+                    data-testid="stage-reset"
+                    icon="i-lucide-list-restart"
                 />
             </div>
 
@@ -394,12 +433,20 @@ function createView() {
                     >
                         <CodeEditor
                             v-model="stage.text"
-                            @run="tabs.runAggregate(tab)"
+                            @run="run()"
                             :environment="environmentAt(stage)"
                             :label="stage.operator"
                             :prefix="prefix(stage)"
                         />
                     </div>
+                    <IconButton
+                        @click="toggleJson(stage)"
+                        :active="stage.json === true"
+                        :data-testid="`stage-json-${stage.operator}`"
+                        :label="$t('stage.json', { name: stage.operator })"
+                        class="shrink-0 ml-1 mt-0.5"
+                        icon="i-lucide-braces"
+                    />
                     <SwitchRoot
                         v-model="stage.enabled"
                         :label="$t('stage.enabled', { name: stage.operator })"
@@ -425,7 +472,7 @@ function createView() {
                     <span class="w-36 shrink-0 pl-4 text-[13px] font-semibold text-on-surface-variant">{{ $t("aggregate.options") }}</span>
                     <CodeEditor
                         v-model="options"
-                        @run="tabs.runAggregate(tab)"
+                        @run="run()"
                         :environment
                         :label="$t('aggregate.options')"
                         :prefix="`db.getCollection(${JSON.stringify(collection)}).aggregate([], `"

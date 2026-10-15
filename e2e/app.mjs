@@ -1020,11 +1020,23 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
     });
 
     await step("filter and sort narrow and order the result", async () => {
-        const rows = panel.locator("[data-testid=stage-row]");
+        const rows = panel.locator("[data-testid=pipeline-stage]");
         await write(rows.nth(0), "{ n: { $gte: 2 } }");
-        await write(rows.nth(2), "{ n: -1 }");
+        await write(rows.nth(1), "{ n: -1 }");
         await panel.locator("[data-testid=query-run]").click();
         await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 2"));
+        // The same stages as the aggregation: $sort moved in front runs as a pipeline, alike here.
+        await rows.nth(1).locator(".cm-content").click();
+        await panel.locator("[data-testid=stage-up]").click();
+        assert.equal(await rows.nth(0).locator("[data-testid=stage-operator]").innerText(), "$sort");
+        await panel.locator("[data-testid=query-run]").click();
+        await panel.locator("[data-testid=query-run]:not([disabled])").waitFor();
+        assert.equal(await panel.locator("[data-testid=query-error]").count(), 0);
+        assert.equal((await panel.locator("[data-testid=result-range]").innerText()).trim(), "1 – 2");
+        await panel.locator("[data-testid=stage-down]").click();
+        assert.equal(await rows.nth(0).locator("[data-testid=stage-operator]").innerText(), "$match");
+        await panel.locator("[data-testid=query-run]").click();
+        await panel.locator("[data-testid=query-run]:not([disabled])").waitFor();
         assert.match(await panel.locator("[data-testid=tree-value]").first().innerText(), /./);
         assert.equal(await panel.locator("[data-testid=query-error]").count(), 0);
         // The same query as code of a driver.
@@ -1070,7 +1082,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
     });
 
     await step("the table steps into an array and back", async () => {
-        const rows = panel.locator("[data-testid=stage-row]");
+        const rows = panel.locator("[data-testid=pipeline-stage]");
         await write(rows.nth(0), "{ }");
         await panel.locator("[data-testid=query-run]").click();
         await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 3"));

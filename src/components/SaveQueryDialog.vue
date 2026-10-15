@@ -7,9 +7,8 @@ import { namesAsChoices } from "@/choice";
 import ChoiceField from "@/components/ChoiceField.vue";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
-import { aggregateStatement } from "@/shell/pipeline";
 import { draftOf, useQueriesStore } from "@/stores/queries";
-import { browseStatement, useTabsStore } from "@/stores/tabs";
+import { stagesStatement, useTabsStore } from "@/stores/tabs";
 
 /** Saves the query of a tab with a name and a folder, or changes or removes a saved one (stage 20). */
 const props = defineProps<{
@@ -43,8 +42,7 @@ const scopeOptions = computed(() => [
 const statement = computed(() => {
     const current = tab.value;
     if (!current) return "";
-    if (current.kind === "browse") return browseStatement(current);
-    if (current.kind === "aggregate") return aggregateStatement(current.collection ?? "", current.pipeline ?? [], current.aggregateOptions);
+    if (current.kind === "browse" || current.kind === "aggregate") return stagesStatement(current);
     return current.text;
 });
 

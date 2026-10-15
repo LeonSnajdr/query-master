@@ -16,7 +16,7 @@ import type { ChartPick, SchemaResult } from "@/shell/schema";
 import type { ExplainResult } from "@/shell/explain";
 import { isWrite, pageCommand, planStatement, replyError } from "@/shell/plan";
 import type { Plan } from "@/shell/plan";
-import { aggregateStatement, keepsDocuments, newStage, previewStages } from "@/shell/pipeline";
+import { aggregateStatement, browseStages, findStatement, keepsDocuments, newStage, previewStages, readStages } from "@/shell/pipeline";
 import { addToFilter, filterPath, valueCondition } from "@/shell/values";
 import type { PipelineStage } from "@/shell/pipeline";
 import { sqlToShell } from "@/sql/sql";
@@ -61,19 +61,6 @@ export interface TabSchema {
 /** What a server tab shows. */
 /** What a server tab shows; `gridfs` the files of the bucket named in `collection`. */
 export type ServerPage = "status" | "log" | "users" | "roles" | "gridfs";
-export type StageName = "filter" | "projection" | "sort" | "skip" | "limit";
-/** The stages a browse tab can show, in the order they apply. */
-export const STAGE_NAMES: StageName[] = ["filter", "projection", "sort", "skip", "limit"];
-
-/** One line of the query of a browse tab. */
-export interface Stage {
-    name: StageName;
-    text: string;
-    enabled: boolean;
-    /** The text is strict extended JSON instead of shell notation; both run alike. */
-    json?: boolean;
-}
-
 export interface QueryResult {
     /** Documents of a cursor, the elements of an array, or one value. */
     items: Json[];
@@ -106,8 +93,6 @@ export interface WorkTab {
     text: string;
     /** Shell tabs: the file the script was opened from or saved to; the tab carries its name. */
     file?: string;
-    /** Browse tabs: the query. */
-    stages: Stage[];
     view: ResultView;
     pageSize: number;
     /** Writes are refused. */
@@ -132,9 +117,9 @@ export interface WorkTab {
     runId?: string;
     /** Server tabs: what they show. */
     page?: ServerPage;
-    /** Aggregate tabs: the stages of the pipeline. */
+    /** Browse and aggregate tabs: the stages of the query. */
     pipeline?: PipelineStage[];
-    /** Aggregate tabs: shell text of the options (`allowDiskUse`, `maxTimeMS` …). */
+    /** Browse and aggregate tabs: shell text of the options (`allowDiskUse`, `maxTimeMS` …). */
     aggregateOptions?: string;
     /** Schema tabs: what the analysis found, and the bars chosen as a filter. */
     schema?: TabSchema;
@@ -157,23 +142,17 @@ class ReplyError extends Error {
     }
 }
 
-function isEmptyStage(text: string): boolean {
-    return text.replace(/\s/g, "") === "" || text.replace(/\s/g, "") === "{}";
-}
-
-/** The shell statement a browse tab stands for. */
-export function browseStatement(tab: WorkTab): string {
-    const stage = (name: StageName) => {
-        const found = tab.stages.find(item => item.name === name && item.enabled);
-        return found && !isEmptyStage(found.text) ? found.text.trim() : undefined;
-    };
-    const projection = stage("projection");
-    let statement = `db.getCollection(${JSON.stringify(tab.collection ?? "")}).find(${stage("filter") ?? "{}"}${projection ? `, ${projection}` : ""})`;
-    for (const name of ["sort", "skip", "limit"] as const) {
-        const text = stage(name);
-        if (text) statement += `.${name}(${text})`;
-    }
-    return statement;
+/**
+ * The shell statement the stages of a browse or aggregate tab stand for; with `upTo`, only those up
+ * to that stage and none that writes. A browse tab runs a `find` while its stages are those of one
+ * (filter, sort, skip, limit, projection in that order), else both run the pipeline.
+ */
+export function stagesStatement(tab: WorkTab, upTo?: number): string {
+    const all = tab.pipeline ?? [];
+    const stages = upTo === undefined ? all : previewStages(all, upTo);
+    const collection = tab.collection ?? "";
+    const find = tab.kind === "browse" ? findStatement(collection, stages, tab.aggregateOptions) : undefined;
+    return find ?? aggregateStatement(collection, stages, tab.aggregateOptions);
 }
 
 export const useTabsStore = defineStore("tabs", () => {
@@ -197,11 +176,7 @@ export const useTabsStore = defineStore("tabs", () => {
             connectionId: "",
             database: "",
             text: "",
-            stages: [
-                { name: "filter", text: "{ }", enabled: true },
-                { name: "projection", text: "{ }", enabled: true },
-                { name: "sort", text: "{ }", enabled: true }
-            ],
+            ...(kind === "browse" ? { pipeline: browseStages() } : {}),
             // As chosen in the settings.
             view: preferences.resultView,
             pageSize: preferences.pageSize,
@@ -225,11 +200,9 @@ export const useTabsStore = defineStore("tabs", () => {
         if (text("collection") !== undefined) options.collection = text("collection");
         if (text("text") !== undefined) options.text = text("text");
         if (text("file") !== undefined) options.file = text("file");
-        if (Array.isArray(content.stages)) options.stages = (content.stages as unknown as Stage[]).map(stage => ({ ...stage }));
-        if (Array.isArray(content.pipeline)) {
-            options.pipeline = (content.pipeline as unknown as { operator: string; text: string; enabled: boolean }[]).map(stage => newStage(stage.operator, stage.text, stage.enabled));
-            options.aggregateOptions = text("options") || undefined;
-        }
+        const stages = readStages(content);
+        if (stages) options.pipeline = stages;
+        if (text("options")) options.aggregateOptions = text("options");
         if (text("page") !== undefined) options.page = text("page") as ServerPage;
         if (text("view") !== undefined) options.view = text("view") as ResultView;
         const pageSize = toNumber(content.pageSize);
@@ -280,9 +253,8 @@ export const useTabsStore = defineStore("tabs", () => {
 
     /** The documents the chosen bars stand for, in the document browser of the collection. */
     function browseFiltered(target: { connectionId: string; database: string; collection: string }, filter: Doc): WorkTab {
-        const tab = create("browse", target);
-        tab.stages[0]!.text = preview(filter, Number.POSITIVE_INFINITY);
-        void runBrowse(tab);
+        const tab = create("browse", { ...target, pipeline: browseStages(preview(filter, Number.POSITIVE_INFINITY)) });
+        void runStages(tab);
         return tab;
     }
 
@@ -303,7 +275,7 @@ export const useTabsStore = defineStore("tabs", () => {
             return open;
         }
         const tab = create("browse", target);
-        void runBrowse(tab);
+        void runStages(tab);
         return tab;
     }
 
@@ -343,15 +315,13 @@ export const useTabsStore = defineStore("tabs", () => {
             database: tab.database,
             collection: tab.collection,
             text: tab.text,
-            stages: tab.stages.map(stage => ({ ...stage })),
-            pipeline: tab.pipeline?.map(stage => newStage(stage.operator, stage.text, stage.enabled)),
+            pipeline: tab.pipeline?.map(stage => newStage(stage.operator, stage.text, stage.enabled, stage.json)),
             aggregateOptions: tab.aggregateOptions,
             view: tab.view,
             pageSize: tab.pageSize,
             readonly: tab.readonly
         });
-        if (copy.kind === "browse") void runBrowse(copy);
-        if (copy.kind === "aggregate") void runAggregate(copy);
+        if (copy.kind === "browse" || copy.kind === "aggregate") void runStages(copy);
     }
 
     function close(id: string): void {
@@ -617,35 +587,18 @@ export const useTabsStore = defineStore("tabs", () => {
         tab.error = undefined;
     }
 
-    /** Browse tabs: runs the query its fields describe. */
-    function runBrowse(tab: WorkTab): Promise<boolean> {
-        return guarded(tab, async () => {
-            const text = browseStatement(tab);
-            let statement;
-            try {
-                [statement] = parseStatements(text);
-            } catch (error) {
-                // The place is one in the composed statement, not in a field.
-                throw error instanceof ShellError ? new ShellError(error.key, error.params) : error;
-            }
-            if (!statement) throw new ShellError("error.plan.nothing");
-            await fetch(tab, planStatement(statement, tab.database), 0, text);
-            remember(tab, text);
-        });
-    }
-
     /**
-     * Aggregate tabs: runs the stages that are switched on; with `upTo`, only those up to that
-     * stage and none that writes, to look at the documents there.
+     * Browse and aggregate tabs: runs the stages that are switched on; with `upTo`, only those up
+     * to that stage and none that writes, to look at the documents there.
      */
-    function runAggregate(tab: WorkTab, upTo?: number): Promise<boolean> {
+    function runStages(tab: WorkTab, upTo?: number): Promise<boolean> {
         return guarded(tab, async () => {
-            const stages = tab.pipeline ?? [];
-            const text = aggregateStatement(tab.collection ?? "", upTo === undefined ? stages : previewStages(stages, upTo), tab.aggregateOptions);
+            const text = stagesStatement(tab, upTo);
             let statement;
             try {
                 [statement] = parseStatements(text);
             } catch (error) {
+                // The place is one in the composed statement, not in a stage.
                 throw error instanceof ShellError ? new ShellError(error.key, error.params) : error;
             }
             if (!statement) throw new ShellError("error.plan.nothing");
@@ -667,9 +620,9 @@ export const useTabsStore = defineStore("tabs", () => {
     }
 
     function runTab(tab: WorkTab): Promise<boolean> {
-        if (tab.kind === "aggregate") return runAggregate(tab);
+        if (tab.kind === "browse" || tab.kind === "aggregate") return runStages(tab);
         if (tab.kind === "sql") return runSql(tab);
-        return tab.kind === "browse" ? runBrowse(tab) : run(tab, 0, undefined, true);
+        return run(tab, 0, undefined, true);
     }
 
     /**
@@ -724,9 +677,13 @@ export const useTabsStore = defineStore("tabs", () => {
 
     /** The collection the shown documents come from, when the result is one of documents of a collection. */
     function sourceCollection(tab: WorkTab): string | undefined {
-        if (tab.kind === "browse") return tab.collection;
-        // Documents a pipeline reshaped are not documents of the collection any more.
-        if (tab.kind === "aggregate") return keepsDocuments(tab.pipeline ?? []) ? tab.collection : undefined;
+        // Documents a pipeline reshaped are not documents of the collection any more; a projection
+        // of a `find` leaves them those of the collection.
+        if (tab.kind === "browse" || tab.kind === "aggregate") {
+            const stages = tab.pipeline ?? [];
+            const asFind = tab.kind === "browse" && findStatement(tab.collection ?? "", stages, tab.aggregateOptions) !== undefined;
+            return asFind || keepsDocuments(stages) ? tab.collection : undefined;
+        }
         const command = tab.plan?.command;
         if (!command || tab.plan?.shape) return undefined;
         const name = command.find ?? command.aggregate;
@@ -744,21 +701,23 @@ export const useTabsStore = defineStore("tabs", () => {
         const field = filterPath(path);
         const collection = sourceCollection(tab);
         if (!field || collection === undefined) return false;
-        if (tab.kind === "browse") {
-            let stage = tab.stages.find(item => item.name === "filter");
-            if (!stage) tab.stages.unshift((stage = { name: "filter", text: "{ }", enabled: true }));
+        // The documents are those of the collection: the filter goes into the $match in front.
+        if (tab.kind === "browse" || tab.kind === "aggregate") {
+            const stages = tab.pipeline ?? [];
+            if (stages[0]?.operator !== "$match") tab.pipeline = [newStage("$match", "{ }"), ...stages];
+            // The store's own object, so the row shows the change.
+            const stage = tab.pipeline![0]!;
             // Switched off, the filter in it did not apply: it starts anew.
             stage.text = addToFilter(stage.enabled ? stage.text : "", field, value);
             // A row in Json mode stays in it.
             if (stage.json) stage.text = convertQueryText(stage.text, true);
             stage.enabled = true;
-            return runBrowse(tab);
+            return runStages(tab);
         }
         const command = tab.plan?.command;
         const base = command?.find === collection && isDoc(command.filter) ? toShell(command.filter) : "";
-        const browse = create("browse", { connectionId: tab.connectionId, database: tab.plan?.database ?? tab.database, collection });
-        browse.stages[0]!.text = addToFilter(base, field, value);
-        return runBrowse(browse);
+        const browse = create("browse", { connectionId: tab.connectionId, database: tab.plan?.database ?? tab.database, collection, pipeline: browseStages(addToFilter(base, field, value)) });
+        return runStages(browse);
     }
 
     /** How many documents the query matches in all; `undefined` when that can not be told. */
@@ -841,7 +800,7 @@ export const useTabsStore = defineStore("tabs", () => {
     return {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, move, step,
-        openSchema, analyzeSchema, browseFiltered, restoreTab, run, showResult, explainResult, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
+        openSchema, analyzeSchema, browseFiltered, restoreTab, run, showResult, explainResult, stop, runStages, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument
     };
 });

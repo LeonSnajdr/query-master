@@ -4,12 +4,11 @@ import { computed, onMounted, shallowRef, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { inApp } from "@/api";
 import AppMenuBar from "@/components/AppMenuBar.vue";
-import AggregatePanel from "@/components/AggregatePanel.vue";
 import AppDialogs from "@/components/AppDialogs.vue";
 import NoticeBell from "@/components/NoticeBell.vue";
 import NoticeStack from "@/components/NoticeStack.vue";
+import StagesPanel from "@/components/StagesPanel.vue";
 import StatusMessage from "@/components/StatusMessage.vue";
-import BrowsePanel from "@/components/BrowsePanel.vue";
 import ConnectionDock from "@/components/ConnectionDock.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import IconButton from "@/components/IconButton.vue";
@@ -359,12 +358,8 @@ onMounted(async () => {
                     data-testid="tab-panel"
                 >
                     <StartPage v-if="tab.kind === 'start'" />
-                    <BrowsePanel
-                        v-else-if="tab.kind === 'browse'"
-                        :tabId="tab.id"
-                    />
-                    <AggregatePanel
-                        v-else-if="tab.kind === 'aggregate'"
+                    <StagesPanel
+                        v-else-if="tab.kind === 'browse' || tab.kind === 'aggregate'"
                         :tabId="tab.id"
                     />
                     <SqlPanel

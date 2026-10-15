@@ -3,7 +3,7 @@ import type { WorkTab } from "@/stores/tabs";
 import { sessionContent, sessionOf, worthRestoring } from "./session";
 
 function tab(fields: Partial<WorkTab>): WorkTab {
-    return { id: "t", kind: "shell", connectionId: "c", database: "shop", text: "", stages: [], view: "tree", pageSize: 20, readonly: false, search: "", running: false, ...fields };
+    return { id: "t", kind: "shell", connectionId: "c", database: "shop", text: "", view: "tree", pageSize: 20, readonly: false, search: "", running: false, ...fields };
 }
 
 describe("session", () => {

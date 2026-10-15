@@ -4,14 +4,14 @@ import { belongsTo, draftOf, matchesQuery, queryContent, sameContent, scopeOf, s
 import type { WorkTab } from "./tabs";
 
 function tab(fields: Partial<WorkTab>): WorkTab {
-    return { id: "t", kind: "browse", connectionId: "c", database: "shop", text: "", stages: [], view: "tree", pageSize: 20, readonly: false, search: "", running: false, ...fields };
+    return { id: "t", kind: "browse", connectionId: "c", database: "shop", text: "", view: "tree", pageSize: 20, readonly: false, search: "", running: false, ...fields };
 }
 
-const browse = tab({ collection: "orders", stages: [{ name: "filter", text: "{ status: \"open\" }", enabled: true }, { name: "sort", text: "{ }", enabled: true }] });
+const browse = tab({ collection: "orders", pipeline: [{ id: 1, operator: "$match", text: "{ status: \"open\" }", enabled: true }, { id: 2, operator: "$sort", text: "{ }", enabled: true, json: true }] });
 
 describe("saved queries", () => {
     it("takes what a tab needs to run its query again", () => {
-        expect(queryContent(browse)).toEqual({ stages: [{ name: "filter", text: "{ status: \"open\" }", enabled: true }, { name: "sort", text: "{ }", enabled: true }] });
+        expect(queryContent(browse)).toEqual({ pipeline: [{ operator: "$match", text: "{ status: \"open\" }", enabled: true }, { operator: "$sort", text: "{ }", enabled: true, json: true }], options: "" });
         expect(queryContent(tab({ kind: "shell", text: "db.a.find()" }))).toEqual({ text: "db.a.find()" });
         expect(queryContent(tab({ kind: "aggregate", collection: "orders", pipeline: [{ id: 7, operator: "$match", text: "{}", enabled: false }], aggregateOptions: "{ allowDiskUse: true }" })))
             .toEqual({ pipeline: [{ operator: "$match", text: "{}", enabled: false }], options: "{ allowDiskUse: true }" });

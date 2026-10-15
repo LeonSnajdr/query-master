@@ -156,7 +156,7 @@ function openInBuilder() {
             pipeline: stagesOf(statement),
             aggregateOptions: optionsOf(statement) || undefined
         });
-        void tabs.runAggregate(opened);
+        void tabs.runStages(opened);
     } catch (error) {
         report(error);
     }
