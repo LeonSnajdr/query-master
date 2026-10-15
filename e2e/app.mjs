@@ -439,7 +439,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         const row = page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) });
         const progressText = async (testid) => {
             await page.locator(`[data-testid=${testid}-progress-row][data-state=done]`).waitFor();
-            return page.locator(`[data-testid=${testid}-progress-row]`).innerText();
+            return page.locator(`[data-testid=${testid}-progress-count]`).innerText();
         };
 
         // Into a folder: JSON in the shell's notation, then CSV, each a file named.
@@ -451,7 +451,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
             await id("export-next").click();
             if (format === "csv") await id("export-schema").click();
             await id("export-start").click();
-            assert.match(await progressText("export"), /3 documents/);
+            assert.match(await progressText("export"), /^3$/);
             assert.match(await id("export-progress-summary").innerText(), /1 of 1 finished · 3 documents/);
             await id("export-close").click();
         }
@@ -495,7 +495,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.match(await page.locator("[data-testid=import-row] [data-testid=choice-field]").innerText(), /Generate new _id/);
         await shot("import-wizard");
         await id("import-next").click();
-        assert.match(await progressText("import"), /3 documents/);
+        assert.match(await progressText("import"), /^3$/);
         await id("import-close").click();
 
         // CSV: the settings, then the columns with the types guessed from the first rows.
@@ -526,7 +526,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.locator("[data-testid=import-preview] tbody tr").nth(2).waitFor();
         await shot("import-schema");
         await id("import-start").click();
-        assert.match(await progressText("import"), /3 documents/);
+        assert.match(await progressText("import"), /^3$/);
         await id("import-close").click();
         await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_csv` }).waitFor();
         await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_json` }).waitFor();

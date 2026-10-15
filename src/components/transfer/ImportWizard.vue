@@ -14,6 +14,7 @@ import { IMPORT_FORMATS, importProblems } from "@/transfer/import";
 import type { CsvReadSettings, EmptyFields, ImportFormat } from "@/transfer/import";
 import ImportFiles from "./ImportFiles.vue";
 import ImportSchema from "./ImportSchema.vue";
+import TransferFailure from "./TransferFailure.vue";
 import TransferProgress from "./TransferProgress.vue";
 
 /** The import wizard: format tiles, files with their target, CSV pages, progress. */
@@ -87,6 +88,9 @@ function back() {
 }
 
 const progressRows = computed(() => state.value.rows.map(row => ({ source: splitPath(row.path).name, target: `${row.database}.${row.collection}` })));
+/** The failed row whose message stands next to the buttons; none: the first that failed. */
+const failure = shallowRef<number>();
+watch(() => wizard.runId, () => (failure.value = undefined));
 </script>
 
 <template>
@@ -229,6 +233,8 @@ const progressRows = computed(() => state.value.rows.map(row => ({ source: split
                 <!-- Page 4: how far each file got. -->
                 <TransferProgress
                     v-else
+                    v-model:selected="failure"
+                    :heads="[$t('transfer.progress.file'), $t('transfer.progress.collection')]"
                     :progress="wizard.progress"
                     :rows="progressRows"
                     :running="running"
@@ -243,6 +249,13 @@ const progressRows = computed(() => state.value.rows.map(row => ({ source: split
                     >
                         {{ problemText }}
                     </p>
+                    <TransferFailure
+                        v-else-if="wizard.step === 'progress'"
+                        :progress="wizard.progress"
+                        :rows="progressRows"
+                        :selected="failure"
+                        kind="import"
+                    />
                     <span
                         v-else
                         class="grow"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogRoot, DialogTitle, SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
-import { computed, ref, shallowRef } from "vue";
+import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { namesAsChoices } from "@/choice";
 import IconButton from "@/components/IconButton.vue";
@@ -12,6 +12,7 @@ import { useConnectionsStore } from "@/stores/connections";
 import { defaultOutput, exportProblems, FILE_TARGETS, hasColumns, SQL_DIALECTS } from "@/transfer/export";
 import type { CsvSettings, ExportFormat, ExportRow, FileTarget, InsertMode, JsonLayout, JsonNotation, SqlDialect } from "@/transfer/export";
 import ColumnSchema from "./ColumnSchema.vue";
+import TransferFailure from "./TransferFailure.vue";
 import TransferProgress from "./TransferProgress.vue";
 
 /** The export wizard: format tiles, rows of collections, settings, progress. */
@@ -127,6 +128,9 @@ const progressRows = computed(() => state.value.rows.map(row => ({
     source: `${row.database}.${row.collection}`,
     target: state.value.format === "database" ? `${state.value.database.database}.${row.output}` : row.output
 })));
+/** The failed row whose message stands next to the buttons; none: the first that failed. */
+const failure = shallowRef<number>();
+watch(() => wizard.runId, () => (failure.value = undefined));
 </script>
 
 <template>
@@ -501,6 +505,8 @@ const progressRows = computed(() => state.value.rows.map(row => ({
                 <!-- Page 3: how far each row got. -->
                 <TransferProgress
                     v-else
+                    v-model:selected="failure"
+                    :heads="[$t('transfer.progress.collection'), $t(state.format === 'database' ? 'transfer.progress.target' : 'transfer.progress.file')]"
                     :progress="wizard.progress"
                     :rows="progressRows"
                     :running="running"
@@ -515,6 +521,13 @@ const progressRows = computed(() => state.value.rows.map(row => ({
                     >
                         {{ problemText }}
                     </p>
+                    <TransferFailure
+                        v-else-if="wizard.step === 'progress'"
+                        :progress="wizard.progress"
+                        :rows="progressRows"
+                        :selected="failure"
+                        kind="export"
+                    />
                     <span
                         v-else
                         class="grow"
