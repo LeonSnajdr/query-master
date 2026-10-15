@@ -1335,7 +1335,15 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
 
     await step("a shortcut changed in the settings acts, shows on the buttons, outlasts a reload and is reset", async () => {
         const browseRow = page.locator("dialog[open] [data-command='tab.browse']");
+        const startup = page.locator("dialog[open] [data-testid=settings-startup]");
+        const startupText = async () => {
+            const input = startup.locator("input[role=combobox]").or(startup.and(page.locator("input[role=combobox]")));
+            return (await input.count()) > 0 ? input.inputValue() : (await startup.innerText()).trim();
+        };
         await page.keyboard.press("Control+Alt+P");
+        // The card at the start is asked for below; the setting as it was comes back at the end.
+        const startupBefore = await startupText();
+        await choose(startup, "Ask to restore the last session");
         await visible("settings-tab-keys").click();
         await browseRow.locator("[data-testid=keys-chip]").click();
         await browseRow.locator("[data-testid=keys-recorder]").waitFor();
@@ -1377,6 +1385,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await id("confirm-action").click();
         await browseRow.getByText("Ctrl + Q").waitFor();
         await visible("settings-tab-general").click();
+        if (startupBefore && (await startupText()) !== startupBefore) await choose(startup, startupBefore);
         await visible("settings-close").click();
         assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ Q\)$/);
         // The reload closed the connection and emptied the tree; the next steps work on it. The
