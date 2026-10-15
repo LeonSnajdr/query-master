@@ -1272,6 +1272,7 @@
   "stage.down": "Move stage down",
   "stage.drag": "Drag to move the stage",
   "stage.enabled": "Enable stage {name}",
+  "stage.json": "Json mode of {name}: strict extended JSON instead of shell notation",
   "stage.remove": "Remove stage",
   "stage.reset": "Reset fields",
   "stage.up": "Move stage up",

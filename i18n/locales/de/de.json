@@ -1272,6 +1272,7 @@
   "stage.down": "Stage nach unten",
   "stage.drag": "Ziehen, um die Stage zu verschieben",
   "stage.enabled": "Stufe {name} einschalten",
+  "stage.json": "Json-Modus für {name}: strenges Extended JSON statt Shell-Schreibweise",
   "stage.remove": "Stufe entfernen",
   "stage.reset": "Felder zurücksetzen",
   "stage.up": "Stage nach oben",

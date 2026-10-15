@@ -1,6 +1,6 @@
 import { parse, parseExpressionAt } from "acorn";
 import type { Expression, Node, PrivateIdentifier, SpreadElement, Super } from "acorn";
-import { date, newObjectId, objectId, uuid } from "./ejson";
+import { date, newObjectId, objectId, preview, uuid } from "./ejson";
 import type { Doc, Json } from "./ejson";
 import { ShellError } from "./message";
 
@@ -280,4 +280,14 @@ function construct(node: Node, name: string, args: Json[]): Json {
         default:
             return fail(node, "error.shell.undefined", { name });
     }
+}
+
+/**
+ * The text of a query field in the other notation: strict extended JSON (`{"_id": {"$oid": "…"}}`)
+ * or shell notation (`{ _id: ObjectId("…") }`), on one line. Empty text stays empty.
+ */
+export function convertQueryText(source: string, json: boolean): string {
+    if (source.trim() === "") return source;
+    const value = parseValue(source);
+    return json ? JSON.stringify(value) : preview(value, Number.POSITIVE_INFINITY);
 }

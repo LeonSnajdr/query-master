@@ -7,7 +7,7 @@ import { isDoc, toNumber, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError, scriptErrorPosition } from "@/shell/message";
 import type { Message } from "@/shell/message";
-import { parseStatements, statementAt } from "@/shell/parse";
+import { convertQueryText, parseStatements, statementAt } from "@/shell/parse";
 import type { Statement } from "@/shell/parse";
 import { isWrite, pageCommand, planStatement, replyError } from "@/shell/plan";
 import type { Plan } from "@/shell/plan";
@@ -40,6 +40,8 @@ export interface Stage {
     name: StageName;
     text: string;
     enabled: boolean;
+    /** The text is strict extended JSON instead of shell notation; both run alike. */
+    json?: boolean;
 }
 
 export interface QueryResult {
@@ -586,6 +588,8 @@ export const useTabsStore = defineStore("tabs", () => {
             if (!stage) tab.stages.unshift((stage = { name: "filter", text: "{ }", enabled: true }));
             // Switched off, the filter in it did not apply: it starts anew.
             stage.text = addToFilter(stage.enabled ? stage.text : "", field, value);
+            // A row in Json mode stays in it.
+            if (stage.json) stage.text = convertQueryText(stage.text, true);
             stage.enabled = true;
             return runBrowse(tab);
         }

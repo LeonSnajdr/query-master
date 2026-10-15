@@ -17,7 +17,7 @@ import type { Environment } from "@/shell/complete";
 import { preview } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
-import { parseStatements } from "@/shell/parse";
+import { convertQueryText, parseStatements } from "@/shell/parse";
 import { useConnectionsStore } from "@/stores/connections";
 import { STAGE_NAMES, browseStatement, useTabsStore } from "@/stores/tabs";
 import type { Stage, StageName } from "@/stores/tabs";
@@ -69,6 +69,19 @@ function prefix(name: StageName): string | undefined {
 const missingStages = computed<MenuEntry[]>(() => STAGE_NAMES
     .filter(name => !tab.value.stages.some(stage => stage.name === name))
     .map(name => ({ label: name, action: () => addStage(name) })));
+
+/** Rows that hold a document, which can be written in shell notation or as strict extended JSON. */
+const DOCUMENT_STAGES: StageName[] = ["filter", "projection", "sort"];
+
+/** The Json mode of a row (as the "Mongo JSON mode"): the text is written anew in the other notation. */
+function toggleJson(stage: Stage) {
+    try {
+        stage.text = convertQueryText(stage.text, !stage.json);
+        stage.json = !stage.json;
+    } catch (error) {
+        report(error);
+    }
+}
 
 function addStage(name: StageName) {
     const text = name === "skip" ? "0" : name === "limit" ? "100" : "{ }";
@@ -233,6 +246,15 @@ function openInShell() {
                         :prefix="prefix(stage.name)"
                         class="grow"
                         singleLine
+                    />
+                    <IconButton
+                        v-if="DOCUMENT_STAGES.includes(stage.name)"
+                        @click="toggleJson(stage)"
+                        :active="stage.json === true"
+                        :data-testid="`stage-json-${stage.name}`"
+                        :label="$t('stage.json', { name: stage.name })"
+                        class="shrink-0 ml-1"
+                        icon="i-lucide-braces"
                     />
                     <SwitchRoot
                         v-model="stage.enabled"
