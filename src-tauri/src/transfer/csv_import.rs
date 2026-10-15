@@ -78,6 +78,7 @@ pub struct CsvSource {
     columns: Vec<ImportColumn>,
     /// The line of the record read last, for messages.
     line: u64,
+    byte: u64,
 }
 
 fn reader(path: &Path, options: &CsvReadOptions) -> Result<csv::Reader<File>> {
@@ -153,7 +154,13 @@ impl CsvSource {
             options,
             columns,
             line,
+            byte: 0,
         })
+    }
+
+    /// Where in the file the record read last starts, in bytes.
+    pub fn byte(&self) -> u64 {
+        self.byte
     }
 
     /// Up to `limit` documents; none at the end of the file.
@@ -164,6 +171,7 @@ impl CsvSource {
                 break;
             };
             self.line = record.position().map_or(self.line + 1, csv::Position::line);
+            self.byte = record.position().map_or(self.byte, csv::Position::byte);
             // A line of empty fields is no document.
             if record.iter().all(str::is_empty) {
                 continue;

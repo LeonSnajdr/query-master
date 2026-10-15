@@ -149,6 +149,14 @@ export interface ExportPreset {
     copyIndexes: boolean;
 }
 
+/**
+ * A collection of the server itself, as `system.profile` or `system.views`: written by the server,
+ * no target of an import.
+ */
+export function isSystemCollection(name: string): boolean {
+    return name.trim().startsWith("system.");
+}
+
 /** One of the allowed values, or the fallback. */
 export function oneOf<T>(value: unknown, allowed: readonly T[], fallback: T): T {
     return allowed.includes(value as T) ? (value as T) : fallback;

@@ -7,16 +7,10 @@ import { useNotices } from "@/composables/notices";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
-import { DEFAULT_CSV, DEFAULT_SQL, exportJob, exportPreset, readExportPreset, rowsFor, switchFormat } from "@/transfer/export";
+import { DEFAULT_CSV, DEFAULT_SQL, exportJob, exportPreset, isSystemCollection, readExportPreset, rowsFor, switchFormat } from "@/transfer/export";
 import type { ExportFormat, ExportPreset, ExportRow, ExportState } from "@/transfer/export";
-
-/** A row's progress while the export runs. */
-export interface RowProgress {
-    state: "waiting" | "running" | "done" | "failed" | "stopped";
-    done: number;
-    /** The message of a failure, ready to show. */
-    error?: string;
-}
+import { applyProgress, waitingRows } from "@/transfer/progress";
+import type { RowProgress } from "@/transfer/progress";
 
 /** The pages of the wizard: rows and destination, settings of the format, columns (CSV, SQL), progress. */
 export type WizardStep = "rows" | "settings" | "schema" | "progress";
@@ -53,21 +47,29 @@ export function useExportWizard() {
     const notes = useNotesStore();
     const busy = shallowRef(false);
 
-    /** The collections a selection stands for: of the connection, the database, or the one. */
-    async function collectionsOf(at: TreeSelection): Promise<{ database: string; collection: string }[]> {
+    /**
+     * The collections a selection stands for: of the connection, the database, or the one. Of a
+     * connection or database, the server's own `system.*` collections are left out (the profiler's
+     * entries, the definitions of views): they are written by the server and cannot be imported.
+     */
+    async function collectionsOf(at: TreeSelection): Promise<{ found: { database: string; collection: string }[]; skipped: string[] }> {
         const session = connections.sessions[at.connectionId];
-        if (!session) return [];
+        if (!session) return { found: [], skipped: [] };
         const databases = at.database === undefined ? session.databases.map(database => database.name) : [at.database];
         const found: { database: string; collection: string }[] = [];
+        const skipped: string[] = [];
         for (const database of databases) {
             if (at.collection !== undefined) {
                 found.push({ database, collection: at.collection });
                 continue;
             }
             await connections.loadCollections(at.connectionId, database).catch(() => undefined);
-            for (const collection of connections.collectionsOf(at.connectionId, database)) found.push({ database, collection });
+            for (const collection of connections.collectionsOf(at.connectionId, database)) {
+                if (isSystemCollection(collection)) skipped.push(`${database}.${collection}`);
+                else found.push({ database, collection });
+            }
         }
-        return found;
+        return { found, skipped };
     }
 
     /** Opens the wizard with the rows of the selection; `filter` for the rows of a query. */
@@ -75,7 +77,8 @@ export function useExportWizard() {
         if (busy.value || wizard.runId) return;
         busy.value = true;
         try {
-            const collections = await collectionsOf(at);
+            const { found: collections, skipped } = await collectionsOf(at);
+            if (skipped.length > 0) notices.notify({ kind: "info", title: t("export.skippedSystem", skipped.length), detail: skipped.join(", ") });
             preset ??= readExportPreset(await backend.getPreset("export").catch(() => null));
             Object.assign(wizard, { open: true, step: "rows", progress: [], outcome: undefined });
             // Always JSON into a folder first; the options are those of the last run.
@@ -129,18 +132,12 @@ export function useExportWizard() {
         }
         preset = exportPreset(state, preset ?? readExportPreset(null));
         backend.savePreset("export", preset).catch(report);
-        wizard.progress = state.rows.map(() => ({ state: "waiting", done: 0 }));
+        wizard.progress = waitingRows(state.rows.length);
         wizard.step = "progress";
         wizard.outcome = undefined;
         wizard.runId = `export-${Date.now()}`;
         try {
-            const outcome = await backend.exportRun(wizard.runId, job, (update) => {
-                const row = wizard.progress[update.item];
-                if (!row) return;
-                row.state = update.state;
-                row.done = update.done;
-                row.error = update.error ? say(errorMessage(update.error)) : undefined;
-            });
+            const outcome = await backend.exportRun(wizard.runId, job, update => applyProgress(wizard.progress, update, error => say(errorMessage(error))));
             wizard.outcome = outcome;
             if (outcome.clipboard !== null) await navigator.clipboard.writeText(outcome.clipboard);
             // Rows that failed leave a warning that stays; the rows show why in the wizard.

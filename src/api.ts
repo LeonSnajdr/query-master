@@ -86,6 +86,10 @@ export interface CopyResult {
 export interface ExportProgress {
     item: number;
     done: number;
+    /** The documents there are to do, when the server could count them quickly. */
+    total: number | null;
+    /** How much is done, from 0 to 1: by the count, or by the bytes read of a file. */
+    share: number | null;
     state: "running" | "done" | "failed" | "stopped";
     /** `{ key, detail }`, for `errorMessage`. */
     error: unknown;

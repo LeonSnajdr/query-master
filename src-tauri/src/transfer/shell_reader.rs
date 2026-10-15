@@ -50,6 +50,13 @@ pub struct ReadPosition {
     in_array: bool,
 }
 
+impl ReadPosition {
+    /// The bytes read so far (after a byte order mark).
+    pub fn bytes(&self) -> usize {
+        self.pos
+    }
+}
+
 impl<'a> ShellReader<'a> {
     #[cfg(test)]
     pub fn new(text: &'a str) -> Self {

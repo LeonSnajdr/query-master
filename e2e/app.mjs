@@ -452,6 +452,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
             if (format === "csv") await id("export-schema").click();
             await id("export-start").click();
             assert.match(await progressText("export"), /3 documents/);
+            assert.match(await id("export-progress-summary").innerText(), /1 of 1 finished · 3 documents/);
             await id("export-close").click();
         }
         const file = format => join(folder, `${DATABASE}.${COLLECTION}.${format}`);

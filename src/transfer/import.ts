@@ -1,5 +1,5 @@
 import type { Doc } from "@/shell/ejson";
-import { oneOf, splitPath } from "./export";
+import { isSystemCollection, oneOf, splitPath } from "./export";
 import type { InsertMode } from "./export";
 
 /** The two kinds of import, as the tiles of the wizard. */
@@ -80,7 +80,7 @@ export function importProblems(state: ImportState): { key: string; row?: number 
     state.rows.forEach((row, index) => {
         if (!row.database.trim()) problems.push({ key: "import.problem.noDatabase", row: index });
         if (!row.collection.trim()) problems.push({ key: "import.problem.noCollection", row: index });
-        else if (row.collection.trim().startsWith("system.") || row.collection.includes("$")) problems.push({ key: "import.problem.badCollection", row: index });
+        else if (isSystemCollection(row.collection) || row.collection.includes("$")) problems.push({ key: "import.problem.badCollection", row: index });
     });
     return problems;
 }
