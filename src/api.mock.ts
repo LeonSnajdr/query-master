@@ -1,4 +1,4 @@
-import type { Backend, Profile, Setting, TreeFolder, TreeNote } from "./api";
+import type { Backend, Profile, SavedQuery, SessionTab, Setting, TreeFolder, TreeNote } from "./api";
 import { folderWithin, parentFolder } from "./tree/folders";
 import { isDoc, toNumber } from "./shell/ejson";
 import type { Doc, Json } from "./shell/ejson";
@@ -27,7 +27,9 @@ function inFolderOf(path: string, database: string): boolean {
     return database === "" ? path !== "" && !path.includes("/") : path.startsWith(`${database}/`);
 }
 const keybindings: Record<string, string[]> = {};
-let setting: Setting = { language: null, theme: null, pageSize: null, resultView: null, editorFontSize: null };
+let setting: Setting = { language: null, theme: null, pageSize: null, resultView: null, editorFontSize: null, startup: null };
+const savedQueries: SavedQuery[] = [];
+let session: SessionTab[] = [];
 
 const STATUS = ["open", "paid", "shipped", "cancelled"];
 
@@ -127,6 +129,27 @@ export const mockBackend: Backend = {
     gridfsDownload: () => Promise.reject({ key: "error.transfer.browser", detail: null }),
     getSetting: async () => setting,
     getKeybindings: async () => ({ ...keybindings }),
+    // Saved queries and the session in memory: gone with the page, as the rest of the preview.
+    listSavedQueries: async connectionId => savedQueries.filter(query => query.connectionId === connectionId).map(query => ({ ...query })),
+    saveSavedQuery: async (query) => {
+        const saved = { ...query, id: query.id ?? savedQueries.reduce((top, item) => Math.max(top, item.id ?? 0), 0) + 1, dateCreated: query.dateCreated ?? new Date().toISOString() };
+        const index = savedQueries.findIndex(item => item.id === saved.id);
+        if (index === -1) savedQueries.push(saved);
+        else savedQueries[index] = saved;
+        return { ...saved };
+    },
+    removeSavedQuery: async (id) => {
+        const index = savedQueries.findIndex(item => item.id === id);
+        if (index !== -1) savedQueries.splice(index, 1);
+    },
+    usedSavedQuery: async (id) => {
+        const query = savedQueries.find(item => item.id === id);
+        if (query) query.dateUsed = new Date().toISOString();
+    },
+    loadSession: async () => session.map(tab => ({ ...tab })),
+    saveSession: async (tabs) => {
+        session = tabs.map(tab => ({ ...tab }));
+    },
     saveKeybindings: async (changes) => {
         for (const { commandId, keys } of changes) {
             if (keys === null) delete keybindings[commandId];

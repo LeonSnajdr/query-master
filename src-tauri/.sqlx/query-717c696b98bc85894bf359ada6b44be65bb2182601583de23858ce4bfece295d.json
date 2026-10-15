@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "update saved_query set date_used = $2 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "717c696b98bc85894bf359ada6b44be65bb2182601583de23858ce4bfece295d"
+}

@@ -10,6 +10,7 @@ import HelpDialog from "@/components/HelpDialog.vue";
 import ExportWizard from "@/components/transfer/ExportWizard.vue";
 import ImportWizard from "@/components/transfer/ImportWizard.vue";
 import IndexDialog from "@/components/IndexDialog.vue";
+import SaveQueryDialog from "@/components/SaveQueryDialog.vue";
 import SettingsDialog from "@/components/SettingsDialog.vue";
 import { useDialogState } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
@@ -328,6 +329,10 @@ async function copyText() {
     <IndexDialog
         v-model="state.indexOpen"
         :request="state.index"
+    />
+    <SaveQueryDialog
+        v-model="state.saveQueryOpen"
+        :tabId="state.saveQueryTab"
     />
     <ExportWizard />
     <ImportWizard />

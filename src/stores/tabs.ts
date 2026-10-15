@@ -181,13 +181,34 @@ export const useTabsStore = defineStore("tabs", () => {
         return tabs.value.at(-1)!;
     }
 
+    /**
+     * A tab of the last session, as it was but without its result (stage 20). Nothing runs: the
+     * connection opens when the tab runs.
+     */
+    function restoreTab(kind: TabKind, connectionId: string, content: Doc): WorkTab {
+        const text = (key: string) => (typeof content[key] === "string" ? content[key] : undefined);
+        const options: Partial<WorkTab> = { connectionId, database: text("database") ?? "" };
+        if (text("collection") !== undefined) options.collection = text("collection");
+        if (text("text") !== undefined) options.text = text("text");
+        if (text("file") !== undefined) options.file = text("file");
+        if (Array.isArray(content.stages)) options.stages = (content.stages as unknown as Stage[]).map(stage => ({ ...stage }));
+        if (Array.isArray(content.pipeline)) {
+            options.pipeline = (content.pipeline as unknown as { operator: string; text: string; enabled: boolean }[]).map(stage => newStage(stage.operator, stage.text, stage.enabled));
+            options.aggregateOptions = text("options") || undefined;
+        }
+        if (text("page") !== undefined) options.page = text("page") as ServerPage;
+        if (text("view") !== undefined) options.view = text("view") as ResultView;
+        const pageSize = toNumber(content.pageSize);
+        if (pageSize !== undefined && pageSize > 0) options.pageSize = pageSize;
+        return create(kind, options);
+    }
+
     function openStart(): void {
         const existing = tabs.value.find(tab => tab.kind === "start");
         if (existing) activeId.value = existing.id;
         else create("start", {});
     }
 
-    /** Shows a collection with its query fields and runs the query. */
     /**
      * The documents of a collection. A tab already open on it comes to the front instead of a second
      * one (a wish from the Compass feedback); `newTab` opens one anyway.
@@ -368,6 +389,10 @@ export const useTabsStore = defineStore("tabs", () => {
         tab.error = undefined;
         tab.errorPosition = undefined;
         try {
+            // A tab of the last session runs before its saved connection is open: it opens now.
+            if (!connections.sessions[tab.connectionId] && connections.profiles.some(profile => profile.id === tab.connectionId) && !connections.isTransient(tab.connectionId)) {
+                await connections.connect(tab.connectionId);
+            }
             await work();
             return true;
         } catch (error) {
@@ -694,7 +719,7 @@ export const useTabsStore = defineStore("tabs", () => {
     return {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, move, step,
-        run, showResult, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
+        restoreTab, run, showResult, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument
     };
 });

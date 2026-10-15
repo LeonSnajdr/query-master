@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            select\n                id as \"id!: i64\",\n                connection_id as \"connection_id: Uuid\",\n                database_name,\n                scope_collection,\n                kind,\n                name,\n                folder,\n                content,\n                date_created as \"date_created: DateTime<Utc>\",\n                date_used as \"date_used: DateTime<Utc>\"\n            from saved_query\n            where connection_id = $1\n            order by folder is not null, folder collate nocase, name collate nocase\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "connection_id: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "database_name",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "scope_collection",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "kind",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "name",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "folder",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "content",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "date_created: DateTime<Utc>",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "date_used: DateTime<Utc>",
+        "ordinal": 9,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "8639b40c219293071d366d3a97fd1e3ef5021ea4c165ebc6ae91ea5f775f827e"
+}

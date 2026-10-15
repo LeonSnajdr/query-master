@@ -19,6 +19,7 @@ import SqlPanel from "@/components/SqlPanel.vue";
 import StartPage from "@/components/StartPage.vue";
 import { useActions } from "@/composables/actions";
 import { useDialogs } from "@/composables/dialogs";
+import { useSession } from "@/composables/session";
 import { watchAppearance } from "@/composables/appearance";
 import { fileName } from "@/composables/recentFiles";
 import { useFocusAreas } from "@/composables/focus";
@@ -41,6 +42,7 @@ const { report } = useMessages();
 const { layout } = useLayout();
 const actions = useActions();
 const dialogs = useDialogs();
+const session = useSession();
 const connections = useConnectionsStore();
 const notes = useNotesStore();
 const tabs = useTabsStore();
@@ -155,6 +157,7 @@ const SHORTCUTS: Partial<Record<CommandId, () => void>> = {
     "connection.uri": () => void actions.viewUri(),
     "connection.disconnect": () => void actions.disconnect(),
     "tab.browse": () => actions.browse(),
+    "query.save": () => withActive(tab => isQueryTab(tab) && dialogs.saveQuery(tab.id)),
     "tab.shell": () => actions.openShell(),
     "tab.aggregation": () => actions.aggregation(),
     "tab.sql": () => actions.openSql(),
@@ -194,6 +197,8 @@ for (const [id, run] of Object.entries(SHORTCUTS) as [CommandId, () => void][]) 
 onMounted(async () => {
     tabs.openStart();
     await connections.load().catch(report);
+    // The tabs of the last session: offered, restored or left, as the settings say (stage 20).
+    await session.start();
     // For work on the interface in a browser: `?demo` opens a collection of the made-up data right away.
     if (import.meta.env.DEV && !inApp && location.search.includes("dialog")) actions.newConnection();
     if (import.meta.env.DEV && !inApp && location.search.includes("demo")) {

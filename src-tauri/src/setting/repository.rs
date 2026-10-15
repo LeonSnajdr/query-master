@@ -8,7 +8,7 @@ use crate::error::Result;
 pub async fn get(pool: &SqlitePool) -> Result<Option<Setting>> {
     let setting = sqlx::query_as!(
         Setting,
-        "select language, theme, page_size, result_view, editor_font_size from setting where id = 1"
+        "select language, theme, page_size, result_view, editor_font_size, startup from setting where id = 1"
     )
     .fetch_optional(pool)
     .await?;
@@ -18,20 +18,22 @@ pub async fn get(pool: &SqlitePool) -> Result<Option<Setting>> {
 pub async fn upsert(pool: &SqlitePool, setting: &Setting) -> Result<()> {
     sqlx::query!(
         r#"
-            insert into setting (id, language, theme, page_size, result_view, editor_font_size)
-            values (1, $1, $2, $3, $4, $5)
+            insert into setting (id, language, theme, page_size, result_view, editor_font_size, startup)
+            values (1, $1, $2, $3, $4, $5, $6)
             on conflict (id) do update set
                 language = excluded.language,
                 theme = excluded.theme,
                 page_size = excluded.page_size,
                 result_view = excluded.result_view,
-                editor_font_size = excluded.editor_font_size
+                editor_font_size = excluded.editor_font_size,
+                startup = excluded.startup
         "#,
         setting.language,
         setting.theme,
         setting.page_size,
         setting.result_view,
-        setting.editor_font_size
+        setting.editor_font_size,
+        setting.startup
     )
     .execute(pool)
     .await?;

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { DialogClose, DialogContent, DialogRoot, DialogTitle, TabsItem, TabsList, TabsPanel, TabsRoot } from "@vuetify/v0";
-import { computed, nextTick, watch } from "vue";
+import { computed, nextTick, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { LOCALES } from "../../i18n/i18n.config";
 import type { AppLocale } from "../../i18n/i18n.config";
 import ChoiceField from "@/components/ChoiceField.vue";
 import KeybindingsTab from "@/components/KeybindingsTab.vue";
-import { RESULT_VIEWS, useAppearance } from "@/composables/appearance";
-import type { StartView } from "@/composables/appearance";
+import { RESULT_VIEWS, STARTUPS, startupChoice, useAppearance } from "@/composables/appearance";
+import type { Startup, StartView } from "@/composables/appearance";
 import type { SettingsPage } from "@/composables/dialogs";
 import { THEMES } from "@/plugins/vuetify";
 import type { ThemeName } from "@/plugins/vuetify";
@@ -36,6 +36,17 @@ const themeModel = computed({ get: () => theme.value, set: (value: ThemeName) =>
 const pageSize = computed({ get: () => preferences.pageSize, set: (value: number) => setPreferences({ pageSize: value }) });
 const resultView = computed({ get: () => preferences.resultView, set: (value: StartView) => setPreferences({ resultView: value }) });
 const fontSize = computed({ get: () => preferences.editorFontSize, set: (value: number) => setPreferences({ editorFontSize: value }) });
+/** Read anew when the dialog opens: the card at the start may have changed it. */
+const startupVersion = shallowRef(0);
+watch(open, () => startupVersion.value++);
+const startup = computed({
+    get: () => (startupVersion.value, startupChoice()),
+    set: (value: Startup) => {
+        setPreferences({ startup: value });
+        startupVersion.value++;
+    }
+});
+const startupOptions = computed(() => STARTUPS.map(value => ({ value, label: t(`settings.startup.${value}`) })));
 
 const languageOptions = computed(() => LOCALES.map(value => ({ value, label: t(`language.${value}`) })));
 const themeOptions = computed(() => THEMES.map(value => ({ value, label: t(`theme.${value}`) })));
@@ -113,6 +124,15 @@ const fontSizeOptions = FONT_SIZES.map(value => ({ value, label: `${value} px` }
                                 :label="$t('settings.fontSize')"
                                 :options="fontSizeOptions"
                             />
+                            <span class="pt-3 border-t border-divider">{{ $t("settings.startup") }}:</span>
+                            <span class="pt-3 border-t border-divider">
+                                <ChoiceField
+                                    v-model="startup"
+                                    :label="$t('settings.startup')"
+                                    :options="startupOptions"
+                                    data-testid="settings-startup"
+                                />
+                            </span>
                         </div>
                         <p class="m-0 text-on-surface-variant">
                             {{ $t("settings.note") }}

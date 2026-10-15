@@ -1256,6 +1256,22 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         }
     });
 
+    await step("a query is saved with Ctrl+D, marked with a star and offered in the history", async () => {
+        const name = `e2e saved ${process.pid}`;
+        await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).dblclick();
+        const panel = page.locator("[data-testid=tab-panel]:visible");
+        await panel.locator("[data-testid=result-range]").waitFor();
+        await page.keyboard.press("Control+d");
+        await id("save-query-name").fill(name);
+        await id("save-query-submit").click();
+        await panel.locator("[data-testid=save-query-star][aria-pressed=true]").waitFor();
+        await panel.locator("[data-testid=history]").click();
+        await page.locator("[data-testid=menu-item]:visible", { hasText: name }).waitFor();
+        await page.keyboard.press("Escape");
+        // Kept when the tabs do not change for a moment: the next step loads the page anew.
+        await page.waitForTimeout(2500);
+    });
+
     await step("a shortcut changed in the settings acts, shows on the buttons, outlasts a reload and is reset", async () => {
         const browseRow = page.locator("dialog[open] [data-command='tab.browse']");
         await page.keyboard.press("Control+Alt+P");
@@ -1267,7 +1283,13 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("settings-close").click();
         assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ B\)$/);
 
-        // The new key opens the collection; the old one is free.
+        // The new key opens the collection; the old one is free. A tab open on it would only come to the front.
+        const openTabs = page.locator("[data-testid=tab]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) });
+        while (await openTabs.count() > 0) {
+            await openTabs.first().click();
+            await page.keyboard.press("Control+w");
+            await page.waitForTimeout(100);
+        }
         await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).click();
         const tabs = await id("tab").count();
         await page.keyboard.press("Control+Q");
@@ -1277,10 +1299,16 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.waitForFunction(count => document.querySelectorAll("[data-testid=tab]").length === count + 1, tabs);
         await page.keyboard.press("Control+w");
 
-        // Kept in the app's database: still there after the page is loaded anew.
+        // Kept in the app's database: still there after the page is loaded anew. The tabs are kept
+        // when they do not change for a moment.
+        const before = await id("tab").count();
+        await page.waitForTimeout(2500);
         await page.reload();
         await id("dock-browse").waitFor();
         assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ B\)$/);
+        // The card at the start brings the tabs of before back, without running them (stage 20).
+        await page.locator("[data-testid=notice-action]:visible", { hasText: "Restore" }).click();
+        await page.waitForFunction(count => document.querySelectorAll("[data-testid=tab]").length === count, before);
 
         await page.keyboard.press("Control+Alt+P");
         await visible("settings-tab-keys").click();
@@ -1290,7 +1318,9 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("settings-tab-general").click();
         await visible("settings-close").click();
         assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ Q\)$/);
-        // The reload closed the connection and emptied the tree; the next steps work on it.
+        // The reload closed the connection and emptied the tree; the next steps work on it. The
+        // start page is the first tab; a restored one lies in front of it.
+        await id("tab").first().click();
         await page.locator("[data-testid=recent-connection]", { hasText: NAME }).click();
         await id("database-row").first().waitFor();
     });

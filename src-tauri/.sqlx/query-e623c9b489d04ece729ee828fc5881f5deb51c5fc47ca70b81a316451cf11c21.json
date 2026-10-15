@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            insert into saved_query\n                (connection_id, database_name, scope_collection, kind, name, folder, content, date_created)\n            values ($1, $2, $3, $4, $5, $6, $7, $8)\n            returning id as \"id!: i64\"\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e623c9b489d04ece729ee828fc5881f5deb51c5fc47ca70b81a316451cf11c21"
+}

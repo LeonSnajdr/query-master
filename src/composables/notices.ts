@@ -50,7 +50,7 @@ const state = reactive({
  * instead of a dialog, and everything of the session in the history behind the bell.
  */
 export function useNotices() {
-    function add(input: { kind: NoticeKind; title: string; detail?: string; actions?: NoticeAction[] }, card: boolean): Notice {
+    function add(input: { kind: NoticeKind; title: string; detail?: string; actions?: NoticeAction[]; sticky?: boolean }, card: boolean): Notice {
         state.notices.unshift({
             id: nextId++,
             kind: input.kind,
@@ -60,7 +60,7 @@ export function useNotices() {
             at: new Date(),
             read: false,
             card,
-            lifetime: LIFETIME[input.kind]
+            lifetime: input.sticky ? 0 : LIFETIME[input.kind]
         });
         if (state.notices.length > HISTORY_LIMIT) state.notices.splice(HISTORY_LIMIT);
         // The reactive copy, so later changes (progress) show.
@@ -68,7 +68,8 @@ export function useNotices() {
     }
 
     /** The outcome of work or a problem: a card, and an entry in the history. */
-    function notify(input: { kind: Exclude<NoticeKind, "progress">; title: string; detail?: string; actions?: NoticeAction[] }): Notice {
+    /** `sticky`: the card stays until it is closed or answered, whatever its kind. */
+    function notify(input: { kind: Exclude<NoticeKind, "progress">; title: string; detail?: string; actions?: NoticeAction[]; sticky?: boolean }): Notice {
         return add(input, true);
     }
 

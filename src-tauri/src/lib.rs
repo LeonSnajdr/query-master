@@ -10,7 +10,9 @@ mod mongo;
 mod preset;
 mod recent;
 mod runs;
+mod saved_query;
 mod script;
+mod session;
 mod setting;
 mod transfer;
 mod tree;
@@ -49,6 +51,12 @@ pub fn run() {
             history::commands::history_list,
             history::commands::history_add,
             history::commands::history_clear,
+            saved_query::commands::saved_query_list,
+            saved_query::commands::saved_query_save,
+            saved_query::commands::saved_query_remove,
+            saved_query::commands::saved_query_used,
+            session::commands::session_load,
+            session::commands::session_save,
             tree::commands::tree_node_list,
             tree::commands::tree_node_save,
             tree::commands::tree_node_rename,

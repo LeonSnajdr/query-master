@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "insert into session_tab (position, active, connection_id, content) values ($1, $2, $3, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "c22a8dfd6ec92800404003bf53db70544824dab7e796bd0590bf9a4770e7985a"
+}

@@ -75,6 +75,9 @@ const state = reactive({
     settingsPage: "general" as SettingsPage,
     help: undefined as HelpPage | undefined,
     indexOpen: false,
+    /** The tab whose query the "Save query" dialog saves (stage 20). */
+    saveQueryOpen: false,
+    saveQueryTab: undefined as string | undefined,
     index: undefined as IndexRequest | undefined,
     prompt: undefined as PromptRequest | undefined,
     confirm: undefined as ConfirmRequest | undefined,
@@ -129,6 +132,12 @@ export function useDialogs() {
         state.collectionOpen = true;
     }
 
+    /** Saves the query of a tab with a name, or changes the saved one it shows. */
+    function saveQuery(tabId: string): void {
+        state.saveQueryTab = tabId;
+        state.saveQueryOpen = true;
+    }
+
     function editIndex(request: IndexRequest): void {
         state.index = { ...request };
         state.indexOpen = true;
@@ -150,7 +159,7 @@ export function useDialogs() {
         state.help = page;
     }
 
-    return { ask, confirm, showText, editConnection, cloneConnection, editCollection, editIndex, openSettings, openHelp };
+    return { ask, confirm, showText, editConnection, cloneConnection, editCollection, editIndex, saveQuery, openSettings, openHelp };
 }
 
 /** For `AppDialogs.vue` only. */

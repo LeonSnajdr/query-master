@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            update saved_query set\n                database_name = $2, scope_collection = $3, kind = $4, name = $5, folder = $6, content = $7\n            where id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "73a197ce27315187147fdecf93c863dd3164ff9ea6af89059009ab8c58cb7f95"
+}

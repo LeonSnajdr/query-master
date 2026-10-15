@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "delete from session_tab",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": []
+  },
+  "hash": "0bcecba67f5b600d4ce5a6a31d580a0b917ab0e732c5647f14bfb694878d599d"
+}

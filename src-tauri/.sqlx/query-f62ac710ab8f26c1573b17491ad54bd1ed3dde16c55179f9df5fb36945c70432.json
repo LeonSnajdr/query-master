@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            insert into setting (id, language, theme, page_size, result_view, editor_font_size, startup)\n            values (1, $1, $2, $3, $4, $5, $6)\n            on conflict (id) do update set\n                language = excluded.language,\n                theme = excluded.theme,\n                page_size = excluded.page_size,\n                result_view = excluded.result_view,\n                editor_font_size = excluded.editor_font_size,\n                startup = excluded.startup\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "f62ac710ab8f26c1573b17491ad54bd1ed3dde16c55179f9df5fb36945c70432"
+}

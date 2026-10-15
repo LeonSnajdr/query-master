@@ -92,6 +92,8 @@ const LIST = [
 
     // In the editor through its keymap; outside a text field also on the window (the tab in front).
     command({ id: "query.run", label: "shortcut.run", group: "editor", scope: "editor", keys: ["ctrl+enter", "f5"] }),
+    // Ctrl+S is the export: saving a query is a bookmark, as in a browser.
+    command({ id: "query.save", label: "savedQuery.title", group: "editor", scope: "global", keys: ["ctrl+d"] }),
     command({ id: "editor.complete", label: "shortcut.complete", group: "editor", scope: "editor", keys: ["ctrl+space"], fixed: true }),
     command({ id: "editor.comment", label: "shortcut.comment", group: "editor", scope: "editor", keys: ["ctrl+/"], fixed: true }),
     command({ id: "editor.indent", label: "shortcut.indent", group: "editor", scope: "editor", keys: ["ctrl+]"], fixed: true }),

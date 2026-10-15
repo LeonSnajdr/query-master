@@ -40,6 +40,31 @@ export interface Setting {
     resultView: string | null;
     /** Pixels of the code font. */
     editorFontSize: number | null;
+    /** `ask`, `restore` or `empty`: what the start does with the tabs of the last session. */
+    startup: string | null;
+}
+
+/** A query saved with a name (stage 20): of a collection, or (`collection` absent) of a database. */
+export interface SavedQuery {
+    /** Absent before it is saved. */
+    id?: number | null;
+    connectionId: string;
+    database: string;
+    collection?: string | null;
+    kind: "browse" | "aggregate" | "shell" | "sql";
+    name: string;
+    folder?: string | null;
+    /** What a tab needs to run it: query rows, stages and options, or the text. */
+    content: Json;
+    dateCreated?: string | null;
+    dateUsed?: string | null;
+}
+
+/** A tab as the session keeps it: what is needed to open it again, no results. */
+export interface SessionTab {
+    active: boolean;
+    connectionId: string | null;
+    content: Json;
 }
 
 /** What a script left behind: its last value and what it printed. */
@@ -161,6 +186,14 @@ export interface Backend {
     saveSetting: (setting: Setting) => Promise<void>;
     /** The keyboard shortcuts the user changed: keys per command id (`[]`: no shortcut). */
     getKeybindings: () => Promise<Record<string, string[]>>;
+    listSavedQueries: (connectionId: string) => Promise<SavedQuery[]>;
+    saveSavedQuery: (query: SavedQuery) => Promise<SavedQuery>;
+    removeSavedQuery: (id: number) => Promise<void>;
+    /** Notes that a saved query ran now. */
+    usedSavedQuery: (id: number) => Promise<void>;
+    loadSession: () => Promise<SessionTab[]>;
+    /** Replaces the kept session with these tabs. */
+    saveSession: (tabs: SessionTab[]) => Promise<void>;
     /** In one go; `keys: null` returns the command to its default. */
     saveKeybindings: (changes: KeybindingChange[]) => Promise<void>;
     /** Every command back to its default. */
@@ -228,6 +261,12 @@ const tauriBackend: Backend = {
     getSetting: () => invoke("setting_get"),
     saveSetting: setting => invoke("setting_save", { setting }),
     getKeybindings: () => invoke("keybinding_list"),
+    listSavedQueries: connectionId => invoke("saved_query_list", { connectionId }),
+    saveSavedQuery: query => invoke("saved_query_save", { query }),
+    removeSavedQuery: id => invoke("saved_query_remove", { id }),
+    usedSavedQuery: id => invoke("saved_query_used", { id }),
+    loadSession: () => invoke("session_load"),
+    saveSession: tabs => invoke("session_save", { tabs }),
     saveKeybindings: changes => invoke("keybinding_save", { changes }),
     clearKeybindings: () => invoke("keybinding_clear"),
     recentFiles: () => invoke("recent_file_list"),

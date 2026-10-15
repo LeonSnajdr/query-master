@@ -6,6 +6,7 @@ import CodeEditor from "@/components/CodeEditor.vue";
 import DropMenu from "@/components/DropMenu.vue";
 import IconButton from "@/components/IconButton.vue";
 import QueryHistory from "@/components/QueryHistory.vue";
+import SaveQueryStar from "@/components/SaveQueryStar.vue";
 import ReadonlyToggle from "@/components/ReadonlyToggle.vue";
 import ResultsPanel from "@/components/results/ResultsPanel.vue";
 import { useLayout } from "@/composables/layout";
@@ -237,7 +238,9 @@ function openInBuilder() {
             <QueryHistory
                 @choose="tab.text = $event"
                 :connectionId="tab.connectionId"
+                :tabId="tab.id"
             />
+            <SaveQueryStar :tabId="tab.id" />
             <span class="toolbar-rule" />
             <ReadonlyToggle :tabId />
             <span class="toolbar-rule" />

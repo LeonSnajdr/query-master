@@ -29,7 +29,16 @@ const language = ref<AppLocale>(detectLanguage());
 /** What new tabs start with, and the code font; read by the tabs store and the editor. */
 export const preferences = reactive({ ...DEFAULTS });
 /** What was chosen, as opposed to what applies: an unset language keeps following the system. */
-const chosen: Setting = { language: null, theme: null, pageSize: null, resultView: null, editorFontSize: null };
+const chosen: Setting = { language: null, theme: null, pageSize: null, resultView: null, editorFontSize: null, startup: null };
+
+/** What the start does with the tabs of the last session (stage 20). */
+export const STARTUPS = ["ask", "restore", "empty"] as const;
+export type Startup = typeof STARTUPS[number];
+
+/** The choice for the start; asking is the default. */
+export function startupChoice(): Startup {
+    return oneOf(STARTUPS, chosen.startup) ?? "ask";
+}
 
 function takeLegacy(key: string): string | null {
     try {
@@ -85,7 +94,7 @@ export function useAppearance() {
     }
 
     /** What new tabs start with and the code font; `null` returns to the app's default. */
-    function setPreferences(change: Partial<Pick<Setting, "pageSize" | "resultView" | "editorFontSize">>): void {
+    function setPreferences(change: Partial<Pick<Setting, "pageSize" | "resultView" | "editorFontSize" | "startup">>): void {
         Object.assign(chosen, change);
         apply();
         save();

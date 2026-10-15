@@ -20,6 +20,8 @@ pub struct Setting {
     pub result_view: Option<String>,
     /// Pixels.
     pub editor_font_size: Option<i64>,
+    /// `ask`, `restore` or `empty`: the tabs of the last session at the start.
+    pub startup: Option<String>,
 }
 
 pub async fn get(pool: &SqlitePool) -> Result<Setting> {
