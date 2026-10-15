@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            insert into recent_file (path, used_at) values ($1, $2)\n            on conflict (path) do update set used_at = excluded.used_at\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "3487deaea933acb0f5b21e6d9d486eaeccf23a0e7608daf6c74accd9c1ae9b0c"
+}

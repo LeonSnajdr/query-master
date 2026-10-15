@@ -20,6 +20,7 @@ import StartPage from "@/components/StartPage.vue";
 import { useActions } from "@/composables/actions";
 import { useDialogs } from "@/composables/dialogs";
 import { watchAppearance } from "@/composables/appearance";
+import { fileName } from "@/composables/recentFiles";
 import { useFocusAreas } from "@/composables/focus";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
@@ -63,6 +64,7 @@ function titleOf(tab: WorkTab): string {
     if (tab.kind === "start") return t("start.title");
     if (tab.kind === "server") return t(`server.tab.${tab.page ?? "status"}`, { name: connections.profiles.find(item => item.id === tab.connectionId)?.name ?? "", database: tab.database, bucket: tab.collection ?? "" });
     if (tab.kind === "sql") return `SQL · ${tab.database}`;
+    if (tab.kind === "shell" && tab.file) return fileName(tab.file);
     return tab.kind === "browse" || tab.kind === "aggregate" ? tab.collection ?? "" : tab.database;
 }
 

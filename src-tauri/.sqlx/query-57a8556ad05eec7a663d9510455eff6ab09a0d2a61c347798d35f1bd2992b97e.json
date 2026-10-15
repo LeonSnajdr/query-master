@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "select path from recent_file order by used_at desc, rowid desc",
+  "describe": {
+    "columns": [
+      {
+        "name": "path",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "57a8556ad05eec7a663d9510455eff6ab09a0d2a61c347798d35f1bd2992b97e"
+}

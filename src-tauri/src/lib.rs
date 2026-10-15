@@ -8,6 +8,7 @@ mod history;
 mod keybinding;
 mod mongo;
 mod preset;
+mod recent;
 mod runs;
 mod script;
 mod setting;
@@ -38,6 +39,9 @@ pub fn run() {
             keybinding::commands::keybinding_list,
             keybinding::commands::keybinding_save,
             keybinding::commands::keybinding_clear,
+            recent::commands::recent_file_list,
+            recent::commands::recent_file_add,
+            recent::commands::recent_file_remove,
             preset::commands::preset_get,
             preset::commands::preset_save,
             history::commands::history_list,

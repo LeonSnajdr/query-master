@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            delete from recent_file where path not in (\n                select path from recent_file order by used_at desc, rowid desc limit $1\n            )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "1b09894434b9a3b52465752b4fa1e4a5e6631ac4010bb2680d21628b903d94cf"
+}

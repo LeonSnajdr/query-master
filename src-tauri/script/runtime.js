@@ -1203,6 +1203,17 @@ var QueryMasterRuntime = (function(exports) {
 				done: true
 			} };
 		}
+		/** The call behind a cursor nobody has read yet: the window runs it itself and can page it. */
+		unread() {
+			if (this.handle !== void 0) return void 0;
+			return {
+				database: this.database,
+				collection: this.collection,
+				method: this.method,
+				args: this.args,
+				modifiers: this.modifiers
+			};
+		}
 		/** For the result of a script: the first documents as extended JSON, and whether there were more. */
 		preview() {
 			const items = [];
@@ -1377,7 +1388,14 @@ var QueryMasterRuntime = (function(exports) {
 		},
 		/** After the script: its last value as what the result view shows. */
 		finish(value) {
-			if (value instanceof Cursor) return JSON.stringify(value.preview());
+			if (value instanceof Cursor) {
+				const cursor = value.unread();
+				return JSON.stringify(cursor ? {
+					items: [],
+					truncated: false,
+					cursor
+				} : value.preview());
+			}
 			if (value === void 0) return JSON.stringify({
 				items: [],
 				truncated: false

@@ -198,6 +198,41 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 1");
     });
 
+    await step("a script prints while it runs, a cursor it ends with pages, a mistake puts the cursor on its line", async () => {
+        const panel = page.locator("[data-testid=tab-panel]:visible");
+        await write(panel, `print("early");\nvar end = Date.now() + 1500;\nwhile (Date.now() < end) {}\ndb.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}").find({}).sort({ n: 1 })`);
+        await panel.locator("[data-testid=query-run]").click();
+        // The line is there while the script still runs: Stop is still offered.
+        await panel.locator("[data-testid=script-output]", { hasText: "early" }).waitFor({ timeout: 1200 });
+        assert.equal(await panel.locator("[data-testid=query-stop]").count(), 1, "the output came only at the end");
+        await panel.locator("[data-testid=query-run]:not([disabled])").waitFor();
+        assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 3");
+
+        await write(panel, "var a = 1;\n  nope();");
+        await panel.locator("[data-testid=query-run]").click();
+        await panel.locator("[data-testid=query-error]", { hasText: "nope is not defined" }).waitFor();
+        assert.match(await panel.locator(".cm-activeLine:visible").innerText(), /nope\(\)/);
+    });
+
+    await step("several statements give a result tab each; a failing one stops there with the cursor on it", async () => {
+        const target = `db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}")`;
+        const panel = await runShell(`${target}.find({ n: 1 });\n${target}.countDocuments({});\n${target}.find({}).sort({ n: 1 })`);
+        const results = panel.locator("[data-testid=statement-result]");
+        assert.equal(await results.count(), 3);
+        assert.match(await results.nth(1).innerText(), /2 · .*countDocuments/);
+        assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 3");
+        await results.first().click();
+        await panel.locator("[data-testid=result-range]", { hasText: /^1 – 1$/ }).waitFor();
+
+        const panelAgain = page.locator("[data-testid=tab-panel]:visible");
+        await write(panelAgain, `${target}.find({ n: 1 });\n${target}.insertOne(5);\n${target}.find({})`);
+        await panelAgain.locator("[data-testid=query-run]").click();
+        await panelAgain.locator("[data-testid=query-error]").waitFor();
+        // The first ran and stays; the third never ran, so there is no row of tabs.
+        assert.equal(await panelAgain.locator("[data-testid=statement-result]").count(), 0);
+        assert.match(await panelAgain.locator(".cm-activeLine:visible").innerText(), /insertOne\(5\)/);
+    });
+
     await step("an endless script can be stopped", async () => {
         const panel = page.locator("[data-testid=tab-panel]:visible");
         await write(panel, "for (;;) {}");

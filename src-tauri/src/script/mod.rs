@@ -18,4 +18,7 @@ pub struct ScriptResult {
     pub truncated: bool,
     /// What the script printed.
     pub output: String,
+    /// The last value was a cursor nobody read: its call (`collection`, `method`, `args`,
+    /// `modifiers`, `database`), which the window runs itself so it can be paged. `items` is empty then.
+    pub cursor: Option<Value>,
 }

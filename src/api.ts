@@ -3,6 +3,7 @@ import { mockBackend } from "./api.mock";
 import type { Doc, Json } from "./shell/ejson";
 import { ShellError } from "./shell/message";
 import type { Message } from "./shell/message";
+import type { ScriptCursor } from "./shell/plan";
 import type { CsvColumn } from "./transfer/import";
 
 /** A saved connection. Its connection string stays in the keychain. */
@@ -43,6 +44,8 @@ export interface ScriptResult {
     /** The last value had more items than were handed over. */
     truncated: boolean;
     output: string;
+    /** The last value was a cursor nobody read; `items` is empty and the window runs this call. */
+    cursor?: ScriptCursor | null;
 }
 
 /** What the app notes on a row of the tree. */
@@ -142,7 +145,8 @@ export interface Backend {
     readTextFile: (path: string) => Promise<string>;
     writeTextFile: (path: string, text: string) => Promise<void>;
     /** Runs a script in the engine of the Rust side; `runId` names the run for `stopRun`. */
-    runScript: (id: string, runId: string, database: string, source: string, readonly: boolean) => Promise<ScriptResult>;
+    /** `output` gets what the script prints while it runs. */
+    runScript: (id: string, runId: string, database: string, source: string, readonly: boolean, output: (text: string) => void) => Promise<ScriptResult>;
     /** Asks a script or a copy to stop. */
     stopRun: (runId: string) => Promise<void>;
     /** Copies a collection with its options, documents and indexes; `replace` drops the target first. */
@@ -155,6 +159,10 @@ export interface Backend {
     saveKeybindings: (changes: KeybindingChange[]) => Promise<void>;
     /** Every command back to its default. */
     clearKeybindings: () => Promise<void>;
+    /** Script files the shell opened or saved lately, newest first. */
+    recentFiles: () => Promise<string[]>;
+    addRecentFile: (path: string) => Promise<void>;
+    removeRecentFile: (path: string) => Promise<void>;
     /** The statements that ran on a connection, newest first. */
     listHistory: (connectionId: string) => Promise<string[]>;
     addHistory: (connectionId: string, database: string, statement: string) => Promise<void>;
@@ -199,7 +207,11 @@ const tauriBackend: Backend = {
     runCursorCommand: (id, database, command, limit) => invoke("run_cursor_command", { id, database, command, limit }),
     readTextFile: path => invoke("read_text_file", { path }),
     writeTextFile: (path, text) => invoke("write_text_file", { path, text }),
-    runScript: (id, runId, database, source, readonly) => invoke("script_run", { id, runId, database, source, readonly }),
+    runScript: (id, runId, database, source, readonly, output) => {
+        const onOutput = new Channel<string>();
+        onOutput.onmessage = output;
+        return invoke("script_run", { id, runId, database, source, readonly, onOutput });
+    },
     stopRun: runId => invoke("run_stop", { runId }),
     copyCollection: (runId, source, target, replace, progress) => {
         const onProgress = new Channel<CopyProgress>();
@@ -211,6 +223,9 @@ const tauriBackend: Backend = {
     getKeybindings: () => invoke("keybinding_list"),
     saveKeybindings: changes => invoke("keybinding_save", { changes }),
     clearKeybindings: () => invoke("keybinding_clear"),
+    recentFiles: () => invoke("recent_file_list"),
+    addRecentFile: path => invoke("recent_file_add", { path }),
+    removeRecentFile: path => invoke("recent_file_remove", { path }),
     listHistory: connectionId => invoke("history_list", { connectionId }),
     addHistory: (connectionId, database, statement) => invoke("history_add", { connectionId, database, statement }),
     clearHistory: connectionId => invoke("history_clear", { connectionId }),

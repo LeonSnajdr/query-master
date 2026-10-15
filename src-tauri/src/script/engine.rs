@@ -7,10 +7,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use futures_util::TryStreamExt;
 use mongodb::bson::Document;
 use mongodb::{Client, Cursor};
+use rquickjs::context::EvalOptions;
 use rquickjs::{CatchResultExt, Context, Ctx, Exception, Function, Object, Runtime};
 use serde::Deserialize;
 use serde_json::Value;
@@ -26,6 +28,10 @@ const MEMORY_LIMIT: usize = 512 * 1024 * 1024;
 const STACK_SIZE: usize = 1024 * 1024;
 /// Printed text kept; a script that prints in a loop does not fill the memory.
 const OUTPUT_LIMIT: usize = 10 * 1024 * 1024;
+/// Printed text is handed to the window at most this often while the script runs.
+const OUTPUT_INTERVAL: Duration = Duration::from_millis(100);
+/// The name of the script in the places of its errors: `script:3:7`.
+pub const SCRIPT_NAME: &str = "script";
 /// Thrown inside the engine for a write in a read-only tab, and recognised when it comes back out.
 const READ_ONLY: &str = "__querymaster_read_only__";
 
@@ -76,17 +82,63 @@ fn is_write(command: &Document) -> bool {
         .is_some_and(|stage| stage == "$out" || stage == "$merge")
 }
 
-#[derive(Default)]
+/// Receives printed text while the script runs, in pieces of whole lines.
+pub type Output = Rc<dyn Fn(String)>;
+
 struct State {
     cursors: HashMap<i32, Cursor<Document>>,
     next_handle: i32,
     output: String,
+    /// Printed since the window last got text.
+    pending: String,
+    /// When the window last got text; the first line goes out at once.
+    flushed: Option<Instant>,
+    on_output: Output,
+}
+
+impl State {
+    fn new(on_output: Output) -> Self {
+        Self {
+            cursors: HashMap::new(),
+            next_handle: 0,
+            output: String::new(),
+            pending: String::new(),
+            flushed: None,
+            on_output,
+        }
+    }
+
+    fn print(&mut self, text: &str) {
+        if self.output.len() >= OUTPUT_LIMIT {
+            return;
+        }
+        for target in [&mut self.output, &mut self.pending] {
+            target.push_str(text);
+            target.push('\n');
+        }
+        if self
+            .flushed
+            .is_none_or(|at| at.elapsed() >= OUTPUT_INTERVAL)
+        {
+            self.flush();
+        }
+    }
+
+    /// Hands what was printed since the last time to the window.
+    fn flush(&mut self) {
+        self.flushed = Some(Instant::now());
+        if !self.pending.is_empty() {
+            (self.on_output)(std::mem::take(&mut self.pending));
+        }
+    }
 }
 
 #[derive(Deserialize)]
 struct Finished {
     items: Vec<Value>,
     truncated: bool,
+    #[serde(default)]
+    cursor: Option<Value>,
 }
 
 fn throw(ctx: &Ctx<'_>, message: impl std::fmt::Display) -> rquickjs::Error {
@@ -114,13 +166,7 @@ fn install<'js>(
 
     let print = {
         let state = state.clone();
-        move |text: String| {
-            let output = &mut state.borrow_mut().output;
-            if output.len() < OUTPUT_LIMIT {
-                output.push_str(&text);
-                output.push('\n');
-            }
-        }
+        move |text: String| state.borrow_mut().print(&text)
     };
     globals.set("__print", Function::new(ctx.clone(), print)?)?;
 
@@ -203,12 +249,14 @@ fn failure(message: String, stop: &AtomicBool) -> Error {
     }
 }
 
+/// Runs `source`; what it prints reaches `on_output` while it runs and the result at the end.
 pub fn run(
     client: &Client,
     database: &str,
     source: &str,
     readonly: bool,
     stop: &Arc<AtomicBool>,
+    on_output: Output,
 ) -> Result<ScriptResult> {
     let engine_error = |e: rquickjs::Error| Error::Script(e.to_string());
     let runtime = Runtime::new().map_err(engine_error)?;
@@ -218,7 +266,7 @@ pub fn run(
     let flag = stop.clone();
     runtime.set_interrupt_handler(Some(Box::new(move || flag.load(Ordering::Relaxed))));
     let context = Context::full(&runtime).map_err(engine_error)?;
-    let state = Rc::new(RefCell::new(State::default()));
+    let state = Rc::new(RefCell::new(State::new(on_output)));
 
     let finished = context.with(|ctx| -> std::result::Result<Finished, String> {
         let caught = |e: rquickjs::Error| e.to_string();
@@ -233,7 +281,14 @@ pub fn run(
             .catch(&ctx)
             .map_err(|e| e.to_string())?;
 
-        let value: rquickjs::Value = ctx.eval(source).catch(&ctx).map_err(|e| e.to_string())?;
+        // Sloppy mode, as in the mongo shell: `total = 0` without `var` is allowed.
+        let mut options = EvalOptions::default();
+        options.strict = false;
+        options.filename = Some(SCRIPT_NAME.to_owned());
+        let value: rquickjs::Value = ctx
+            .eval_with_options(source, options)
+            .catch(&ctx)
+            .map_err(|e| e.to_string())?;
         let finish: Function = api.get("finish").map_err(caught)?;
         let json: String = finish
             .call((value,))
@@ -242,13 +297,16 @@ pub fn run(
         serde_json::from_str(&json).map_err(|e| e.to_string())
     });
 
-    // Cursors the script left open are closed with the state; the output is kept either way.
+    // Cursors the script left open are closed with the state; the output is kept either way, and
+    // what the window has not got yet reaches it also when the script failed.
+    state.borrow_mut().flush();
     let output = std::mem::take(&mut state.borrow_mut().output);
     state.borrow_mut().cursors.clear();
     match finished {
         Ok(finished) => Ok(ScriptResult {
             items: finished.items,
             truncated: finished.truncated,
+            cursor: finished.cursor,
             output,
         }),
         Err(message) => Err(failure(message, stop)),
@@ -273,7 +331,7 @@ mod tests {
         source: &'static str,
         stop: Arc<AtomicBool>,
     ) -> Result<ScriptResult> {
-        std::thread::spawn(move || run(&client, "shop", source, false, &stop))
+        std::thread::spawn(move || run(&client, "shop", source, false, &stop, Rc::new(|_| {})))
             .join()
             .unwrap()
     }
@@ -318,11 +376,48 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn reports_errors_with_their_place() {
         let error =
-            run_blocking(offline().await, "var a = 1;\nnope();", Arc::default()).unwrap_err();
+            run_blocking(offline().await, "var a = 1;\n  nope();", Arc::default()).unwrap_err();
         let Error::Script(message) = error else {
             panic!("expected a script error");
         };
         assert!(message.contains("nope is not defined"), "{message}");
+        assert!(message.contains("script:2:"), "{message}");
+        let error =
+            run_blocking(offline().await, "var a = 1;\nvar = ;", Arc::default()).unwrap_err();
+        let Error::Script(message) = error else {
+            panic!("expected a script error");
+        };
+        assert!(message.contains("script:2:"), "{message}");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn hands_out_printed_text_while_it_runs() {
+        let client = offline().await;
+        let pieces = std::thread::spawn(move || {
+            let pieces = Rc::new(RefCell::new(Vec::<String>::new()));
+            let seen = pieces.clone();
+            let source = "print('first'); var end = Date.now() + 250; while (Date.now() < end) {} print('second'); nope()";
+            let outcome = run(
+                &client,
+                "shop",
+                source,
+                false,
+                &Arc::default(),
+                Rc::new(move |text| seen.borrow_mut().push(text)),
+            );
+            assert!(outcome.is_err());
+            pieces.take()
+        })
+        .join()
+        .unwrap();
+        // The first line before the wait, the second at the end although the script failed.
+        assert_eq!(pieces, vec!["first\n".to_owned(), "second\n".to_owned()]);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn runs_in_sloppy_mode_like_the_shell() {
+        let result = run_blocking(offline().await, "total = 2; total * 3", Arc::default()).unwrap();
+        assert_eq!(result.items, vec![json!(6)]);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -356,6 +451,7 @@ mod tests {
                 "db.orders.insertOne({ a: 1 })",
                 true,
                 &stop,
+                Rc::new(|_| {}),
             )
         })
         .join()

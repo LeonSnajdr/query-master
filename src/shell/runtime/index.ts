@@ -7,6 +7,7 @@
 import { isDoc, newObjectId, toShell } from "../ejson";
 import type { Doc, Json } from "../ejson";
 import type { Call } from "../parse";
+import type { ScriptCursor } from "../plan";
 import { aggregateModifierNames, collectionMethodNames, databaseMethodNames, findModifierNames, planStatement, replyError } from "../plan";
 import { BinData, MaxKey, MinKey, NumberDecimal, NumberInt, NumberLong, ObjectId, Timestamp, fromEjson, isoDate, toEjson, uuid } from "./bson";
 
@@ -132,6 +133,12 @@ class Cursor {
 
     [Symbol.iterator](): Iterator<unknown> {
         return { next: () => (this.hasNext() ? { value: this.next(), done: false } : { value: undefined, done: true }) };
+    }
+
+    /** The call behind a cursor nobody has read yet: the window runs it itself and can page it. */
+    unread(): ScriptCursor | undefined {
+        if (this.handle !== undefined) return undefined;
+        return { database: this.database, collection: this.collection, method: this.method, args: this.args, modifiers: this.modifiers };
     }
 
     /** For the result of a script: the first documents as extended JSON, and whether there were more. */
@@ -297,7 +304,10 @@ Object.assign(globalThis, {
         },
         /** After the script: its last value as what the result view shows. */
         finish(value: unknown): string {
-            if (value instanceof Cursor) return JSON.stringify(value.preview());
+            if (value instanceof Cursor) {
+                const cursor = value.unread();
+                return JSON.stringify(cursor ? { items: [], truncated: false, cursor } : value.preview());
+            }
             if (value === undefined) return JSON.stringify({ items: [], truncated: false });
             const json = toEjson(value);
             const items = Array.isArray(json) ? json : [json];

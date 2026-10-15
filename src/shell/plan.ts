@@ -20,6 +20,15 @@ export interface Plan {
     shape?: (reply: Json) => Json;
 }
 
+/** A cursor a script ended with but did not read: the call the window runs itself, to page it. */
+export interface ScriptCursor {
+    database: string;
+    collection?: string;
+    method: string;
+    args: Json[];
+    modifiers: Call[];
+}
+
 type Args = (Json | undefined)[];
 
 function doc(value: Json | undefined, what: string): Doc {

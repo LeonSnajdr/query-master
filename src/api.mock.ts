@@ -131,6 +131,10 @@ export const mockBackend: Backend = {
     clearKeybindings: async () => {
         for (const id of Object.keys(keybindings)) delete keybindings[id];
     },
+    // A browser picks files without a path: nothing to remember.
+    recentFiles: async () => [],
+    addRecentFile: async () => undefined,
+    removeRecentFile: async () => undefined,
     saveSetting: async (value) => {
         setting = value;
     },

@@ -5,9 +5,10 @@ import { backend, errorMessage } from "@/api";
 import { preferences } from "@/composables/appearance";
 import { isDoc, toNumber, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
-import { ShellError } from "@/shell/message";
+import { ShellError, scriptErrorPosition } from "@/shell/message";
 import type { Message } from "@/shell/message";
 import { parseStatements, statementAt } from "@/shell/parse";
+import type { Statement } from "@/shell/parse";
 import { isWrite, pageCommand, planStatement, replyError } from "@/shell/plan";
 import type { Plan } from "@/shell/plan";
 import { aggregateStatement, keepsDocuments, newStage, previewStages } from "@/shell/pipeline";
@@ -52,6 +53,16 @@ export interface QueryResult {
     milliseconds: number;
 }
 
+/** Shell tabs: the result of one of several statements that ran together, for its own result tab. */
+export interface StatementResult {
+    /** `orders.find`, `runCommand` … */
+    label: string;
+    /** Where the statement starts in the text of the tab. */
+    start: number;
+    result: QueryResult;
+    plan: Plan;
+}
+
 export interface WorkTab {
     id: string;
     kind: TabKind;
@@ -61,6 +72,8 @@ export interface WorkTab {
     collection?: string;
     /** Shell tabs: the script. */
     text: string;
+    /** Shell tabs: the file the script was opened from or saved to; the tab carries its name. */
+    file?: string;
     /** Browse tabs: the query. */
     stages: Stage[];
     view: ResultView;
@@ -79,6 +92,10 @@ export interface WorkTab {
     plan?: Plan;
     /** What the last script printed. */
     output?: string;
+    /** Shell tabs: the results of several statements run with "Run", one per statement. */
+    results?: StatementResult[];
+    /** Which of `results` shows as `result`. */
+    resultIndex?: number;
     /** The script that is running, to stop it. */
     runId?: string;
     /** Server tabs: what they show. */
@@ -340,23 +357,34 @@ export const useTabsStore = defineStore("tabs", () => {
             return true;
         } catch (error) {
             tab.error = error instanceof ReplyError ? error.reason : errorMessage(error);
-            tab.errorPosition = error instanceof ShellError ? error.position : undefined;
+            tab.errorPosition = (error as { position?: number } | undefined)?.position;
             return false;
         } finally {
             tab.running = false;
         }
     }
 
-    /** Runs the text as a script in the engine of the Rust side: variables, loops, `print`. */
-    async function runScript(tab: WorkTab, source: string): Promise<void> {
+    /**
+     * Runs the text as a script in the engine of the Rust side: variables, loops, `print`. What it
+     * prints shows while it runs; `start` is where `source` begins in the text of the tab.
+     */
+    async function runScript(tab: WorkTab, source: string, start = 0): Promise<void> {
         const started = performance.now();
         tab.runId = `${tab.id}-${Date.now()}`;
         tab.output = undefined;
         try {
             // A script may write anywhere on the connection: any read-only mark on it makes the run read-only.
             const marked = Object.values(notes.notes[tab.connectionId] ?? {}).some(note => note.readonly);
-            const outcome = await backend.runScript(tab.connectionId, tab.runId, tab.database, source, tab.readonly || marked);
-            tab.output = outcome.output;
+            const outcome = await backend.runScript(tab.connectionId, tab.runId, tab.database, source, tab.readonly || marked, (text) => {
+                tab.output = (tab.output ?? "") + text;
+            });
+            tab.output = outcome.output || undefined;
+            if (outcome.cursor) {
+                // A cursor the script did not read runs here, so it can be paged and edited like a statement.
+                const { database, ...call } = outcome.cursor;
+                await fetch(tab, planStatement({ ...call, start: 0, end: 0 }, database), 0, source);
+                return;
+            }
             tab.plan = undefined;
             tab.result = markRaw({
                 items: outcome.items,
@@ -365,6 +393,12 @@ export const useTabsStore = defineStore("tabs", () => {
                 statement: source,
                 milliseconds: Math.round(performance.now() - started)
             });
+        } catch (error) {
+            // The engine names the place of the mistake; the cursor of the editor goes there.
+            const detail = (error as { detail?: unknown } | undefined)?.detail;
+            const position = typeof detail === "string" ? scriptErrorPosition(detail, source) : undefined;
+            if (position !== undefined && error !== null && typeof error === "object") Object.assign(error, { position: start + position });
+            throw error;
         } finally {
             tab.runId = undefined;
         }
@@ -384,21 +418,30 @@ export const useTabsStore = defineStore("tabs", () => {
         return guarded(tab, async () => {
             const selected = selection?.trim() ? selection : undefined;
             const source = selected ?? tab.text;
+            tab.results = undefined;
+            tab.resultIndex = undefined;
+            // The editor gives the end of a selection that was made forwards, the start of one made backwards.
+            const start = selected === undefined ? 0 : tab.text.startsWith(selected, position) ? position : Math.max(0, position - selected.length);
             let statements;
             try {
                 statements = parseStatements(source);
             } catch (error) {
                 if (!(error instanceof ShellError)) throw error;
                 // Not a plain statement (or not valid at all): the engine runs it, or says what is wrong.
-                await runScript(tab, source);
+                await runScript(tab, source, start);
                 remember(tab, source);
                 return;
             }
-            // "Run" on several statements runs them all, in order, as the shell would; so does anything
-            // only the engine can do. One statement keeps the way that can be paged and edited.
-            if ((whole && !selected && statements.length > 1) || statements.some(item => item.method === "bulkWrite")) {
-                await runScript(tab, source);
+            // Only the engine can do `bulkWrite`.
+            if (statements.some(item => item.method === "bulkWrite")) {
+                await runScript(tab, source, start);
                 remember(tab, source);
+                return;
+            }
+            // "Run" on several statements runs them all, in order, as the shell would: each result in a
+            // tab of its own, which can be paged and edited like that of one statement.
+            if (whole && !selected && statements.length > 1) {
+                await runEach(tab, statements, source);
                 return;
             }
             const statement = statementAt(statements, selected ? 0 : position);
@@ -409,6 +452,44 @@ export const useTabsStore = defineStore("tabs", () => {
             await fetch(tab, plan, 0, text);
             remember(tab, text);
         });
+    }
+
+    /** Several statements, one after the other; a failing one stops the rest and keeps the cursor on it. */
+    async function runEach(tab: WorkTab, statements: Statement[], source: string): Promise<void> {
+        tab.output = undefined;
+        const results: StatementResult[] = [];
+        try {
+            for (const statement of statements) {
+                const text = source.slice(statement.start, statement.end);
+                try {
+                    await fetch(tab, planStatement(statement, tab.database), 0, text);
+                } catch (error) {
+                    if (error !== null && typeof error === "object") Object.assign(error, { position: statement.start });
+                    throw error;
+                }
+                const label = statement.collection === undefined ? statement.method : `${statement.collection}.${statement.method}`;
+                results.push({ label, start: statement.start, result: tab.result!, plan: tab.plan! });
+            }
+        } finally {
+            if (results.length > 0) {
+                tab.results = results;
+                tab.resultIndex = results.length - 1;
+            }
+            remember(tab, source);
+        }
+    }
+
+    /** Shows the result of another of the statements that ran together; the one shown keeps its page. */
+    function showResult(tab: WorkTab, index: number): void {
+        const results = tab.results;
+        const target = results?.[index];
+        if (!results || !target || tab.running) return;
+        const current = tab.resultIndex === undefined ? undefined : results[tab.resultIndex];
+        if (current && tab.result && tab.plan) results[tab.resultIndex!] = { ...current, result: tab.result, plan: tab.plan };
+        tab.resultIndex = index;
+        tab.result = target.result;
+        tab.plan = target.plan;
+        tab.error = undefined;
     }
 
     /** Browse tabs: runs the query its fields describe. */
@@ -591,7 +672,7 @@ export const useTabsStore = defineStore("tabs", () => {
     return {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, move, step,
-        run, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
+        run, showResult, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument
     };
 });

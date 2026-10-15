@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { SplitterHandle, SplitterPanel, SplitterRoot } from "@vuetify/v0";
+import { SplitterHandle, SplitterPanel, SplitterRoot, TabsItem, TabsList, TabsRoot } from "@vuetify/v0";
 import { computed, useTemplateRef } from "vue";
+import { useI18n } from "vue-i18n";
 import CodeEditor from "@/components/CodeEditor.vue";
 import DropMenu from "@/components/DropMenu.vue";
 import IconButton from "@/components/IconButton.vue";
@@ -9,8 +10,11 @@ import ReadonlyToggle from "@/components/ReadonlyToggle.vue";
 import ResultsPanel from "@/components/results/ResultsPanel.vue";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
+import { useNotices } from "@/composables/notices";
+import { fileName, useRecentFiles } from "@/composables/recentFiles";
 import { useValueSearch, useValueSources } from "@/composables/values";
-import { SCRIPT_FILES, openTextFile, saveTextFile } from "@/files";
+import { backend, inApp } from "@/api";
+import { SCRIPT_FILES, openTextFile, pickOpenPath, pickSavePath, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
 import type { Environment } from "@/shell/complete";
 import { ShellError } from "@/shell/message";
@@ -25,7 +29,11 @@ const props = defineProps<{
     tabId: string;
 }>();
 
+const { t } = useI18n();
 const { report } = useMessages();
+const notices = useNotices();
+const recent = useRecentFiles();
+void recent.load();
 const { layout } = useLayout();
 const connections = useConnectionsStore();
 const tabs = useTabsStore();
@@ -43,6 +51,12 @@ const databases = computed<MenuEntry[]>(() => {
         checked: name === tab.value.database,
         action: () => (tab.value.database = name)
     }));
+});
+
+/** Which statement's result shows, when several ran together. */
+const shownResult = computed({
+    get: () => tab.value.resultIndex ?? 0,
+    set: (index: number) => tabs.showResult(tab.value, index)
 });
 
 const values = useValueSources(() => tab.value);
@@ -69,18 +83,64 @@ function runSelection() {
     if (cursor) void tabs.run(tab.value, cursor.position, cursor.selection);
 }
 
+/** Reads a script file into the tab, which then carries its name and saves back to it. */
+async function openPath(path: string) {
+    try {
+        tab.value.text = await backend.readTextFile(path);
+    } catch {
+        // A file that moved or went away leaves the list.
+        notices.notify({ kind: "warning", title: t("script.recent.missing", { path }) });
+        void recent.remove(path).catch(() => undefined);
+        return;
+    }
+    tab.value.file = path;
+    void recent.add(path).catch(report);
+}
+
 async function openScript() {
     try {
-        const text = await openTextFile(SCRIPT_FILES);
-        if (text !== undefined) tab.value.text = text;
+        if (!inApp) {
+            const text = await openTextFile(SCRIPT_FILES);
+            if (text !== undefined) tab.value.text = text;
+            return;
+        }
+        const path = await pickOpenPath([SCRIPT_FILES]);
+        if (path !== undefined) await openPath(path);
     } catch (error) {
         report(error);
     }
 }
 
-async function saveScript() {
-    await saveTextFile(`${tab.value.database}.js`, SCRIPT_FILES, tab.value.text).catch(report);
+/** Saves to the file of the tab; asks where when it has none or `ask` is set. */
+async function saveScript(ask = false) {
+    try {
+        if (!inApp) {
+            await saveTextFile(`${tab.value.database}.js`, SCRIPT_FILES, tab.value.text);
+            return;
+        }
+        const path = !ask && tab.value.file ? tab.value.file : await pickSavePath(tab.value.file ?? `${tab.value.database}.js`, SCRIPT_FILES);
+        if (path === undefined) return;
+        await backend.writeTextFile(path, tab.value.text);
+        tab.value.file = path;
+        notices.answer(t("script.saved", { name: fileName(path) }));
+        void recent.add(path).catch(report);
+    } catch (error) {
+        report(error);
+    }
 }
+
+/** The folder a file lies in, by its name: `C:\scripts\orders.js` → `scripts`. */
+function folderOf(path: string): string {
+    return fileName(path.slice(0, Math.max(0, path.length - fileName(path).length - 1)));
+}
+
+const recentEntries = computed<MenuEntry[]>(() => [
+    ...(recent.files.value.length === 0
+        ? [{ label: t("script.recent.empty"), action: () => undefined, disabled: true }]
+        : recent.files.value.map((path): MenuEntry => ({ label: fileName(path), hotkey: folderOf(path), checked: path === tab.value.file, action: () => void openPath(path) }))),
+    "separator",
+    { label: t("script.saveAs"), icon: "i-lucide-save-all", action: () => void saveScript(true) }
+]);
 
 /** The `aggregate` statement at the cursor, as rows of the aggregation builder. */
 function openInBuilder() {
@@ -157,10 +217,22 @@ function openInBuilder() {
                 icon="i-lucide-folder-open"
             />
             <IconButton
-                @click="saveScript"
-                :label="$t('script.save')"
+                @click="saveScript()"
+                :label="tab.file ? `${$t('script.save')} (${tab.file})` : $t('script.save')"
                 icon="i-lucide-save"
             />
+            <DropMenu
+                v-if="inApp"
+                :entries="recentEntries"
+                :label="$t('script.recent')"
+            >
+                <span
+                    class="h-6.5 min-w-6 px-1 inline-flex items-center justify-center rounded-sm text-on-surface hover:text-on-surface-strong hover:bg-on-surface/10"
+                    data-testid="script-recent"
+                >
+                    <span class="i-lucide-file-clock size-4" />
+                </span>
+            </DropMenu>
             <span class="toolbar-rule" />
             <QueryHistory
                 @choose="tab.text = $event"
@@ -209,7 +281,31 @@ function openInBuilder() {
                 :minSize="10"
                 class="min-h-0 flex flex-col"
             >
-                <div class="shrink-0 px-5.5 pt-2">
+                <TabsRoot
+                    v-if="tab.results && tab.results.length > 1"
+                    v-model="shownResult"
+                    mandatory
+                >
+                    <TabsList
+                        :label="$t('query.output')"
+                        class="shrink-0 flex gap-0.5 px-5.5 pt-2 overflow-x-auto"
+                    >
+                        <TabsItem
+                            v-for="(entry, index) in tab.results"
+                            :key="index"
+                            :title="tab.text.slice(entry.start, entry.start + 200)"
+                            :value="index"
+                            class="shrink-0 px-3 pb-1.5 border-b border-transparent text-[13px] text-on-surface whitespace-nowrap hover:text-on-surface-strong data-[selected]:text-primary data-[selected]:border-primary"
+                            data-testid="statement-result"
+                        >
+                            {{ index + 1 }} · {{ entry.label }}
+                        </TabsItem>
+                    </TabsList>
+                </TabsRoot>
+                <div
+                    v-else
+                    class="shrink-0 px-5.5 pt-2"
+                >
                     <span class="inline-block px-3 pb-1.5 border-b border-primary text-[13px] text-primary">{{ $t("query.output") }}</span>
                 </div>
                 <pre
