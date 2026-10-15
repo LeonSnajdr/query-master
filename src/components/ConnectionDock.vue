@@ -500,7 +500,9 @@ defineExpose({
 </script>
 
 <template>
-    <aside class="h-full min-w-0 flex flex-col bg-dock select-none">
+    <!-- Takes what its column leaves below the menu bar (min-h-0, not h-full), so the tree scrolls
+         inside it instead of running over the status bar. -->
+    <aside class="min-h-0 min-w-0 flex flex-col bg-dock select-none">
         <header class="h-13 shrink-0 flex items-end justify-between pl-5.5 pr-4 pb-2.5">
             <PopoverRoot v-model="listOpen">
                 <PopoverActivator
