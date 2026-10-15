@@ -7,6 +7,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use futures_util::TryStreamExt;
 use mongodb::{
@@ -111,6 +112,10 @@ pub enum ItemState {
 pub struct ItemProgress {
     pub item: usize,
     pub done: u64,
+    /// The documents there are to do, when the server could count them quickly.
+    pub total: Option<u64>,
+    /// How much is done, from 0 to 1, when that is known: by the count or by the bytes of a file.
+    pub share: Option<f64>,
     pub state: ItemState,
     /// `{ key, detail }` as every error of the app.
     pub error: Option<Value>,
@@ -173,6 +178,37 @@ async fn read(client: &Client, item: &ExportItem) -> Result<Cursor<Document>> {
         }
         _ => return Err(Error::CommandDocument),
     })
+}
+
+/// How many documents an item stands for: all of them from the collection's metadata, those of a
+/// filter if the server counts them within a few seconds; a pipeline is not counted.
+async fn count(client: &Client, item: &ExportItem) -> Option<u64> {
+    let collection = client
+        .database(&item.database)
+        .collection::<Document>(&item.collection);
+    let filter = match &item.filter {
+        None | Some(Value::Null) => return collection.estimated_document_count().await.ok(),
+        Some(value) => Bson::try_from(value.clone()).ok()?,
+    };
+    match filter {
+        Bson::Document(filter) => collection
+            .count_documents(filter)
+            .max_time(COUNT_TIME)
+            .await
+            .ok(),
+        _ => None,
+    }
+}
+
+const COUNT_TIME: Duration = Duration::from_secs(5);
+
+/// `done` of `total`, from 0 to 1; a count that was too low does not lead past the end.
+pub(super) fn share(done: u64, total: u64) -> f64 {
+    if total == 0 {
+        1.0
+    } else {
+        (done as f64 / total as f64).min(1.0)
+    }
 }
 
 /// Reads the next batch; stops first when asked to.
@@ -371,29 +407,53 @@ pub(super) async fn write_batch(
                 .await?;
         }
         InsertMode::Overwrite => {
-            let updates: Vec<Document> = batch
-                .into_iter()
-                .map(|document| {
-                    let id = document
-                        .get("_id")
-                        .cloned()
-                        .unwrap_or_else(|| Bson::ObjectId(mongodb::bson::oid::ObjectId::new()));
-                    doc! { "q": { "_id": id }, "u": document, "upsert": true }
-                })
-                .collect();
-            let reply = database
-                .run_command(doc! { "update": collection, "updates": updates, "ordered": false })
-                .await?;
-            if let Ok(errors) = reply.get_array("writeErrors") {
-                if let Some(Bson::Document(first)) = errors.first() {
-                    return Err(Error::Script(
-                        first.get_str("errmsg").unwrap_or("write error").to_owned(),
-                    ));
+            let updates = batch.into_iter().map(|document| {
+                let id = document
+                    .get("_id")
+                    .cloned()
+                    .unwrap_or_else(|| Bson::ObjectId(mongodb::bson::oid::ObjectId::new()));
+                doc! { "q": { "_id": id }, "u": document, "upsert": true }
+            });
+            for updates in by_size(updates)? {
+                let reply = database
+                    .run_command(
+                        doc! { "update": collection, "updates": updates, "ordered": false },
+                    )
+                    .await?;
+                if let Ok(errors) = reply.get_array("writeErrors") {
+                    if let Some(Bson::Document(first)) = errors.first() {
+                        return Err(Error::Script(
+                            first.get_str("errmsg").unwrap_or("write error").to_owned(),
+                        ));
+                    }
                 }
             }
         }
     }
     Ok(())
+}
+
+/// A command may be 16 MB; this leaves room for the rest of it.
+const COMMAND_BYTES: usize = 15 * 1024 * 1024;
+
+/// The documents in groups that each fit into one command. `insert_many` splits on its own; a
+/// command of `run_command` is sent as it is, so large documents would make it too large.
+fn by_size(documents: impl Iterator<Item = Document>) -> Result<Vec<Vec<Document>>> {
+    let mut groups = vec![Vec::new()];
+    let mut bytes = 0;
+    for document in documents {
+        let size = mongodb::bson::to_vec(&document)
+            .map_err(|e| Error::Script(e.to_string()))?
+            .len();
+        let group = groups.last_mut().expect("there is always a group");
+        if !group.is_empty() && bytes + size > COMMAND_BYTES {
+            groups.push(Vec::new());
+            bytes = 0;
+        }
+        bytes += size;
+        groups.last_mut().expect("just pushed").push(document);
+    }
+    Ok(groups)
 }
 
 /// One item into a collection of the target database.
@@ -478,9 +538,20 @@ pub async fn run(
     let mut outcome = ExportOutcome::default();
     let mut clipboard = String::new();
     for (index, item) in job.items.iter().enumerate() {
-        let report = |state, done, error| ItemProgress {
+        progress(ItemProgress {
+            item: index,
+            done: 0,
+            total: None,
+            share: None,
+            state: ItemState::Running,
+            error: None,
+        });
+        let total = count(source, item).await;
+        let report = |state, done: u64, error| ItemProgress {
             item: index,
             done,
+            total,
+            share: total.map(|total| share(done, total)),
             state,
             error,
         };
@@ -488,12 +559,7 @@ pub async fn run(
         let mut last = 0;
         let mut step = |done: u64| {
             last = done;
-            progress(ItemProgress {
-                item: index,
-                done,
-                state: ItemState::Running,
-                error: None,
-            });
+            progress(report(ItemState::Running, done, None));
         };
         let result = match &job.destination {
             Destination::Directory { path } => {
@@ -775,6 +841,69 @@ mod tests {
         .unwrap();
         assert!(outcome.stopped);
 
+        source.drop().await.unwrap();
+        copy.drop().await.unwrap();
+        client.shutdown().await;
+    }
+
+    /// Batches larger than a command may be: 1200 documents of 20 KB, 24 MB in one batch.
+    #[tokio::test]
+    #[ignore]
+    async fn writes_batches_larger_than_a_command() {
+        let uri = std::env::var("QUERYMASTER_TEST_URI")
+            .unwrap_or_else(|_| "mongodb://localhost:27017".into());
+        let client = Client::with_uri_str(&uri).await.unwrap();
+        let database = client.database("querymaster_test");
+        let source = database.collection::<Document>("job_large");
+        let copy = database.collection::<Document>("job_large_copy");
+        source.drop().await.unwrap();
+        copy.drop().await.unwrap();
+        let text = "x".repeat(20_000);
+        let documents: Vec<Document> = (0..1200)
+            .map(|n| doc! { "_id": n, "text": &text })
+            .collect();
+        source.insert_many(documents).await.unwrap();
+
+        let to_database = |insert_mode| ExportJob {
+            connection_id: "a".into(),
+            items: vec![item("job_large", "job_large_copy", None)],
+            destination: Destination::Database {
+                connection_id: "b".into(),
+                database: "querymaster_test".into(),
+                insert_mode,
+                copy_indexes: false,
+            },
+            format: FileFormat::Json {
+                notation: Notation::Shell,
+                layout: Layout::Lines,
+            },
+        };
+        for (mode, expected) in [
+            (InsertMode::Overwrite, 1200),
+            (InsertMode::Overwrite, 1200),
+            (InsertMode::NewId, 2400),
+        ] {
+            let mut errors = Vec::new();
+            let mut shares = Vec::new();
+            let outcome = run(
+                &client,
+                Some(&client),
+                &to_database(mode),
+                &AtomicBool::new(false),
+                |progress| {
+                    errors.extend(progress.error);
+                    if progress.total == Some(1200) {
+                        shares.extend(progress.share);
+                    }
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!((outcome.failed, outcome.documents), (0, 1200), "{errors:?}");
+            // Counted ahead: 0, after the first batch of 1000, after the rest, done.
+            assert_eq!(shares, [0.0, 1000.0 / 1200.0, 1.0, 1.0]);
+            assert_eq!(copy.count_documents(doc! {}).await.unwrap(), expected);
+        }
         source.drop().await.unwrap();
         copy.drop().await.unwrap();
         client.shutdown().await;

@@ -14,6 +14,8 @@ import { IMPORT_FORMATS, importProblems } from "@/transfer/import";
 import type { CsvReadSettings, EmptyFields, ImportFormat } from "@/transfer/import";
 import ImportFiles from "./ImportFiles.vue";
 import ImportSchema from "./ImportSchema.vue";
+import TransferFailure from "./TransferFailure.vue";
+import TransferProgress from "./TransferProgress.vue";
 
 /** The import wizard: format tiles, files with their target, CSV pages, progress. */
 const { t } = useI18n();
@@ -85,13 +87,10 @@ function back() {
     wizard.step = wizard.step === "schema" ? "settings" : "rows";
 }
 
-const STATE_ICONS: Record<string, string> = {
-    waiting: "i-lucide-circle-dashed text-on-surface-variant",
-    running: "i-lucide-loader-circle animate-spin text-primary",
-    done: "i-lucide-circle-check text-success",
-    failed: "i-lucide-circle-x text-error",
-    stopped: "i-lucide-circle-pause text-warning"
-};
+const progressRows = computed(() => state.value.rows.map(row => ({ source: splitPath(row.path).name, target: `${row.database}.${row.collection}` })));
+/** The failed row whose message stands next to the buttons; none: the first that failed. */
+const failure = shallowRef<number>();
+watch(() => wizard.runId, () => (failure.value = undefined));
 </script>
 
 <template>
@@ -232,51 +231,15 @@ const STATE_ICONS: Record<string, string> = {
                 </div>
 
                 <!-- Page 4: how far each file got. -->
-                <div
+                <TransferProgress
                     v-else
-                    class="grow min-h-0 flex flex-col px-6 pt-4 gap-3"
-                >
-                    <div class="h-1 rounded-full bg-on-surface/15 overflow-hidden">
-                        <div
-                            :class="running ? 'w-1/3 animate-pulse' : 'w-full'"
-                            class="h-full bg-primary"
-                        />
-                    </div>
-                    <div class="grow min-h-0 overflow-auto rounded-sm bg-background border border-divider">
-                        <table
-                            class="w-full border-collapse"
-                            data-testid="import-progress"
-                        >
-                            <tbody>
-                                <tr
-                                    v-for="(row, index) in state.rows"
-                                    :key="index"
-                                    :data-state="wizard.progress[index]?.state"
-                                    class="align-top"
-                                    data-testid="import-progress-row"
-                                >
-                                    <td class="w-8 pl-2.5 py-1.5 border-b border-divider">
-                                        <span
-                                            :class="STATE_ICONS[wizard.progress[index]?.state ?? 'waiting']"
-                                            class="size-4 block"
-                                        />
-                                    </td>
-                                    <td class="py-1.5 pr-3 border-b border-divider">
-                                        <span class="text-on-surface-strong">{{ splitPath(row.path).name }}</span>
-                                        <span class="text-on-surface-variant"> → {{ row.database }}.{{ row.collection }}</span>
-                                        <span
-                                            v-if="wizard.progress[index]?.error"
-                                            class="block text-error break-words"
-                                        >{{ wizard.progress[index]?.error }}</span>
-                                    </td>
-                                    <td class="w-32 py-1.5 pr-3 border-b border-divider text-right tabular-nums text-on-surface-variant">
-                                        {{ $t("task.count", { done: (wizard.progress[index]?.done ?? 0).toLocaleString() }, wizard.progress[index]?.done ?? 0) }}
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                    v-model:selected="failure"
+                    :heads="[$t('transfer.progress.file'), $t('transfer.progress.collection')]"
+                    :progress="wizard.progress"
+                    :rows="progressRows"
+                    :running="running"
+                    kind="import"
+                />
 
                 <footer class="shrink-0 flex items-center gap-2 px-6 py-5">
                     <p
@@ -286,6 +249,13 @@ const STATE_ICONS: Record<string, string> = {
                     >
                         {{ problemText }}
                     </p>
+                    <TransferFailure
+                        v-else-if="wizard.step === 'progress'"
+                        :progress="wizard.progress"
+                        :rows="progressRows"
+                        :selected="failure"
+                        kind="import"
+                    />
                     <span
                         v-else
                         class="grow"

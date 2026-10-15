@@ -10,7 +10,7 @@ use mongodb::{bson::Document, Client};
 use serde::{Deserialize, Serialize};
 
 use super::csv_import::{CsvReadOptions, CsvSource, ImportColumn};
-use super::job::{write_batch, InsertMode, ItemProgress, ItemState};
+use super::job::{share, write_batch, InsertMode, ItemProgress, ItemState};
 use super::shell_reader::{ReadPosition, ShellReader};
 use crate::error::{Error, Result};
 
@@ -88,6 +88,15 @@ impl Source {
         })
     }
 
+    /// How much of the file is read, from 0 to 1.
+    fn share(&self, size: u64) -> f64 {
+        let read = match self {
+            Self::Json { position, .. } => position.bytes() as u64,
+            Self::Csv(source) => source.byte(),
+        };
+        share(read, size)
+    }
+
     fn next_batch(&mut self) -> Result<Vec<Document>> {
         match self {
             Self::Json { text, position } => {
@@ -112,8 +121,9 @@ async fn import_item(
     item: &ImportItem,
     format: &ImportFormat,
     stop: &AtomicBool,
-    progress: &mut impl FnMut(u64),
+    progress: &mut impl FnMut(u64, f64),
 ) -> Result<u64> {
+    let size = std::fs::metadata(&item.path)?.len();
     let mut source = Source::open(item, format)?;
     let target = client.database(&item.database);
     let mut done = 0;
@@ -127,7 +137,7 @@ async fn import_item(
         }
         done += batch.len() as u64;
         write_batch(&target, &item.collection, batch, item.mode).await?;
-        progress(done);
+        progress(done, source.share(size));
     }
     Ok(done)
 }
@@ -140,40 +150,39 @@ pub async fn run(
 ) -> Result<ImportOutcome> {
     let mut outcome = ImportOutcome::default();
     for (index, item) in job.items.iter().enumerate() {
-        let report = |state, done, error| ItemProgress {
+        // A file is not counted ahead: how far it is read stands for how much is done.
+        let report = |state, done, share, error| ItemProgress {
             item: index,
             done,
+            total: None,
+            share,
             state,
             error,
         };
-        progress(report(ItemState::Running, 0, None));
-        let mut last = 0;
-        let mut step = |done: u64| {
-            last = done;
-            progress(ItemProgress {
-                item: index,
-                done,
-                state: ItemState::Running,
-                error: None,
-            });
+        progress(report(ItemState::Running, 0, Some(0.0), None));
+        let mut last = (0, None);
+        let mut step = |done: u64, share: f64| {
+            last = (done, Some(share));
+            progress(report(ItemState::Running, done, Some(share), None));
         };
         match import_item(client, item, &job.format, stop, &mut step).await {
             Ok(done) => {
                 outcome.documents += done;
-                progress(report(ItemState::Done, done, None));
+                progress(report(ItemState::Done, done, Some(1.0), None));
             }
             Err(Error::TransferStopped) => {
                 outcome.stopped = true;
-                progress(report(ItemState::Stopped, last, None));
+                progress(report(ItemState::Stopped, last.0, last.1, None));
                 break;
             }
             Err(error) => {
                 // What went in before the failure stays in the collection and counts.
-                outcome.documents += last;
+                outcome.documents += last.0;
                 outcome.failed += 1;
                 progress(report(
                     ItemState::Failed,
-                    last,
+                    last.0,
+                    last.1,
                     serde_json::to_value(&error).ok(),
                 ));
             }

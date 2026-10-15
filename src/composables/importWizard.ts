@@ -2,14 +2,16 @@ import { reactive, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
 import type { ImportOutcome } from "@/api";
-import type { RowProgress } from "@/composables/exportWizard";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
+import { isSystemCollection, splitPath } from "@/transfer/export";
 import { DEFAULT_CSV_READ, formatOf, importJob, readImportPreset, rowFor } from "@/transfer/import";
 import type { ImportFormat, ImportPreset, ImportState } from "@/transfer/import";
+import { applyProgress, waitingRows } from "@/transfer/progress";
+import type { RowProgress } from "@/transfer/progress";
 
 /** What the wizard was set to after the last CSV run; read from SQLite when it first opens. */
 let preset: ImportPreset | undefined;
@@ -66,7 +68,11 @@ export function useImportWizard() {
         wizard.step = "rows";
     }
 
-    /** Files chosen or dropped; each once. The first files decide the format, by their extension. */
+    /**
+     * Files chosen or dropped; each once. The first files decide the format, by their extension.
+     * Files of the server's own collections (`db.system.profile.json` of an export of everything)
+     * are left out with a word: the server does not take documents into them.
+     */
     function addFiles(paths: string[]) {
         const known = new Set(wizard.state.rows.map(row => row.path));
         const fresh = paths.filter(path => !known.has(path));
@@ -79,7 +85,9 @@ export function useImportWizard() {
             const row = rowFor(path, wizard.database);
             return wizard.collection === undefined ? row : { ...row, database: wizard.database, collection: wizard.collection };
         });
-        wizard.state.rows = [...wizard.state.rows, ...rows];
+        const system = rows.filter(row => isSystemCollection(row.collection));
+        if (system.length > 0) notices.notify({ kind: "info", title: t("import.skippedSystem", system.length), detail: system.map(row => splitPath(row.path).name).join(", ") });
+        wizard.state.rows = [...wizard.state.rows, ...rows.filter(row => !isSystemCollection(row.collection))];
     }
 
     /** The target server is opened when it is chosen, so its databases can be offered. */
@@ -100,19 +108,13 @@ export function useImportWizard() {
             preset = { csv: { ...state.csv } };
             backend.savePreset("import", preset).catch(report);
         }
-        wizard.progress = state.rows.map(() => ({ state: "waiting", done: 0 }));
+        wizard.progress = waitingRows(state.rows.length);
         wizard.step = "progress";
         wizard.outcome = undefined;
         wizard.runId = `import-${Date.now()}`;
         busy.value = true;
         try {
-            const outcome = await backend.importRun(wizard.runId, job, (update) => {
-                const row = wizard.progress[update.item];
-                if (!row) return;
-                row.state = update.state;
-                row.done = update.done;
-                row.error = update.error ? say(errorMessage(update.error)) : undefined;
-            });
+            const outcome = await backend.importRun(wizard.runId, job, update => applyProgress(wizard.progress, update, error => say(errorMessage(error))));
             wizard.outcome = outcome;
             // Files that failed leave a warning that stays; the rows show why in the wizard.
             notices.notify({

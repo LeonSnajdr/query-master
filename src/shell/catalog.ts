@@ -4,7 +4,7 @@
  * descriptions are messages (`doc.<group>.<name>` in `i18n/locales`).
  */
 export type Group = "collection" | "database" | "cursor" | "stage" | "query" | "update" | "accumulator" | "window"
-    | "expression" | "projection" | "variable" | "helper";
+    | "expression" | "projection" | "variable" | "helper" | "script" | "console";
 
 export interface Entry {
     name: string;
@@ -127,6 +127,18 @@ export const FIND_MODIFIERS: Entry[] = snippets("cursor", [
     ["showRecordId", "showRecordId()"],
     ["readConcern", "readConcern(\"${majority}\")"],
     ["toArray", "toArray()"]
+]);
+
+/** What a script can do with a cursor besides changing its command: read it. */
+export const CURSOR_METHODS: Entry[] = snippets("cursor", [
+    ["forEach", "forEach(function (${doc}) {\n\t${}\n})"],
+    ["map", "map(${doc} => ${doc})"],
+    ["hasNext", "hasNext()"],
+    ["next", "next()"],
+    ["itcount", "itcount()"],
+    ["size", "size()"],
+    ["close", "close()"],
+    ["pretty", "pretty()"]
 ]);
 
 export const AGGREGATE_MODIFIERS: Entry[] = snippets("cursor", [
@@ -321,11 +333,27 @@ export const BSON_HELPERS: Entry[] = [
     ...entries("helper", undefined, ["true", "false", "null"])
 ];
 
+/** What a script has besides `db` and the BSON helpers. */
+export const SCRIPT_GLOBALS: Entry[] = [
+    ...snippets("script", [
+        ["print", "print(${})"],
+        ["printjson", "printjson(${})"],
+        ["tojson", "tojson(${})"]
+    ]),
+    ...entries("script", undefined, ["console"])
+];
+
+export const CONSOLE_METHODS: Entry[] = snippets("console", [
+    ["log", "log(${})"],
+    ["error", "error(${})"],
+    ["warn", "warn(${})"]
+]);
+
 /** Every entry, to check that each has its description. */
 export const ALL_ENTRIES: Entry[] = [
     ...COLLECTION_METHODS, ...DATABASE_METHODS, ...FIND_MODIFIERS, ...AGGREGATE_MODIFIERS, ...STAGES, ...QUERY_LOGICAL, ...QUERY_FIELD,
     ...UPDATE_OPERATORS, ...UPDATE_MODIFIERS, ...ACCUMULATORS, ...WINDOW_OPERATORS, ...EXPRESSIONS, ...PROJECTION_OPERATORS,
-    ...SYSTEM_VARIABLES, ...BSON_HELPERS
+    ...SYSTEM_VARIABLES, ...BSON_HELPERS, ...CURSOR_METHODS, ...SCRIPT_GLOBALS, ...CONSOLE_METHODS
 ];
 
 /** Names `$type` takes. */

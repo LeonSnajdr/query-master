@@ -15,7 +15,7 @@ import { useNotices } from "@/composables/notices";
 import { useKeymap, useShortcut } from "@/keys/keymap";
 import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
-import { isDoc, toShell } from "@/shell/ejson";
+import { isDoc, scalar, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
 import { parseStatements, parseValue } from "@/shell/parse";
@@ -432,6 +432,14 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
     const entries: MenuEntry[] = [
         { label: t("document.view"), icon: "i-lucide-file-search", action: () => viewDocument(target.index), disabled: !document },
         { label: t("document.edit"), icon: "i-lucide-file-pen-line", action: () => editDocument(target.index), disabled: !document || !editable.value },
+        // As in Compass: a value of a field becomes a condition of the filter.
+        {
+            label: t("result.filterByValue"),
+            icon: "i-lucide-filter",
+            // A failed run shows its error in the tab it ran in; a filter that does not parse is said here.
+            action: () => void tabs.filterByValue(tab.value, target.path, target.value).catch(report),
+            disabled: !field || collection.value === undefined || !scalar(target.value)
+        },
         "separator",
         {
             label: t("menu.documents"),

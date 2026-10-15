@@ -500,7 +500,9 @@ defineExpose({
 </script>
 
 <template>
-    <aside class="h-full min-w-0 flex flex-col bg-dock select-none">
+    <!-- Takes what its column leaves below the menu bar (min-h-0, not h-full), so the tree scrolls
+         inside it instead of running over the status bar. -->
+    <aside class="min-h-0 min-w-0 flex flex-col bg-dock select-none">
         <header class="h-13 shrink-0 flex items-end justify-between pl-5.5 pr-4 pb-2.5">
             <PopoverRoot v-model="listOpen">
                 <PopoverActivator
@@ -609,11 +611,11 @@ defineExpose({
                                 role="treeitem"
                                 tabindex="0"
                             >
-                                <!-- The color of the connection, as a bar at the left edge. -->
+                                <!-- The color of the connection, as in the tree: a bar at the left edge, over the frame of the row. -->
                                 <span
                                     v-if="connectionColor(profile)"
                                     :class="`note-${connectionColor(profile)}`"
-                                    class="absolute z-1 left-4 inset-y-0 w-[5px]"
+                                    class="absolute z-1 -left-px -inset-y-px w-[5px] rounded-r-sm pointer-events-none"
                                 />
                                 <span class="relative size-4 shrink-0">
                                     <span class="i-lucide-server size-4 block text-on-surface" />
@@ -735,7 +737,7 @@ defineExpose({
                 <span
                     v-if="connectionColor(profile)"
                     :class="`note-${connectionColor(profile)}`"
-                    class="absolute z-1 left-px inset-y-0 w-[5px] rounded-sm pointer-events-none"
+                    class="absolute z-1 left-0 inset-y-0 w-[5px] rounded-r-sm pointer-events-none"
                     data-testid="connection-color"
                 />
                 <div

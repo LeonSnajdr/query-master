@@ -206,7 +206,7 @@ onMounted(async () => {
                 :defaultSize="25"
                 :maxSize="50"
                 :minSize="12"
-                class="min-w-0 flex flex-col bg-dock"
+                class="min-w-0 min-h-0 overflow-hidden flex flex-col bg-dock"
             >
                 <div
                     class="h-10.5 shrink-0 flex items-center gap-2 pl-3.5"
@@ -346,8 +346,10 @@ onMounted(async () => {
         </SplitterRoot>
 
         <footer class="h-7 shrink-0 flex items-center gap-3 px-4.5 bg-dock border-t border-divider text-on-surface select-none">
+            <!-- Italic letters lean past their box: room on the right, or `truncate` cuts the last one. -->
             <span
-                class="italic truncate"
+                :title="status"
+                class="min-w-0 italic truncate pr-1 leading-5"
                 data-testid="status-server"
             >{{ status }}</span>
             <span
