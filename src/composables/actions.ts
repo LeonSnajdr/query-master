@@ -89,9 +89,9 @@ export function useActions() {
         tabs.openShell({ connectionId: at.connectionId, database, collection: at.collection });
     }
 
-    function browse(at = target.value) {
+    function browse(at = target.value, newTab = false) {
         if (at?.database !== undefined && at.collection !== undefined) {
-            tabs.openBrowse({ connectionId: at.connectionId, database: at.database, collection: at.collection });
+            tabs.openBrowse({ connectionId: at.connectionId, database: at.database, collection: at.collection }, newTab);
         }
     }
 

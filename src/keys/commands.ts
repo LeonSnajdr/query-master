@@ -100,6 +100,8 @@ const LIST = [
 
     command({ id: "result.export", label: "result.export", group: "results", scope: "results", keys: ["ctrl+s"] }),
     command({ id: "result.import", label: "result.import", group: "results", scope: "results", keys: ["ctrl+o"] }),
+    // Outside text fields only: in an editor Ctrl+F is its own search.
+    command({ id: "result.search", label: "result.search.focus", group: "results", scope: "results", keys: ["ctrl+f"], inputs: false }),
     command({ id: "result.importClipboard", label: "result.importClipboard", group: "results", scope: "results", keys: ["ctrl+shift+v"], inputs: false }),
     command({ id: "result.pin", label: "result.pin", group: "results", scope: "resultTree", keys: ["ctrl+p"] }),
     command({ id: "result.expand", label: "result.expand.node", group: "results", scope: "resultTree", keys: ["ctrl+j"] }),

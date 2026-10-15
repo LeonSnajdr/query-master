@@ -6,6 +6,7 @@ import { useKeymap } from "@/keys/keymap";
 import type { MenuEntry } from "@/menu";
 import { isDoc, preview, scalar, typeOf } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
+import { isLink, openLink } from "@/links";
 import { dateFormat, dateText, displayText, useResultContext } from "./result-context";
 import ValueEditor from "./ValueEditor.vue";
 
@@ -402,7 +403,17 @@ function onKey(event: KeyboardEvent) {
                             class="absolute left-0 top-0 z-1 h-full min-w-full w-56 pl-2 outline outline-1 -outline-offset-1 outline-primary"
                             testid="table-edit"
                         />
-                        <span :class="isEditing(index, column) ? 'invisible' : ''">{{ cellText(cell(value, column)) }}</span>
+                        <span
+                            v-if="isLink(cell(value, column))"
+                            @click.ctrl.exact.stop="openLink(cell(value, column) as string)"
+                            :class="isEditing(index, column) ? 'invisible' : ''"
+                            class="underline decoration-dotted underline-offset-2 hover:decoration-solid cursor-pointer"
+                            data-testid="table-link"
+                        >{{ cellText(cell(value, column)) }}</span>
+                        <span
+                            v-else
+                            :class="isEditing(index, column) ? 'invisible' : ''"
+                        >{{ cellText(cell(value, column)) }}</span>
                     </td>
                 </tr>
             </tbody>

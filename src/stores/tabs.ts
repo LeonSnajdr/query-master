@@ -186,7 +186,16 @@ export const useTabsStore = defineStore("tabs", () => {
     }
 
     /** Shows a collection with its query fields and runs the query. */
-    function openBrowse(target: { connectionId: string; database: string; collection: string }): WorkTab {
+    /**
+     * The documents of a collection. A tab already open on it comes to the front instead of a second
+     * one (a wish from the Compass feedback); `newTab` opens one anyway.
+     */
+    function openBrowse(target: { connectionId: string; database: string; collection: string }, newTab = false): WorkTab {
+        const open = newTab ? undefined : tabs.value.find(item => item.kind === "browse" && item.connectionId === target.connectionId && item.database === target.database && item.collection === target.collection);
+        if (open) {
+            activeId.value = open.id;
+            return open;
+        }
         const tab = create("browse", target);
         void runBrowse(tab);
         return tab;

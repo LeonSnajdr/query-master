@@ -359,6 +359,11 @@ const runHint = computed(() => {
     return keys === undefined ? t("query.hint.noKey") : t("query.hint", { keys });
 });
 useShortcut("result.export", () => void openExport(), () => inFront.value);
+const searchInput = useTemplateRef<HTMLInputElement>("searchInput");
+useShortcut("result.search", () => {
+    searchInput.value?.focus();
+    searchInput.value?.select();
+}, () => inFront.value);
 useShortcut("result.import", () => void importDocuments(), () => inFront.value && collection.value !== undefined);
 useShortcut("result.importClipboard", () => void importClipboard(), () => inFront.value && collection.value !== undefined);
 
@@ -642,9 +647,11 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
                 <span class="i-lucide-search size-4 shrink-0" />
                 <!-- eslint-disable-next-line vue/no-mutating-props -- `tab` is the store's own object, not a prop -->
                 <input
+                    ref="searchInput"
                     v-model="tab.search"
                     :aria-label="$t('result.search')"
                     :placeholder="$t('result.search')"
+                    :title="keymap.titled($t('result.search.focus'), 'result.search')"
                     class="w-40 min-w-0 shrink bg-transparent outline-none text-[13px] text-on-surface-strong placeholder:italic placeholder:text-on-surface-variant"
                     data-testid="result-search"
                     type="search"

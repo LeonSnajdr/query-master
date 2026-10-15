@@ -2,6 +2,7 @@
 import { ButtonRoot } from "@vuetify/v0";
 import { computed, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { isLink, openLink } from "@/links";
 import { isDoc, scalar, typeOf } from "@/shell/ejson";
 import type { Json, ValueType } from "@/shell/ejson";
 import { dateFormat, dateText, displayText, foldReaches, useResultContext } from "./result-context";
@@ -156,8 +157,17 @@ function startEdit() {
                 testid="tree-edit"
             />
             <template v-else>
+                <!-- A web address: Ctrl+click opens it; a plain click still selects the row. -->
                 <span
-                    v-if="leaf"
+                    v-if="leaf && isLink(value)"
+                    @click.ctrl.exact.stop="openLink(value)"
+                    :class="COLORS[type]"
+                    :title="$t('result.link')"
+                    class="truncate underline decoration-dotted underline-offset-2 hover:decoration-solid cursor-pointer"
+                    data-testid="tree-link"
+                >{{ text }}</span>
+                <span
+                    v-else-if="leaf"
                     :class="COLORS[type]"
                     class="truncate"
                     data-testid="tree-value"
