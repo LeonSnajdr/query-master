@@ -138,6 +138,22 @@ export function useShortcut(id: CommandId, run: (event: KeyboardEvent) => void, 
     }
 }
 
+/**
+ * Runs a command as its keys would (the command palette): the last enabled handler acts.
+ * `false` when nothing can run it right now.
+ */
+export function runCommand(id: CommandId): boolean {
+    const handler = (handlers.get(id) ?? []).findLast(entry => entry.enabled?.() ?? true);
+    if (!handler) return false;
+    handler.run(new KeyboardEvent("keydown"));
+    return true;
+}
+
+/** Whether a command has a handler that would act right now. */
+export function canRun(id: CommandId): boolean {
+    return (handlers.get(id) ?? []).some(entry => entry.enabled?.() ?? true);
+}
+
 /** The commands of a group in the order of the list, for the help and the settings. */
 export function commandsOfGroup(group: string) {
     return COMMANDS.filter(command => command.group === group);

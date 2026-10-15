@@ -16,6 +16,8 @@ import type { ResultView } from "@/stores/tabs";
 const emit = defineEmits<{
     /** "Open connections list" was chosen. */
     connections: [];
+    /** "Search everything" was chosen. */
+    palette: [];
 }>();
 
 /** The menus at the top left: File, Edit, View, Help. */
@@ -105,6 +107,7 @@ const menus = computed<{ name: string; entries: MenuEntry[] }[]>(() => [
     {
         name: t("menu.help"),
         entries: [
+            { label: t("palette.open"), icon: "i-lucide-search", command: "palette.open", action: () => emit("palette") },
             { label: t("help.shortcuts"), icon: "i-lucide-keyboard", command: "help.shortcuts", action: () => dialogs.openHelp("shortcuts") },
             { label: t("start.title"), icon: "i-lucide-house", action: () => tabs.openStart() },
             "separator",

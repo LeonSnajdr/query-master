@@ -1272,6 +1272,22 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.waitForTimeout(2500);
     });
 
+    await step("the command palette finds a collection and a command and runs them", async () => {
+        await page.keyboard.press("Control+Shift+P");
+        await id("palette-input").fill(`@${COLLECTION}`);
+        await page.locator("[data-testid=palette-option]", { hasText: COLLECTION }).first().waitFor();
+        await page.keyboard.press("Enter");
+        await id("palette").waitFor({ state: "hidden" });
+        await page.locator("[data-testid=tab][data-selected]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).waitFor();
+
+        // `>` narrows to commands: the settings open from the palette.
+        await page.keyboard.press("Control+Shift+P");
+        await id("palette-input").fill(">settings");
+        await page.keyboard.press("Enter");
+        await visible("settings").waitFor();
+        await visible("settings-close").click();
+    });
+
     await step("a shortcut changed in the settings acts, shows on the buttons, outlasts a reload and is reset", async () => {
         const browseRow = page.locator("dialog[open] [data-command='tab.browse']");
         await page.keyboard.press("Control+Alt+P");

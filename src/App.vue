@@ -18,6 +18,7 @@ import ShellPanel from "@/components/ShellPanel.vue";
 import SqlPanel from "@/components/SqlPanel.vue";
 import StartPage from "@/components/StartPage.vue";
 import { useActions } from "@/composables/actions";
+import CommandPalette from "@/components/CommandPalette.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useSession } from "@/composables/session";
 import { watchAppearance } from "@/composables/appearance";
@@ -43,6 +44,8 @@ const { layout } = useLayout();
 const actions = useActions();
 const dialogs = useDialogs();
 const session = useSession();
+/** The command palette (stage 22). */
+const paletteOpen = shallowRef(false);
 const connections = useConnectionsStore();
 const notes = useNotesStore();
 const tabs = useTabsStore();
@@ -158,6 +161,7 @@ const SHORTCUTS: Partial<Record<CommandId, () => void>> = {
     "connection.disconnect": () => void actions.disconnect(),
     "tab.browse": () => actions.browse(),
     "query.save": () => withActive(tab => isQueryTab(tab) && dialogs.saveQuery(tab.id)),
+    "palette.open": () => (paletteOpen.value = true),
     "tab.shell": () => actions.openShell(),
     "tab.aggregation": () => actions.aggregation(),
     "tab.sql": () => actions.openSql(),
@@ -238,7 +242,10 @@ onMounted(async () => {
                     >
                         <span class="i-lucide-search-code size-3.5" />
                     </span>
-                    <AppMenuBar @connections="dock?.openList()" />
+                    <AppMenuBar
+                        @connections="dock?.openList()"
+                        @palette="paletteOpen = true"
+                    />
                 </div>
                 <ConnectionDock
                     ref="dock"
@@ -433,6 +440,7 @@ onMounted(async () => {
 
         <ContextMenu ref="tabMenu" />
         <AppDialogs />
+        <CommandPalette v-model="paletteOpen" />
         <NoticeStack />
     </div>
 </template>
