@@ -4,6 +4,7 @@ import { backend } from "@/api";
 import type { Profile } from "@/api";
 import { useDialogs } from "@/composables/dialogs";
 import { useExportWizard } from "@/composables/exportWizard";
+import { useWriteGuard } from "@/composables/writeGuard";
 import type { ExportFormat } from "@/transfer/export";
 import { useImportWizard } from "@/composables/importWizard";
 import { useMessages } from "@/composables/messages";
@@ -47,6 +48,7 @@ export function useActions() {
     const notes = useNotesStore();
     const tabs = useTabsStore();
     const wizardOf = useExportWizard();
+    const writeGuard = useWriteGuard();
     const importOf = useImportWizard();
 
     const target = computed<TreeSelection | undefined>(() => {
@@ -73,6 +75,7 @@ export function useActions() {
     /** Runs a command and reloads the tree; errors go to a toast. */
     async function command(connectionId: string, database: string, document: Doc): Promise<boolean> {
         try {
+            if (!await writeGuard.confirmWrite(connectionId, database, document)) return false;
             const failure = replyError(await backend.runCommand(connectionId, database, document));
             if (failure) throw new Error(say(failure));
             await connections.loadDatabases(connectionId);
@@ -218,7 +221,8 @@ export function useActions() {
 
     async function dropCollection(at = target.value) {
         if (at?.database === undefined || at.collection === undefined || !writable(at)) return;
-        const confirmed = await dialogs.confirm({
+        // On test and production the guard asks, with the name to type.
+        const confirmed = writeGuard.guards(at.connectionId) || await dialogs.confirm({
             title: t("collection.drop.title"),
             text: t("collection.drop.text", { name: at.collection, database: at.database }),
             action: t("action.drop")
@@ -230,7 +234,7 @@ export function useActions() {
 
     async function dropDatabase(at = target.value) {
         if (at?.database === undefined || !writable({ connectionId: at.connectionId, database: at.database })) return;
-        const confirmed = await dialogs.confirm({ title: t("database.drop.title"), text: t("database.drop.text", { name: at.database }), action: t("action.drop") });
+        const confirmed = writeGuard.guards(at.connectionId) || await dialogs.confirm({ title: t("database.drop.title"), text: t("database.drop.text", { name: at.database }), action: t("action.drop") });
         if (!confirmed || !await command(at.connectionId, at.database, { dropDatabase: 1 })) return;
         connections.selected = { connectionId: at.connectionId };
         await notes.remove(at.connectionId, at.database).catch(report);
@@ -283,7 +287,7 @@ export function useActions() {
 
     async function dropIndex(at = target.value) {
         if (at?.database === undefined || at.collection === undefined || at.index === undefined || !writable(at)) return;
-        const confirmed = await dialogs.confirm({
+        const confirmed = writeGuard.guards(at.connectionId) || await dialogs.confirm({
             title: t("index.drop.title"),
             text: t("index.drop.text", { name: at.index, collection: at.collection }),
             action: t("action.drop")
@@ -385,7 +389,9 @@ export function useActions() {
         const confirmed = await dialogs.confirm({
             title: t(`${kind}.dropMany.title`, { count: rows.length }),
             text: t(`${kind}.dropMany.text`, { count: rows.length, names: namesOf(rows) }),
-            action: t("action.drop")
+            action: t("action.drop"),
+            // On test and production: the number of rows typed, as the name is for one.
+            requireName: writeGuard.guards(first.connectionId) ? String(rows.length) : undefined
         });
         if (!confirmed) return;
         let dropped = 0;

@@ -4,6 +4,7 @@ import { backend, errorMessage } from "@/api";
 import type { Profile, ProfileInput } from "@/api";
 import { isDoc, scalar } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
+import type { Environment } from "@/shell/guard";
 import { SEARCH_LIMIT, collectValues, combineSearches, searchCommand, searchHints, validatorValues } from "@/shell/values";
 import type { ValueHint, ValueIndex, ValueSearch } from "@/shell/values";
 import { useNotesStore } from "@/stores/notes";
@@ -159,8 +160,32 @@ export const useConnectionsStore = defineStore("connections", () => {
 
     async function save(input: ProfileInput): Promise<Profile> {
         const profile = await backend.saveConnection(input);
+        await paintProduction(profile.id, input.environment ?? null);
         await load();
         return profile;
+    }
+
+    /** Production paints a connection red, unless it has a color already. */
+    async function paintProduction(id: string, environment: Environment | null): Promise<void> {
+        const notes = useNotesStore();
+        if (environment !== "production") return;
+        if (!notes.notes[id]) await notes.load(id).catch(() => undefined);
+        if (!notes.noteOf({ connectionId: id })?.color) await notes.change({ connectionId: id }, { color: "red" });
+    }
+
+    /**
+     * Marks a connection as development, test or production. Production paints it red, unless it
+     * has a color already.
+     */
+    async function setEnvironment(id: string, environment: Environment | null): Promise<void> {
+        await backend.setConnectionEnvironment(id, environment);
+        await paintProduction(id, environment);
+        await load();
+    }
+
+    /** The environment of a connection; a connection from a typed string has none. */
+    function environmentOf(id: string | undefined): Environment | null {
+        return profiles.value.find(profile => profile.id === id)?.environment ?? null;
     }
 
     async function remove(id: string): Promise<void> {
@@ -364,5 +389,5 @@ export const useConnectionsStore = defineStore("connections", () => {
         return sampleValues.get(`${id}/${database}/${collection}`)?.get(field);
     }
 
-    return { profiles, saved, sessions, connecting, failed, selected, marked, inTree, load, save, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
+    return { profiles, saved, sessions, connecting, failed, selected, marked, inTree, load, save, setEnvironment, environmentOf, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
 });

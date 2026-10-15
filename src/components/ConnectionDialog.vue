@@ -11,6 +11,8 @@ import { useMessages } from "@/composables/messages";
 import { DEFAULT_PORT, buildUri, emptyFields, parseUri } from "@/connection/uri";
 import type { AuthMode, ConnectMode, ConnectionFields } from "@/connection/uri";
 import { pickFilePath } from "@/files";
+import { ENVIRONMENTS } from "@/shell/guard";
+import type { Environment } from "@/shell/guard";
 import { useConnectionsStore } from "@/stores/connections";
 
 /**
@@ -31,6 +33,13 @@ const dialogs = useDialogs();
 const actions = useActions();
 const connections = useConnectionsStore();
 const name = shallowRef("");
+/** "none" or an environment (stage 21): how the app asks before writing on the connection. */
+const environment = shallowRef<"none" | Environment>("none");
+const environmentOptions = computed(() => (["none", ...ENVIRONMENTS] as const).map(value => ({
+    value,
+    label: t(`environment.${value}`),
+    hint: t(`environment.${value}.hint`)
+})));
 const fields = ref<ConnectionFields>(emptyFields());
 const tab = shallowRef<typeof TABS[number]>("basic");
 const busy = shallowRef(false);
@@ -72,6 +81,7 @@ watch(open, async (isOpen) => {
     notice.value = undefined;
     tab.value = "basic";
     name.value = props.profile ? (props.clone ? t("connection.clone.name", { name: props.profile.name }) : props.profile.name) : "";
+    environment.value = props.profile?.environment ?? "none";
     fields.value = emptyFields();
     if (!props.profile) return;
     try {
@@ -125,7 +135,12 @@ async function test() {
 async function save(connect = false) {
     busy.value = true;
     try {
-        const profile = await connections.save({ id: props.clone ? undefined : props.profile?.id, name: name.value.trim() || t("connection.unnamed"), uri: uri.value });
+        const profile = await connections.save({
+            id: props.clone ? undefined : props.profile?.id,
+            name: name.value.trim() || t("connection.unnamed"),
+            uri: uri.value,
+            environment: environment.value === "none" ? null : environment.value
+        });
         open.value = false;
         if (connect) await actions.connect(profile);
     } catch (error) {
@@ -157,6 +172,16 @@ async function save(connect = false) {
                         type="text"
                     />
                 </label>
+                <div class="flex items-center gap-3">
+                    <span class="w-14 text-[13px] text-on-surface">{{ $t("environment.label") }}:</span>
+                    <ChoiceField
+                        v-model="environment"
+                        :label="$t('environment.label')"
+                        :options="environmentOptions"
+                        class="w-64"
+                        data-testid="connection-environment"
+                    />
+                </div>
 
                 <TabsRoot
                     v-model="tab"

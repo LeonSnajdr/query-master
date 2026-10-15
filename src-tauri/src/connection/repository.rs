@@ -15,6 +15,7 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Connection>> {
                 id as "id: Uuid",
                 name,
                 address,
+                environment,
                 date_created as "date_created: DateTime<Utc>",
                 date_last_used as "date_last_used: DateTime<Utc>"
             from connection
@@ -30,15 +31,17 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Connection>> {
 pub async fn upsert(pool: &SqlitePool, connection: &Connection) -> Result<()> {
     sqlx::query!(
         r#"
-            insert into connection (id, name, address, date_created, date_last_used)
-            values ($1, $2, $3, $4, $5)
+            insert into connection (id, name, address, environment, date_created, date_last_used)
+            values ($1, $2, $3, $4, $5, $6)
             on conflict (id) do update set
                 name = excluded.name,
-                address = excluded.address
+                address = excluded.address,
+                environment = excluded.environment
         "#,
         connection.id,
         connection.name,
         connection.address,
+        connection.environment,
         connection.date_created,
         connection.date_last_used
     )
@@ -62,6 +65,17 @@ pub async fn set_last_used(
     Ok(())
 }
 
+pub async fn set_environment(pool: &SqlitePool, id: Uuid, environment: Option<&str>) -> Result<()> {
+    sqlx::query!(
+        "update connection set environment = $2 where id = $1",
+        id,
+        environment
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub async fn delete(pool: &SqlitePool, id: Uuid) -> Result<()> {
     sqlx::query!("delete from connection where id = $1", id)
         .execute(pool)
@@ -79,6 +93,7 @@ mod tests {
             id: Uuid::new_v4(),
             name: name.to_owned(),
             address: "mongodb://localhost:27017".to_owned(),
+            environment: None,
             date_created: Utc::now(),
             date_last_used: None,
         }
@@ -112,5 +127,27 @@ mod tests {
 
         delete(&pool, local.id).await.unwrap();
         assert_eq!(list(&pool).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn keeps_the_environment_and_refuses_unknown_ones() {
+        let pool = db::memory_pool().await;
+        let atlas = connection("Atlas");
+        upsert(&pool, &atlas).await.unwrap();
+        assert_eq!(list(&pool).await.unwrap()[0].environment, None);
+
+        set_environment(&pool, atlas.id, Some("production"))
+            .await
+            .unwrap();
+        assert_eq!(
+            list(&pool).await.unwrap()[0].environment.as_deref(),
+            Some("production")
+        );
+        // The table takes only the three kinds.
+        assert!(set_environment(&pool, atlas.id, Some("staging"))
+            .await
+            .is_err());
+        set_environment(&pool, atlas.id, None).await.unwrap();
+        assert_eq!(list(&pool).await.unwrap()[0].environment, None);
     }
 }

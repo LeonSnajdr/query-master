@@ -29,6 +29,7 @@ import { useShortcut } from "@/keys/keymap";
 import { appWindow } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { useConnectionsStore } from "@/stores/connections";
+import { useNotesStore } from "@/stores/notes";
 import { useTabsStore } from "@/stores/tabs";
 import { isQueryTab } from "@/stores/tabs";
 import type { ResultView, WorkTab } from "@/stores/tabs";
@@ -41,6 +42,7 @@ const { layout } = useLayout();
 const actions = useActions();
 const dialogs = useDialogs();
 const connections = useConnectionsStore();
+const notes = useNotesStore();
 const tabs = useTabsStore();
 const focus = useFocusAreas();
 const dock = useTemplateRef("dock");
@@ -75,6 +77,17 @@ const status = computed(() => {
     const session = id === undefined ? undefined : connections.sessions[id];
     return profile && session ? t("status.server", { name: profile.name, version: session.version }) : t("connection.none");
 });
+/** The connection the status bar speaks of, marked production: the bar is red underneath (stage 21). */
+const production = computed(() => {
+    const id = tabs.active?.kind !== "start" && tabs.active ? tabs.active.connectionId : connections.selected?.connectionId;
+    return id !== undefined && connections.environmentOf(id) === "production";
+});
+
+/** The color of a tab's connection, as a line along its top. */
+function tabColor(tab: WorkTab): string | undefined {
+    return tab.kind === "start" ? undefined : notes.noteOf({ connectionId: tab.connectionId })?.color ?? undefined;
+}
+
 /** The field chosen in the result of the tab in front at the bottom. */
 const fieldPath = computed(() => (isQueryTab(tabs.active) ? tabs.active.fieldPath : undefined));
 const seconds = computed(() => ((tabs.active?.result?.milliseconds ?? 0) / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }));
@@ -259,9 +272,16 @@ onMounted(async () => {
                                 :data-dragged="tab.id === draggedId || undefined"
                                 :data-selected="tab.id === tabs.activeId || undefined"
                                 :data-tab-id="tab.id"
-                                class="group data-[dragged]:opacity-70 data-[dragged]:cursor-grabbing h-8.5 max-w-64 shrink-0 flex items-center pl-2.5 pr-1 text-on-surface hover:text-on-surface-strong data-[selected]:bg-background data-[selected]:text-on-surface-strong"
+                                class="relative group data-[dragged]:opacity-70 data-[dragged]:cursor-grabbing h-8.5 max-w-64 shrink-0 flex items-center pl-2.5 pr-1 text-on-surface hover:text-on-surface-strong data-[selected]:bg-background data-[selected]:text-on-surface-strong"
                                 data-testid="tab"
                             >
+                                <!-- The color of the connection along the top: which server a tab works on. -->
+                                <span
+                                    v-if="tabColor(tab)"
+                                    :class="`note-${tabColor(tab)}`"
+                                    class="absolute inset-x-0 top-0 h-0.5 pointer-events-none"
+                                    data-testid="tab-color"
+                                />
                                 <TabsItem
                                     :value="tab.id"
                                     class="min-w-0 h-full inline-flex items-center gap-1.5 text-[13px] text-left"
@@ -347,7 +367,21 @@ onMounted(async () => {
             </SplitterPanel>
         </SplitterRoot>
 
-        <footer class="h-7 shrink-0 flex items-center gap-3 px-4.5 bg-dock border-t border-divider text-on-surface select-none">
+        <footer
+            :class="production ? 'bg-error/15' : 'bg-dock'"
+            :data-environment="production ? 'production' : undefined"
+            class="h-7 shrink-0 flex items-center gap-3 px-4.5 border-t border-divider text-on-surface select-none"
+            data-testid="status-bar"
+        >
+            <!-- Production: a red dot and the word, before the server (no red border, no banner). -->
+            <span
+                v-if="production"
+                class="shrink-0 flex items-center gap-1.5 font-semibold text-error"
+                data-testid="status-production"
+            >
+                <span class="size-2 rounded-full bg-error" />
+                {{ $t("environment.production") }}
+            </span>
             <!-- Italic letters lean past their box: room on the right, or `truncate` cuts the last one. -->
             <span
                 :title="status"

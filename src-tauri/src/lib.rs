@@ -35,6 +35,7 @@ pub fn run() {
             connection::commands::connection_uri,
             connection::commands::connection_save,
             connection::commands::connection_delete,
+            connection::commands::connection_set_environment,
             setting::commands::setting_get,
             setting::commands::setting_save,
             keybinding::commands::keybinding_list,

@@ -233,6 +233,39 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.match(await panelAgain.locator(".cm-activeLine:visible").innerText(), /insertOne\(5\)/);
     });
 
+    await step("a connection marked production asks before writing, with the documents it touches", async () => {
+        const target = `db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}")`;
+        const setEnvironment = async (label) => {
+            await page.locator("[data-testid=connection-row]", { hasText: NAME }).click({ button: "right" });
+            await openGroup("Environment");
+            await chooseMenu(label);
+        };
+        await setEnvironment("Production");
+        await id("status-production").waitFor();
+        const panel = page.locator("[data-testid=tab-panel]:visible");
+        // `$inc` by 0: the documents are touched, but the later steps see them as they were.
+        const statement = `${target}.updateMany({ n: { $gte: 2 } }, { $inc: { n: 0 } })`;
+
+        // Cancelled: nothing is written.
+        await write(panel, statement);
+        await panel.locator("[data-testid=query-run]").click();
+        await id("confirm-facts").waitFor();
+        assert.match(await id("confirm-facts").innerText(), /Documents\s*2/);
+        // The field `n`, before and after, in a column of its own.
+        assert.match(await id("confirm-table").innerText(), /\tn\t/);
+        await page.keyboard.press("Escape");
+        await panel.locator("[data-testid=query-error]", { hasText: "cancelled" }).waitFor();
+
+        // Confirmed: the statement runs on the two documents.
+        await panel.locator("[data-testid=query-run]").click();
+        await id("confirm-action").click();
+        await panel.locator("[data-testid=query-result]", { hasText: "matchedCount" }).waitFor();
+        assert.ok((await panel.locator("[data-testid=query-result]").innerText()).replace(/\s+/g, "").includes("matchedCount:2"));
+
+        await setEnvironment("None");
+        await id("status-production").waitFor({ state: "detached" });
+    });
+
     await step("an endless script can be stopped", async () => {
         const panel = page.locator("[data-testid=tab-panel]:visible");
         await write(panel, "for (;;) {}");
@@ -1201,16 +1234,26 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await setting(2, "50");
         await setting(3, "Table view");
         await visible("settings-close").click();
-        await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).dblclick();
-        await panel.locator("[data-testid=table-row]").first().waitFor();
-        assert.equal((await panel.locator("[data-testid=page-size]").innerText()).trim(), "50");
-        await page.keyboard.press("Control+w");
-
-        // Back to the defaults: later runs, and the app's own data, start as before.
-        await page.keyboard.press("Control+Alt+P");
-        await setting(2, "20");
-        await setting(3, "Tree view");
-        await visible("settings-close").click();
+        try {
+            // A tab already open on the collection would come to the front: the settings are for new ones.
+            const openTabs = page.locator("[data-testid=tab]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) });
+            while (await openTabs.count() > 0) {
+                await openTabs.first().click();
+                await page.keyboard.press("Control+w");
+                await page.waitForTimeout(100);
+            }
+            await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).dblclick();
+            await panel.locator("[data-testid=table-row]").first().waitFor();
+            assert.equal((await panel.locator("[data-testid=page-size]").innerText()).trim(), "50");
+            await page.keyboard.press("Control+w");
+        } finally {
+            // Back to the defaults, also when the step fails: later runs, and the app's own data, start as before.
+            await page.keyboard.press("Escape");
+            await page.keyboard.press("Control+Alt+P");
+            await setting(2, "20");
+            await setting(3, "Tree view");
+            await visible("settings-close").click();
+        }
     });
 
     await step("a shortcut changed in the settings acts, shows on the buttons, outlasts a reload and is reset", async () => {

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "update connection set environment = $2 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "0816a89d4cf14d16bd8cf6ea28b50ed93bedb1963c22a2a03ed2373cbf27dd21"
+}

@@ -4,6 +4,7 @@ import { backend, errorMessage } from "@/api";
 import type { ImportOutcome } from "@/api";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
+import { useWriteGuard } from "@/composables/writeGuard";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
@@ -45,6 +46,7 @@ export function useImportWizard() {
     const notices = useNotices();
     const connections = useConnectionsStore();
     const notes = useNotesStore();
+    const writeGuard = useWriteGuard();
     const busy = shallowRef(false);
 
     /** Opens the wizard on the server of the selection; a database or collection there is where files go. */
@@ -103,6 +105,8 @@ export function useImportWizard() {
             report(new Error(t("error.plan.readonlyTree", { name: `${locked.database}.${locked.collection}` })));
             return;
         }
+        const databases = [...new Set(state.rows.map(row => row.database.trim()))].join(", ");
+        if (!await writeGuard.confirmJob(state.connectionId, databases, t("import.menu"))) return;
         const job = importJob(state);
         if (state.format === "csv") {
             preset = { csv: { ...state.csv } };

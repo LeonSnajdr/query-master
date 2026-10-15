@@ -1,0 +1,50 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            select\n                id as \"id: Uuid\",\n                name,\n                address,\n                environment,\n                date_created as \"date_created: DateTime<Utc>\",\n                date_last_used as \"date_last_used: DateTime<Utc>\"\n            from connection\n            order by name collate nocase\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "address",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "environment",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "date_created: DateTime<Utc>",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "date_last_used: DateTime<Utc>",
+        "ordinal": 5,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "6d196b3cd7e739bc19dd26f3cb1fda8ed93bab5c23522799c9b885fd1e9c6a00"
+}

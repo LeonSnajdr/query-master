@@ -26,6 +26,15 @@ pub async fn connection_save(
 }
 
 #[tauri::command]
+pub async fn connection_set_environment(
+    pool: State<'_, SqlitePool>,
+    id: Uuid,
+    environment: Option<String>,
+) -> Result<()> {
+    super::set_environment(&pool, id, environment).await
+}
+
+#[tauri::command]
 pub async fn connection_delete(pool: State<'_, SqlitePool>, id: Uuid) -> Result<()> {
     super::delete(&pool, id).await
 }

@@ -20,6 +20,18 @@ const { report } = useMessages();
 
 const promptOpen = computed({ get: () => state.prompt !== undefined, set: open => !open && resolvePrompt(undefined) });
 const confirmOpen = computed({ get: () => state.confirm !== undefined, set: open => !open && resolveConfirm(false) });
+/** What is typed to free the button of a confirmation that asks for a name. */
+const typedName = shallowRef("");
+watch(() => state.confirm, () => (typedName.value = ""));
+const confirmFree = computed(() => state.confirm?.requireName === undefined || typedName.value === state.confirm.requireName);
+
+async function copyScript() {
+    try {
+        await navigator.clipboard.writeText(state.confirm?.script ?? "");
+    } catch (error) {
+        report(error);
+    }
+}
 const textOpen = computed({ get: () => state.text !== undefined, set: open => !open && (state.text = undefined) });
 
 const answer = shallowRef("");
@@ -139,12 +151,94 @@ async function copyText() {
                 >
                     {{ state.confirm.text }}
                 </DialogDescription>
+                <dl
+                    v-if="state.confirm.facts?.length"
+                    class="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px]"
+                    data-testid="confirm-facts"
+                >
+                    <template
+                        v-for="fact in state.confirm.facts"
+                        :key="fact.label"
+                    >
+                        <dt class="text-on-surface-variant">
+                            {{ fact.label }}
+                        </dt>
+                        <dd class="m-0 font-mono text-on-surface-strong break-all">
+                            {{ fact.value }}
+                        </dd>
+                    </template>
+                </dl>
+                <div
+                    v-if="state.confirm.table?.rows.length"
+                    class="max-h-56 overflow-auto"
+                >
+                    <table
+                        class="plain-table"
+                        data-testid="confirm-table"
+                    >
+                        <thead>
+                            <tr>
+                                <th
+                                    v-for="head in state.confirm.table.heads"
+                                    :key="head"
+                                    class="text-left"
+                                >
+                                    {{ head }}
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="(row, index) in state.confirm.table.rows"
+                                :key="index"
+                            >
+                                <td
+                                    v-for="(cell, column) in row"
+                                    :key="column"
+                                    class="font-mono"
+                                >
+                                    {{ cell }}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <label
+                    v-if="state.confirm.requireName !== undefined"
+                    class="flex flex-col gap-1 text-[13px] text-on-surface"
+                >
+                    <I18nT
+                        keypath="confirm.typeName"
+                        scope="global"
+                        tag="span"
+                    >
+                        <template #name>
+                            <strong class="font-mono">{{ state.confirm.requireName }}</strong>
+                        </template>
+                    </I18nT>
+                    <input
+                        v-model="typedName"
+                        @keydown.enter.prevent="confirmFree && resolveConfirm(true)"
+                        class="field font-mono"
+                        data-testid="confirm-name"
+                        spellcheck="false"
+                    />
+                </label>
                 <div class="flex justify-end gap-2">
+                    <ButtonRoot
+                        v-if="state.confirm.script"
+                        @click="copyScript"
+                        class="btn-ghost mr-auto"
+                        data-testid="confirm-script"
+                    >
+                        <ButtonContent>{{ $t("confirm.copyScript") }}</ButtonContent>
+                    </ButtonRoot>
                     <DialogClose class="btn-ghost">
                         {{ $t("action.cancel") }}
                     </DialogClose>
                     <ButtonRoot
-                        @click="resolveConfirm(true)"
+                        @click="confirmFree && resolveConfirm(true)"
+                        :disabled="!confirmFree"
                         class="btn-danger"
                         data-testid="confirm-action"
                     >

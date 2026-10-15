@@ -20,6 +20,8 @@ pub struct Connection {
     pub name: String,
     /// The connection string without credentials, to show in lists.
     pub address: String,
+    /// `development`, `test` or `production`; how the app asks before writing on it.
+    pub environment: Option<String>,
     #[serde(skip)]
     pub date_created: DateTime<Utc>,
     #[serde(skip)]
@@ -34,6 +36,18 @@ pub struct SaveConnection {
     pub id: Option<Uuid>,
     pub name: String,
     pub uri: String,
+    #[serde(default)]
+    pub environment: Option<String>,
+}
+
+/// The kinds of use a connection can be marked with.
+const ENVIRONMENTS: [&str; 3] = ["development", "test", "production"];
+
+fn checked_environment(environment: Option<String>) -> Result<Option<String>> {
+    match environment {
+        Some(value) if !ENVIRONMENTS.contains(&value.as_str()) => Err(Error::Environment(value)),
+        other => Ok(other),
+    }
 }
 
 /// `mongodb://user:secret@host:27017/db?x=1` becomes `mongodb://host:27017/db`.
@@ -64,6 +78,7 @@ pub async fn save(pool: &SqlitePool, input: SaveConnection) -> Result<Connection
         id: input.id.unwrap_or_else(Uuid::new_v4),
         name: input.name.trim().to_owned(),
         address: address_of(uri),
+        environment: checked_environment(input.environment)?,
         date_created: Utc::now(),
         date_last_used: None,
     };
@@ -71,6 +86,15 @@ pub async fn save(pool: &SqlitePool, input: SaveConnection) -> Result<Connection
     keychain::write(connection.id, uri)?;
     repository::upsert(pool, &connection).await?;
     Ok(connection)
+}
+
+/// Marks a connection (from its menu in the tree); `None` takes the mark away.
+pub async fn set_environment(
+    pool: &SqlitePool,
+    id: Uuid,
+    environment: Option<String>,
+) -> Result<()> {
+    repository::set_environment(pool, id, checked_environment(environment)?.as_deref()).await
 }
 
 pub async fn mark_used(pool: &SqlitePool, id: Uuid) -> Result<()> {

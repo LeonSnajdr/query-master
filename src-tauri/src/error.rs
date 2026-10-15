@@ -44,6 +44,8 @@ pub enum Error {
     SameTarget,
     #[error("{0}")]
     Script(String),
+    #[error("{0} is no environment of a connection")]
+    Environment(String),
     #[error("the local database reported an error: {0}")]
     Database(#[from] sqlx::Error),
     #[error(transparent)]
@@ -77,6 +79,7 @@ impl Error {
             Self::WritingPipeline => Some("error.transfer.writingPipeline"),
             Self::ClipboardTooLarge => Some("error.transfer.clipboardTooLarge"),
             Self::SameTarget => Some("error.transfer.sameTarget"),
+            Self::Environment(_) => Some("error.backend.environment"),
             Self::Mongo(_) | Self::Io(_) | Self::Script(_) => None,
         }
     }
@@ -97,7 +100,7 @@ impl Error {
             | Self::SameTarget => None,
             Self::OutputName(name) | Self::ImportText(name) => Some(name.clone()),
             Self::CollectionMissing(name) => Some(name.clone()),
-            Self::Script(message) => Some(message.clone()),
+            Self::Script(message) | Self::Environment(message) => Some(message.clone()),
             Self::ExtendedJson(cause) => Some(cause.clone()),
             Self::Keychain(cause) | Self::KeychainRead(cause) | Self::KeychainWrite(cause) => {
                 Some(cause.to_string())

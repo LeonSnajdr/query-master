@@ -4,6 +4,7 @@ import { backend, errorMessage } from "@/api";
 import type { ExportOutcome } from "@/api";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
+import { useWriteGuard } from "@/composables/writeGuard";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
@@ -46,6 +47,7 @@ export function useExportWizard() {
     const notices = useNotices();
     const connections = useConnectionsStore();
     const notes = useNotesStore();
+    const writeGuard = useWriteGuard();
     const busy = shallowRef(false);
 
     /**
@@ -137,6 +139,7 @@ export function useExportWizard() {
             report(new Error(t("error.plan.readonlyTree", { name: state.database.database })));
             return;
         }
+        if (state.format === "database" && !await writeGuard.confirmJob(state.database.connectionId, state.database.database, t("export.menu"))) return;
         let job;
         try {
             job = exportJob(state);

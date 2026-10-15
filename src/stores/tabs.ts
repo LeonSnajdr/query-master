@@ -3,6 +3,7 @@ import { computed, markRaw, reactive, ref } from "vue";
 import type { Ref } from "vue";
 import { backend, errorMessage } from "@/api";
 import { preferences } from "@/composables/appearance";
+import { useWriteGuard } from "@/composables/writeGuard";
 import { isDoc, toNumber, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError, scriptErrorPosition } from "@/shell/message";
@@ -144,6 +145,7 @@ export function browseStatement(tab: WorkTab): string {
 export const useTabsStore = defineStore("tabs", () => {
     const connections = useConnectionsStore();
     const notes = useNotesStore();
+    const writeGuard = useWriteGuard();
     // Results hold arbitrarily deep JSON: the list is typed by hand instead of unwrapped by Vue.
     const tabs = ref([]) as Ref<WorkTab[]>;
     const activeId = ref<string>();
@@ -333,6 +335,8 @@ export const useTabsStore = defineStore("tabs", () => {
 
     async function fetch(tab: WorkTab, plan: Plan, offset: number, statement: string): Promise<void> {
         guardWrite(tab, isWrite(plan), plan.database, commandCollection(plan));
+        // On a connection marked test or production the user is asked first (stage 21).
+        if (isWrite(plan) && !await writeGuard.confirmWrite(tab.connectionId, plan.database, plan.command, { statement })) throw new ShellError("error.write.cancelled");
         const started = performance.now();
         let items: Json[];
         let hasMore = false;
@@ -380,6 +384,7 @@ export const useTabsStore = defineStore("tabs", () => {
      * prints shows while it runs; `start` is where `source` begins in the text of the tab.
      */
     async function runScript(tab: WorkTab, source: string, start = 0): Promise<void> {
+        if (!await writeGuard.confirmScript(tab.connectionId, tab.database, source)) throw new ShellError("error.write.cancelled");
         const started = performance.now();
         tab.runId = `${tab.id}-${Date.now()}`;
         tab.output = undefined;
@@ -631,7 +636,9 @@ export const useTabsStore = defineStore("tabs", () => {
         if (collection === undefined) return false;
         const done = await guarded(tab, async () => {
             guardWrite(tab, true, database, collection);
-            const failure = replyError(await backend.runCommand(tab.connectionId, database, command(collection)));
+            const document = command(collection);
+            if (!await writeGuard.confirmWrite(tab.connectionId, database, document, { editOnce: tab.id })) throw new ShellError("error.write.cancelled");
+            const failure = replyError(await backend.runCommand(tab.connectionId, database, document));
             if (failure) throw new ReplyError(failure);
         });
         if (done) await refresh(tab);

@@ -2,6 +2,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { mockBackend } from "./api.mock";
 import type { Doc, Json } from "./shell/ejson";
 import { ShellError } from "./shell/message";
+import type { Environment } from "./shell/guard";
 import type { Message } from "./shell/message";
 import type { ScriptCursor } from "./shell/plan";
 import type { CsvColumn } from "./transfer/import";
@@ -12,6 +13,8 @@ export interface Profile {
     name: string;
     /** The connection string without credentials. */
     address: string;
+    /** What the connection is used for; decides how the app asks before writing (stage 21). */
+    environment?: Environment | null;
 }
 
 export interface ProfileInput {
@@ -19,6 +22,7 @@ export interface ProfileInput {
     id?: string;
     name: string;
     uri: string;
+    environment?: Environment | null;
 }
 
 export interface KeybindingChange {
@@ -132,6 +136,8 @@ export interface Backend {
     listConnections: () => Promise<Profile[]>;
     connectionUri: (id: string) => Promise<string>;
     saveConnection: (input: ProfileInput) => Promise<Profile>;
+    /** Marks a saved connection as development, test or production; `null` takes the mark away. */
+    setConnectionEnvironment: (id: string, environment: Environment | null) => Promise<void>;
     deleteConnection: (id: string) => Promise<void>;
     testConnection: (uri: string) => Promise<ServerInfo>;
     connect: (id: string) => Promise<ServerInfo>;
@@ -198,6 +204,7 @@ const tauriBackend: Backend = {
     listConnections: () => invoke("connection_list"),
     connectionUri: id => invoke("connection_uri", { id }),
     saveConnection: input => invoke("connection_save", { input }),
+    setConnectionEnvironment: (id, environment) => invoke("connection_set_environment", { id, environment }),
     deleteConnection: id => invoke("connection_delete", { id }),
     testConnection: uri => invoke("test_connection", { uri }),
     connect: id => invoke("connect", { id }),

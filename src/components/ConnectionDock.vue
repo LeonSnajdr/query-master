@@ -22,6 +22,7 @@ import { collectionRows, databaseRows, NOTE_COLORS, useNotesStore } from "@/stor
 import { folderWithin, parentFolder } from "@/tree/folders";
 import type { CollectionRow, FolderRow, NotePlace } from "@/stores/notes";
 import { all, click, keyOf, kindOf, rowOf, sameRow } from "@/tree/selection";
+import { ENVIRONMENTS } from "@/shell/guard";
 import { canDrop, dropTargetOf } from "@/tree/drag";
 import type { DragSource, DropTarget } from "@/tree/drag";
 
@@ -76,6 +77,20 @@ function noteEntries(at: TreeSelection): MenuEntry[] {
         { label: t("note.readonly"), icon: "i-lucide-lock", checked: note?.readonly === true, action: () => void actions.toggleReadonly(at) },
         { label: t("note.color"), swatches: NOTE_COLORS, current: note?.color ?? null, choose: color => void actions.setColor(at, color) }
     );
+    // A saved connection is marked as development, test or production: how the app asks before writing.
+    if (at.database === undefined && !connections.isTransient(at.connectionId)) {
+        const current = connections.environmentOf(at.connectionId);
+        entries.push({
+            label: t("environment.menu"),
+            icon: "i-lucide-shield",
+            children: [null, ...ENVIRONMENTS].map(environment => ({
+                label: t(`environment.${environment ?? "none"}`),
+                hotkey: t(`environment.${environment ?? "none"}.hint`),
+                checked: current === environment,
+                action: () => void connections.setEnvironment(at.connectionId, environment).catch(report)
+            }))
+        });
+    }
     return entries;
 }
 

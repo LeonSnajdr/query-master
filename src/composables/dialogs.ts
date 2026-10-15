@@ -19,6 +19,14 @@ export interface ConfirmRequest {
     title: string;
     text: string;
     action: string;
+    /** Lines below the text, label and value (command, collection, documents touched). */
+    facts?: { label: string; value: string }[];
+    /** A table below (before and after of a write): the heads, then the rows. */
+    table?: { heads: string[]; rows: string[][] };
+    /** The button is free only once this is typed (the collection, before a large write or a drop). */
+    requireName?: string;
+    /** Offers "Copy as script" with this text. */
+    script?: string;
 }
 
 /** Text to read or to edit in a code editor. */

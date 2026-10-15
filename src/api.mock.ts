@@ -83,11 +83,15 @@ export const mockBackend: Backend = {
     listConnections: async () => [...profiles],
     connectionUri: async () => "mongodb://localhost:27017",
     saveConnection: async (input) => {
-        const profile = { id: input.id ?? `mock-${profiles.length}`, name: input.name, address: input.uri.replace(/\/\/[^@/]*@/, "//") };
+        const profile = { id: input.id ?? `mock-${profiles.length}`, name: input.name, address: input.uri.replace(/\/\/[^@/]*@/, "//"), environment: input.environment ?? null };
         const index = profiles.findIndex(item => item.id === profile.id);
         if (index === -1) profiles.push(profile);
         else profiles[index] = profile;
         return profile;
+    },
+    setConnectionEnvironment: async (id, environment) => {
+        const profile = profiles.find(item => item.id === id);
+        if (profile) profile.environment = environment;
     },
     deleteConnection: async (id) => {
         profiles.splice(profiles.findIndex(item => item.id === id), 1);
@@ -190,7 +194,7 @@ export const mockBackend: Backend = {
             documents = ORDERS.slice(skip, max > 0 ? skip + max : undefined);
         } else if (Array.isArray(command.pipeline)) {
             const pipeline = command.pipeline;
-            const counts = pipeline.some(stage => typeof stage === "object" && stage !== null && "$group" in stage);
+            const counts = pipeline.some(stage => typeof stage === "object" && stage !== null && ("$group" in stage || "$count" in stage));
             documents = valueGroups(pipeline) ?? (counts ? [{ _id: 1, n: { $numberInt: String(ORDERS.length) } }] : ORDERS.slice(pipelineSkip(pipeline)));
         }
         await new Promise(resolve => setTimeout(resolve, 120));

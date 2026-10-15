@@ -6,6 +6,7 @@ import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
 import { useTask } from "@/composables/task";
+import { useWriteGuard } from "@/composables/writeGuard";
 import { ShellError } from "@/shell/message";
 import { useConnectionsStore } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
@@ -25,6 +26,7 @@ export function useCopy() {
     const connections = useConnectionsStore();
     const notes = useNotesStore();
     const task = useTask();
+    const writeGuard = useWriteGuard();
 
     function copy(place: Place) {
         copied.value = [{ ...place }];
@@ -84,6 +86,7 @@ export function useCopy() {
             report(new ShellError("error.plan.readonlyTree", { name: database }));
             return;
         }
+        if (!await writeGuard.confirmJob(connectionId, database, t("collection.paste"))) return;
         let done = 0;
         try {
             for (const source of sources) {
