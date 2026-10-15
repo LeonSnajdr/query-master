@@ -1,54 +1,17 @@
-//! Copies a collection, within a connection or from one to another: its options (capped,
-//! validator, time series, view definition …), its documents in batches and its indexes. The
-//! documents pass through this side as raw BSON, unchanged.
-
-use std::sync::atomic::{AtomicBool, Ordering};
+//! What copying a collection needs, for the export into a database (the one way collections are
+//! copied, also when pasted): the options of the source (capped, validator, time series, view
+//! definition …) and its indexes. The documents go through the export job.
 
 use futures_util::TryStreamExt;
 use mongodb::{
-    bson::{doc, Bson, Document, RawDocumentBuf},
-    error::ErrorKind,
+    bson::{doc, Bson, Document},
     Client,
 };
-use serde::{Deserialize, Serialize};
-use tauri::{ipc::Channel, State};
 
-use crate::{
-    error::{Error, Result},
-    mongo::Clients,
-    runs::Runs,
-};
+use crate::error::{Error, Result};
 
-/// Documents written with one `insert`.
-const BATCH: usize = 1000;
 /// The server's answer when the collection to create is there already.
 pub(crate) const NAMESPACE_EXISTS: i32 = 48;
-
-/// A collection on a connection.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Place {
-    pub connection_id: String,
-    pub database: String,
-    pub collection: String,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CopyProgress {
-    pub copied: u64,
-    /// As the server estimates it before the copy starts.
-    pub total: u64,
-}
-
-#[derive(Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct CopyResult {
-    pub documents: u64,
-    pub indexes: usize,
-    /// The source was a view: it is created again, with no documents of its own.
-    pub view: bool,
-}
 
 /// What `listCollections` says about one collection.
 pub(crate) async fn describe(
@@ -96,126 +59,6 @@ pub(crate) fn index_specs(indexes: Vec<Document>) -> Vec<Document> {
         .collect()
 }
 
-pub(crate) async fn copy(
-    source: (&Client, &Place),
-    target: (&Client, &Place),
-    replace: bool,
-    stop: &AtomicBool,
-    mut progress: impl FnMut(CopyProgress),
-) -> Result<CopyResult> {
-    let (source_client, from) = source;
-    let (target_client, to) = target;
-    let info = describe(source_client, &from.database, &from.collection).await?;
-    let view = info.get_str("type") == Ok("view");
-    let target_database = target_client.database(&to.database);
-
-    if replace {
-        target_database
-            .collection::<Document>(&to.collection)
-            .drop()
-            .await?;
-    }
-    if let Err(error) = target_database
-        .run_command(create_command(&to.collection, &info))
-        .await
-    {
-        // Without `replace` the documents go into the collection that is there.
-        if !matches!(*error.kind, ErrorKind::Command(ref command) if command.code == NAMESPACE_EXISTS)
-        {
-            return Err(error.into());
-        }
-    }
-    if view {
-        return Ok(CopyResult {
-            documents: 0,
-            indexes: 0,
-            view,
-        });
-    }
-
-    let source_collection = source_client
-        .database(&from.database)
-        .collection::<RawDocumentBuf>(&from.collection);
-    let target_collection = target_database.collection::<RawDocumentBuf>(&to.collection);
-    let total = source_collection.estimated_document_count().await?;
-    let mut copied = 0;
-    progress(CopyProgress { copied, total });
-    let mut cursor = source_collection
-        .find(doc! {})
-        .batch_size(BATCH as u32)
-        .await?;
-    let mut batch = Vec::with_capacity(BATCH);
-    loop {
-        let next = cursor.try_next().await?;
-        let end = next.is_none();
-        if let Some(document) = next {
-            batch.push(document);
-        }
-        if batch.len() == BATCH || (end && !batch.is_empty()) {
-            if stop.load(Ordering::Relaxed) {
-                return Err(Error::CopyStopped);
-            }
-            target_collection.insert_many(&batch).await?;
-            copied += batch.len() as u64;
-            batch.clear();
-            progress(CopyProgress {
-                copied,
-                total: total.max(copied),
-            });
-        }
-        if end {
-            break;
-        }
-    }
-
-    let indexes: Vec<Document> = source_client
-        .database(&from.database)
-        .run_cursor_command(doc! { "listIndexes": &from.collection })
-        .await?
-        .try_collect()
-        .await?;
-    let specs = index_specs(indexes);
-    let created = specs.len();
-    if !specs.is_empty() {
-        target_database
-            .run_command(doc! { "createIndexes": &to.collection, "indexes": specs })
-            .await?;
-    }
-    Ok(CopyResult {
-        documents: copied,
-        indexes: created,
-        view,
-    })
-}
-
-/// Copies `source` to `target`; with `replace` a collection of that name is dropped first.
-/// Progress arrives on `on_progress` after every batch; `run_id` names the run for `run_stop`.
-#[tauri::command]
-pub async fn copy_collection(
-    clients: State<'_, Clients>,
-    runs: State<'_, Runs>,
-    run_id: String,
-    source: Place,
-    target: Place,
-    replace: bool,
-    on_progress: Channel<CopyProgress>,
-) -> Result<CopyResult> {
-    let source_client = clients.get(&source.connection_id)?;
-    let target_client = clients.get(&target.connection_id)?;
-    let stop = runs.start(&run_id);
-    let outcome = copy(
-        (&source_client, &source),
-        (&target_client, &target),
-        replace,
-        &stop,
-        // A window that went away no longer needs to hear about progress.
-        |progress| drop(on_progress.send(progress)),
-    )
-    .await;
-    runs.finish(&run_id);
-    outcome
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -255,68 +98,5 @@ mod tests {
             specs,
             vec![doc! { "key": { "a": 1 }, "name": "a_1", "unique": true }]
         );
-    }
-
-    /// Against a real server, writing into `querymaster_test` only: `cargo test -- --ignored`.
-    #[tokio::test]
-    #[ignore]
-    async fn copies_documents_and_indexes() {
-        let uri = std::env::var("QUERYMASTER_TEST_URI")
-            .unwrap_or_else(|_| "mongodb://localhost:27017".into());
-        let client = Client::with_uri_str(&uri).await.unwrap();
-        let database = client.database("querymaster_test");
-        let source = database.collection::<Document>("copy_source");
-        source.drop().await.unwrap();
-        let documents: Vec<Document> = (0..2500).map(|n| doc! { "_id": n, "n": n }).collect();
-        source.insert_many(documents).await.unwrap();
-        database
-            .run_command(doc! { "createIndexes": "copy_source", "indexes": [{ "key": { "n": -1 }, "name": "n_-1" }] })
-            .await
-            .unwrap();
-
-        let place = |collection: &str| Place {
-            connection_id: String::new(),
-            database: "querymaster_test".into(),
-            collection: collection.into(),
-        };
-        let mut seen = Vec::new();
-        let result = copy(
-            (&client, &place("copy_source")),
-            (&client, &place("copy_target")),
-            true,
-            &AtomicBool::new(false),
-            |progress| seen.push(progress.copied),
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            result,
-            CopyResult {
-                documents: 2500,
-                indexes: 1,
-                view: false
-            }
-        );
-        assert_eq!(seen, [0, 1000, 2000, 2500]);
-        let target = database.collection::<Document>("copy_target");
-        assert_eq!(target.count_documents(doc! {}).await.unwrap(), 2500);
-
-        // Stopped before the first batch is written, nothing but the empty collection is there.
-        let error = copy(
-            (&client, &place("copy_source")),
-            (&client, &place("copy_target")),
-            true,
-            &AtomicBool::new(true),
-            |_| {},
-        )
-        .await
-        .unwrap_err();
-        assert!(matches!(error, Error::CopyStopped));
-        assert_eq!(target.count_documents(doc! {}).await.unwrap(), 0);
-
-        source.drop().await.unwrap();
-        target.drop().await.unwrap();
-        // Shut down only after every cursor is dropped: it waits for open cursors.
-        client.shutdown().await;
     }
 }

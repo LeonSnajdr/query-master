@@ -78,9 +78,10 @@ export function useExportWizard() {
     /**
      * Opens the wizard with the rows of the selection, or of several rows of one connection
      * selected together; `filter` for the rows of a query. `format` is the tile chosen already
-     * ("Export as" in the menus); else JSON.
+     * ("Export as" in the menus); else JSON. `target` opens it on the
+     * tile Database with that database chosen (pasting copied collections).
      */
-    async function openExport(selection: TreeSelection | TreeSelection[], filter?: string, format?: ExportFormat) {
+    async function openExport(selection: TreeSelection | TreeSelection[], filter?: string, format?: ExportFormat, target?: { connectionId: string; database: string }) {
         const all = Array.isArray(selection) ? selection : [selection];
         const at = all[0];
         if (!at || busy.value || wizard.runId) return;
@@ -109,7 +110,17 @@ export function useExportWizard() {
                 columns: {}
             });
             wizard.state.database = { connectionId: at.connectionId, database: "", insertMode: preset.insertMode, copyIndexes: preset.copyIndexes };
-            if (format !== undefined && format !== "json") setFormat(format);
+            if (target) {
+                setFormat("database");
+                // Into the database it comes from, a copy needs another name.
+                if (target.connectionId === at.connectionId) {
+                    wizard.state.rows = wizard.state.rows.map(row => (row.database === target.database ? { ...row, output: `${row.output}_copy` } : row));
+                }
+                wizard.state.database.database = target.database;
+                await chooseTargetConnection(target.connectionId);
+            } else if (format !== undefined && format !== "json") {
+                setFormat(format);
+            }
         } catch (error) {
             report(error);
         } finally {

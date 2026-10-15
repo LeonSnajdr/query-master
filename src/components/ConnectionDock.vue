@@ -666,7 +666,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
         icon: "i-lucide-clipboard-paste",
         command: "tree.paste",
         action: () => void copying.paste(at.connectionId, database),
-        disabled: !copying.copied.value?.length || copying.running.runId !== undefined
+        disabled: !copying.copied.value?.length
     });
     const tail: MenuEntry[] = [
         "separator",

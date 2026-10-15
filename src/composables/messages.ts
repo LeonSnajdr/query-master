@@ -4,7 +4,7 @@ import { useNotices } from "@/composables/notices";
 import type { Message } from "@/shell/message";
 
 /** The messages of work the user stopped: not an error. */
-const STOPPED = new Set(["error.copy.stopped", "error.transfer.stopped", "error.script.stopped"]);
+const STOPPED = new Set(["error.transfer.stopped", "error.script.stopped"]);
 
 /** Texts that come as a message key or as they are (errors of the driver), in the app's language. */
 export function useMessages() {

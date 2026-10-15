@@ -132,7 +132,6 @@ export const mockBackend: Backend = {
     // The engine is part of the app: a browser has none.
     runScript: () => Promise.reject({ key: "error.script.browser", detail: null }),
     stopRun: async () => undefined,
-    copyCollection: () => Promise.reject({ key: "error.copy.browser", detail: null }),
     // Files are written by the Rust side; the browser preview exports what the page holds instead.
     getPreset: async () => null,
     savePreset: async () => undefined,

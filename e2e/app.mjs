@@ -647,11 +647,16 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.keyboard.press("Control+c");
         await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
         await chooseMenu(`Paste collection ${COLLECTION}`);
-        // The name is taken in the same database: the dialog offers one of its own.
-        assert.equal(await id("prompt-input").inputValue(), `${COLLECTION}_copy`);
-        await id("prompt-submit").click();
+        // Pasting is the export into a database: the wizard on its tile Database, the target chosen,
+        // and in the same database a name of its own.
+        await id("export-wizard").waitFor();
+        assert.equal(await id("export-tile-database").getAttribute("aria-checked"), "true");
+        assert.equal(await id("export-output").inputValue(), `${COLLECTION}_copy`);
+        await id("export-next").click();
+        await page.locator("[data-testid=export-progress-row][data-state=done]").waitFor();
+        assert.equal((await id("export-progress-count").innerText()).replace(/\D/g, ""), "3");
+        await id("export-close").click();
         await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_copy` }).waitFor();
-        await page.locator("[data-testid=notice-title]", { hasText: `Copied to ${COLLECTION}_copy: 3 documents, 0 indexes.` }).waitFor();
     });
 
     await step("a collection marked read-only in the tree refuses changes until the mark is gone", async () => {

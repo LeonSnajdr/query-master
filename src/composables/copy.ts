@@ -1,15 +1,16 @@
 import { shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
-import { backend } from "@/api";
-import type { Place } from "@/api";
-import { useDialogs } from "@/composables/dialogs";
+import { useExportWizard } from "@/composables/exportWizard";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
-import { useTask } from "@/composables/task";
-import { useWriteGuard } from "@/composables/writeGuard";
-import { ShellError } from "@/shell/message";
 import { useConnectionsStore } from "@/stores/connections";
-import { useNotesStore } from "@/stores/notes";
+
+/** A collection on a connection. */
+export interface Place {
+    connectionId: string;
+    database: string;
+    collection: string;
+}
 
 /**
  * The collections "Copy collection" or "Copy collections" picked; pasted on a database, possibly of
@@ -17,16 +18,13 @@ import { useNotesStore } from "@/stores/notes";
  */
 const copied = shallowRef<Place[]>();
 
-/** Copying collections and pasting them into a database, with progress and a way to stop. */
+/** Picking collections to copy, and pasting them into a database through the export wizard. */
 export function useCopy() {
     const { t } = useI18n();
     const { report } = useMessages();
     const notices = useNotices();
-    const dialogs = useDialogs();
     const connections = useConnectionsStore();
-    const notes = useNotesStore();
-    const task = useTask();
-    const writeGuard = useWriteGuard();
+    const exportWizard = useExportWizard();
 
     function copy(place: Place) {
         copied.value = [{ ...place }];
@@ -60,62 +58,17 @@ export function useCopy() {
         notices.answer(t("copy.pickedMany", { count: ordered.length, database }, ordered.length));
     }
 
-    /** The name the copy gets in `database`, and whether it replaces a collection of that name. */
-    async function chooseName(connectionId: string, database: string, name: string): Promise<{ name: string; replace: boolean } | undefined> {
-        await connections.loadCollections(connectionId, database);
-        const taken = connections.collectionsOf(connectionId, database);
-        if (!taken.includes(name)) return { name, replace: false };
-        const chosen = await dialogs.ask({
-            title: t("copy.exists.title"),
-            label: t("copy.exists.label", { name, database }),
-            value: `${name}_copy`,
-            suggestions: taken,
-            action: t("action.paste")
-        });
-        if (!chosen) return undefined;
-        if (!taken.includes(chosen)) return { name: chosen, replace: false };
-        const replace = await dialogs.confirm({ title: t("copy.replace.title"), text: t("copy.replace.text", { name: chosen, database }), action: t("action.replace") });
-        return replace ? { name: chosen, replace: true } : undefined;
-    }
-
-    /** Copies what was picked into `database`, one collection after another; a name taken is asked for. */
+    /**
+     * Pastes what was picked into `database`: the export wizard opens on its tile Database with the
+     * collections as rows and this database as the target. There the names of the copies, the
+     * insert mode and "Options and indexes too" are chosen; it is the one way collections are
+     * copied, also to another connection.
+     */
     async function paste(connectionId: string, database: string) {
         const sources = copied.value;
-        if (!sources || sources.length === 0 || task.running.runId) return;
-        if (notes.isReadonly({ connectionId, database })) {
-            report(new ShellError("error.plan.readonlyTree", { name: database }));
-            return;
-        }
-        if (!await writeGuard.confirmJob(connectionId, database, t("collection.paste"))) return;
-        let done = 0;
-        try {
-            for (const source of sources) {
-                const choice = await chooseName(connectionId, database, source.collection);
-                if (!choice) continue;
-                const target: Place = { connectionId, database, collection: choice.name };
-                const result = await task.track(
-                    t("copy.running.title"),
-                    t("copy.running.text", { source: `${source.database}.${source.collection}`, target: `${database}.${choice.name}` }),
-                    (runId, progress) => backend.copyCollection(runId, source, target, choice.replace, update => progress(update.copied, update.total))
-                );
-                done += 1;
-                if (sources.length > 1) continue;
-                notices.notify({
-                    kind: "success",
-                    title: result.view
-                        ? t("copy.doneView", { name: choice.name })
-                        : t("copy.done", { name: choice.name, documents: result.documents.toLocaleString(), indexes: result.indexes }),
-                    detail: `${source.database}.${source.collection} → ${database}.${choice.name}`
-                });
-            }
-            if (sources.length > 1) notices.notify({ kind: "success", title: t("copy.doneMany", { count: done, database }, done) });
-        } catch (error) {
-            // A failed or stopped copy ends the run; what was copied before stays.
-            report(error);
-        } finally {
-            await connections.loadDatabases(connectionId).catch(report);
-        }
+        if (!sources || sources.length === 0) return;
+        await exportWizard.openExport(sources, undefined, "database", { connectionId, database });
     }
 
-    return { copied, running: task.running, copy, copyMany, copyAll, paste };
+    return { copied, copy, copyMany, copyAll, paste };
 }

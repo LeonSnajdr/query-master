@@ -94,26 +94,6 @@ export interface TreeFolder {
     name: string;
 }
 
-/** A collection on a connection. */
-export interface Place {
-    connectionId: string;
-    database: string;
-    collection: string;
-}
-
-export interface CopyProgress {
-    copied: number;
-    /** As the server estimated it when the copy started. */
-    total: number;
-}
-
-export interface CopyResult {
-    documents: number;
-    indexes: number;
-    /** The source was a view; it was created again, without documents. */
-    view: boolean;
-}
-
 /** How far a row of the export got. */
 export interface ExportProgress {
     item: number;
@@ -180,8 +160,6 @@ export interface Backend {
     runScript: (id: string, runId: string, database: string, source: string, readonly: boolean, output: (text: string) => void) => Promise<ScriptResult>;
     /** Asks a script or a copy to stop. */
     stopRun: (runId: string) => Promise<void>;
-    /** Copies a collection with its options, documents and indexes; `replace` drops the target first. */
-    copyCollection: (runId: string, source: Place, target: Place, replace: boolean, progress: (progress: CopyProgress) => void) => Promise<CopyResult>;
     getSetting: () => Promise<Setting>;
     saveSetting: (setting: Setting) => Promise<void>;
     /** The keyboard shortcuts the user changed: keys per command id (`[]`: no shortcut). */
@@ -253,11 +231,6 @@ const tauriBackend: Backend = {
         return invoke("script_run", { id, runId, database, source, readonly, onOutput });
     },
     stopRun: runId => invoke("run_stop", { runId }),
-    copyCollection: (runId, source, target, replace, progress) => {
-        const onProgress = new Channel<CopyProgress>();
-        onProgress.onmessage = progress;
-        return invoke("copy_collection", { runId, source, target, replace, onProgress });
-    },
     getSetting: () => invoke("setting_get"),
     saveSetting: setting => invoke("setting_save", { setting }),
     getKeybindings: () => invoke("keybinding_list"),

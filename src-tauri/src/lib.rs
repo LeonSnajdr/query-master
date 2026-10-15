@@ -73,7 +73,6 @@ pub fn run() {
             mongo::run_cursor_command,
             script::commands::script_run,
             runs::run_stop,
-            copy::copy_collection,
             transfer::commands::export_run,
             transfer::commands::import_run,
             transfer::commands::import_preview,
