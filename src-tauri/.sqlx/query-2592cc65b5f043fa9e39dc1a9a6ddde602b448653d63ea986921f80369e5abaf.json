@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            update tree_folder set name = $4 || substr(name, length($3) + 1)\n            where connection_id = $1 and database_name = $2\n                and (name = $3 or substr(name, 1, length($3) + 1) = $3 || '/')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "2592cc65b5f043fa9e39dc1a9a6ddde602b448653d63ea986921f80369e5abaf"
+}

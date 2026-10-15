@@ -1,4 +1,5 @@
 import type { Backend, Profile, Setting, TreeFolder, TreeNote } from "./api";
+import { folderWithin, parentFolder } from "./tree/folders";
 import { isDoc, toNumber } from "./shell/ejson";
 import type { Doc, Json } from "./shell/ejson";
 
@@ -162,15 +163,18 @@ export const mockBackend: Backend = {
         if (!own.some(item => item.database === folder.database && item.name === folder.name)) folders.set(connectionId, [...own, folder]);
     },
     renameTreeFolder: async (connectionId, folder, name) => {
-        folders.set(connectionId, (folders.get(connectionId) ?? []).map(item => (item.database === folder.database && item.name === folder.name ? { ...item, name } : item)));
+        // Folders inside it move along: `a/b` becomes `name/b`.
+        const moved = (path: string) => (folderWithin(path, folder.name) ? name + path.slice(folder.name.length) : path);
+        folders.set(connectionId, (folders.get(connectionId) ?? []).map(item => (item.database === folder.database ? { ...item, name: moved(item.name) } : item)));
         for (const note of notes.get(connectionId)?.values() ?? []) {
-            if (note.folder === folder.name && inFolderOf(note.path, folder.database)) note.folder = name;
+            if (note.folder && inFolderOf(note.path, folder.database)) note.folder = moved(note.folder);
         }
     },
     deleteTreeFolder: async (connectionId, folder) => {
-        folders.set(connectionId, (folders.get(connectionId) ?? []).filter(item => item.database !== folder.database || item.name !== folder.name));
+        // With the folders inside it; what lay in them goes to the folder around it.
+        folders.set(connectionId, (folders.get(connectionId) ?? []).filter(item => item.database !== folder.database || !folderWithin(item.name, folder.name)));
         for (const note of notes.get(connectionId)?.values() ?? []) {
-            if (note.folder === folder.name && inFolderOf(note.path, folder.database)) note.folder = null;
+            if (note.folder && folderWithin(note.folder, folder.name) && inFolderOf(note.path, folder.database)) note.folder = parentFolder(folder.name) ?? null;
         }
     },
     runCursorCommand: async (_id, database, command, limit) => {

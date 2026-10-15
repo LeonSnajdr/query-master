@@ -49,7 +49,7 @@ export default defineConfig({
         "recorder": "h-6 px-2 inline-flex items-center rounded-sm border border-primary bg-primary/10 outline outline-2 outline-primary/30 text-[12px] italic text-on-surface-strong whitespace-nowrap",
         "toolbar-rule": "w-px h-4.5 mx-1.5 shrink-0 bg-divider",
         // Rows of the connection tree; the selected one carries a frame, as a focused one does.
-        "tree-row": "h-[19px] mr-4.5 flex items-center gap-1.5 pr-2 whitespace-nowrap border border-transparent outline-none hover:bg-on-surface/5 focus-visible:border-primary/60",
+        "tree-row": "h-[19px] mr-4.5 flex items-center gap-1.5 pr-2 whitespace-nowrap border border-transparent outline-none hover:bg-on-surface/5 focus-visible:border-primary/60 data-[drop-active]:bg-primary/30 data-[drop-active]:border-primary",
         "tree-row-on": "border-primary/80! bg-on-surface/6",
         // A row of a multiple selection: filled, the rows run together; the focused one also framed.
         "tree-row-marked": "bg-primary/20 hover:bg-primary/25",

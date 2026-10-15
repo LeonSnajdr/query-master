@@ -15,6 +15,7 @@ import { replyError } from "@/shell/plan";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
+import { folderLabel, parentFolder } from "@/tree/folders";
 import { isQueryTab, useTabsStore } from "@/stores/tabs";
 
 /** The script behind "Collections statistics"; views have no storage and are left out. */
@@ -321,19 +322,40 @@ export function useActions() {
      * A folder to group rows in the tree; the server knows nothing of it. On a connection it groups
      * databases, on a database (or a collection in it) the collections of that database.
      */
-    async function addFolder(at = target.value) {
+    async function addFolder(at = target.value, parent?: string) {
         if (!at) return;
-        const name = await dialogs.ask({ title: t("folder.add"), label: t("folder.name"), action: t("action.create") });
-        if (name) await notes.addFolder(at.connectionId, at.database ?? "", name).catch(report);
+        const name = await askFolderName({ title: t(parent === undefined ? "folder.add" : "folder.addInside"), label: t("folder.name"), action: t("action.create") });
+        if (name) await notes.addFolder(at.connectionId, at.database ?? "", parent === undefined ? name : `${parent}/${name}`).catch(report);
+    }
+
+    /** A name for a folder; `/` separates folders in folders, so it is not part of a name. */
+    async function askFolderName(request: Parameters<typeof dialogs.ask>[0]): Promise<string | undefined> {
+        const name = (await dialogs.ask(request))?.trim();
+        if (name?.includes("/")) {
+            report(new ShellError("error.folder.slash"));
+            return undefined;
+        }
+        return name || undefined;
     }
 
     /** `at.database` is the database of a folder of collections, absent for a folder of databases. */
     async function renameFolder(at: TreeSelection, folder: string) {
-        const name = await dialogs.ask({ title: t("folder.rename"), label: t("folder.name"), value: folder, action: t("action.rename") });
-        if (name && name !== folder) await notes.renameFolder(at.connectionId, at.database ?? "", folder, name).catch(report);
+        const label = folderLabel(folder);
+        const name = await askFolderName({ title: t("folder.rename"), label: t("folder.name"), value: label, action: t("action.rename") });
+        const parent = parentFolder(folder);
+        if (name && name !== label) await notes.renameFolder(at.connectionId, at.database ?? "", folder, parent === undefined ? name : `${parent}/${name}`).catch(report);
     }
 
-    /** The folder goes; what lay in it stays where it is, in the database or the connection. */
+    /** Puts a folder into another one (`undefined`: to the top), with all in it. */
+    async function moveFolder(at: TreeSelection, folder: string, into: string | undefined) {
+        try {
+            if (!await notes.moveFolder(at.connectionId, at.database ?? "", folder, into)) report(new ShellError("error.folder.intoItself"));
+        } catch (error) {
+            report(error);
+        }
+    }
+
+    /** The folder goes with those in it; what lay in them moves to the folder around it, or out of all. */
     async function deleteFolder(at: TreeSelection, folder: string) {
         const text = t(at.database === undefined ? "folder.delete.databases" : "folder.delete.text", { name: folder });
         const confirmed = await dialogs.confirm({ title: t("folder.delete.title"), text, action: t("action.delete") });
@@ -484,7 +506,7 @@ export function useActions() {
         target, hasConnection, hasDatabase, hasCollection,
         openShell, browse, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
-        setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, deleteFolder, moveToFolder,
+        setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,
         dropMany, browseMany, setColorMany, toggleReadonlyMany, moveManyToFolder, toggleIndexesHidden, refreshMany, disconnectMany,
         refresh, connect, reconnect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()

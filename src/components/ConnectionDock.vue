@@ -18,8 +18,11 @@ import { useConnectionsStore } from "@/stores/connections";
 import type { DatabaseNode, TreeSelection } from "@/stores/connections";
 import { bucketOf, treeCollections } from "@/shell/gridfs";
 import { collectionRows, databaseRows, NOTE_COLORS, useNotesStore } from "@/stores/notes";
-import type { CollectionRow, NotePlace } from "@/stores/notes";
+import { folderWithin, parentFolder } from "@/tree/folders";
+import type { CollectionRow, FolderRow, NotePlace } from "@/stores/notes";
 import { all, click, keyOf, kindOf, rowOf, sameRow } from "@/tree/selection";
+import { canDrop, dropTargetOf } from "@/tree/drag";
+import type { DragSource, DropTarget } from "@/tree/drag";
 
 /** The dock at the left: saved connections, the toolbar, and the tree of what is connected. */
 const { t } = useI18n();
@@ -100,7 +103,7 @@ function shownDatabases(profile: Profile): DatabaseNode[] {
 }
 
 /** Folders of the connection and its databases; while searching every folder shows its matches. */
-function databaseRowsOf(profile: Profile): ({ kind: "folder"; name: string; count: number } | { kind: "database"; node: DatabaseNode; folder?: string })[] {
+function databaseRowsOf(profile: Profile): (FolderRow | { kind: "database"; node: DatabaseNode; folder?: string; depth: number })[] {
     const shown = shownDatabases(profile);
     const searchingNow = search.value.trim() !== "";
     return databaseRows(
@@ -108,7 +111,7 @@ function databaseRowsOf(profile: Profile): ({ kind: "folder"; name: string; coun
         notes.notes[profile.id],
         notes.foldersOf(profile.id, ""),
         folder => searchingNow || notes.isOpen(profile.id, "", folder)
-    ).map(row => (row.kind === "folder" ? row : { kind: "database" as const, node: shown.find(database => database.name === row.name)!, folder: row.folder }));
+    ).map(row => (row.kind === "folder" ? row : { kind: "database" as const, node: shown.find(database => database.name === row.name)!, folder: row.folder, depth: row.depth }));
 }
 
 /**
@@ -140,9 +143,17 @@ function rowsOf(profile: Profile, database: DatabaseNode): CollectionRow[] {
 /** A folder of a database (of collections), or of the connection (of databases) without `database`. */
 function openFolderMenu(event: MouseEvent, profile: Profile, database: DatabaseNode | undefined, folder: string) {
     const at = { connectionId: profile.id, database: database?.name };
+    const parent = parentFolder(folder);
+    // Into any folder but itself, those inside it and the one it is in already.
+    const targets: MenuEntry[] = notes.foldersOf(profile.id, database?.name ?? "")
+        .filter(other => !folderWithin(other, folder) && other !== parent)
+        .map(other => ({ label: t("folder.moveFolderTo", { name: other }), icon: "i-lucide-folder-input", action: () => void actions.moveFolder(at, folder, other) }));
+    if (parent !== undefined) targets.push({ label: t("folder.moveFolderOut"), icon: "i-lucide-folder-output", action: () => void actions.moveFolder(at, folder, undefined) });
     void menu.value?.open(event, [
         { label: t("folder.add"), icon: "i-lucide-folder-plus", command: "folder.add", action: () => void actions.addFolder(at) },
+        { label: t("folder.addInside"), icon: "i-lucide-folder-tree", action: () => void actions.addFolder(at, folder) },
         { label: t("folder.rename"), icon: "i-lucide-pencil", action: () => void actions.renameFolder(at, folder) },
+        ...(targets.length > 0 ? [{ label: t("folder.moveFolder"), icon: "i-lucide-folder", children: targets }] : []),
         { label: t("folder.delete"), icon: "i-lucide-folder-x", danger: true, action: () => void actions.deleteFolder(at, folder) }
     ]);
 }
@@ -215,6 +226,72 @@ function onRowClick(event: MouseEvent, at: TreeSelection) {
     // Taken away with Ctrl: the focus moves to the last row that is still selected.
     const focus = next.rows.some(row => sameRow(row, at)) ? at : next.rows.at(-1)!;
     setMarked(next.rows, focus);
+}
+
+/** How far the pointer moves before a press on a row becomes a drag. */
+const DRAG_DISTANCE = 5;
+/** A drag in the tree is under way; the row it would land on is lit. */
+const dragging = shallowRef(false);
+let dropRow: HTMLElement | undefined;
+
+/** Collections, databases or a folder dragged onto a folder, or onto their database or connection to leave it. */
+function startDrag(event: PointerEvent, source: DragSource): void {
+    if (event.button !== 0 || event.ctrlKey || event.shiftKey || event.metaKey) return;
+    const start = { x: event.clientX, y: event.clientY };
+    let target: DropTarget | undefined;
+    const light = (row: HTMLElement | undefined) => {
+        if (dropRow === row) return;
+        delete dropRow?.dataset.dropActive;
+        dropRow = row;
+        if (row) row.dataset.dropActive = "";
+    };
+    const move = (moved: PointerEvent) => {
+        if (!dragging.value) {
+            if (Math.hypot(moved.clientX - start.x, moved.clientY - start.y) < DRAG_DISTANCE) return;
+            dragging.value = true;
+        }
+        const row = document.elementFromPoint(moved.clientX, moved.clientY)?.closest<HTMLElement>("[data-drop-connection]") ?? undefined;
+        const over = row ? dropTargetOf(row) : undefined;
+        target = over && canDrop(source, over) ? over : undefined;
+        light(target ? row : undefined);
+    };
+    const end = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", cancel);
+        light(undefined);
+        if (!dragging.value) return;
+        // The click that ends a drag selects nothing.
+        window.addEventListener("click", stop => stop.stopPropagation(), { capture: true, once: true });
+        setTimeout(() => (dragging.value = false));
+        if (target) void drop(source, target);
+    };
+    const cancel = () => {
+        target = undefined;
+        end();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", cancel);
+}
+
+async function drop(source: DragSource, target: DropTarget): Promise<void> {
+    const database = source.scope === "" ? undefined : source.scope;
+    if (source.folder !== undefined) {
+        await actions.moveFolder({ connectionId: source.connectionId, database }, source.folder, target.folder);
+        return;
+    }
+    const rows = (source.names ?? []).map(name => (database === undefined ? { connectionId: source.connectionId, database: name } : { connectionId: source.connectionId, database, collection: name }));
+    await actions.moveManyToFolder(rows, target.folder ?? null);
+}
+
+/** A collection or database row: with the others selected with it, if it is one of them. */
+function dragRows(at: TreeSelection): DragSource {
+    const scope = at.collection === undefined ? "" : at.database ?? "";
+    const together = isSelected(at) && connections.marked.length > 1
+        ? connections.marked.filter(row => row.connectionId === at.connectionId && row.index === undefined && (at.collection === undefined ? row.collection === undefined : row.database === at.database && row.collection !== undefined))
+        : [at];
+    return { connectionId: at.connectionId, scope, names: together.map(row => row.collection ?? row.database ?? "") };
 }
 
 function toggleConnection(profile: Profile) {
@@ -885,8 +962,10 @@ defineExpose({
                     @keydown.enter.self="toggleConnection(profile)"
                     :aria-selected="isSelected({ connectionId: profile.id })"
                     :class="rowClass({ connectionId: profile.id })"
+                    :data-drop-connection="profile.id"
                     :data-row="keyOf({ connectionId: profile.id })"
                     class="tree-row pl-3.5"
+                    data-drop-scope=""
                     data-testid="connection-row"
                     role="treeitem"
                     tabindex="0"
@@ -934,7 +1013,12 @@ defineExpose({
                             @click="notes.toggleFolder(profile.id, '', databaseRow.name)"
                             @contextmenu.prevent="openFolderMenu($event, profile, undefined, databaseRow.name)"
                             @keydown.enter.self="notes.toggleFolder(profile.id, '', databaseRow.name)"
-                            class="tree-row pl-7.5"
+                            @pointerdown="startDrag($event, { connectionId: profile.id, scope: '', folder: databaseRow.name })"
+                            :data-drop-connection="profile.id"
+                            :data-drop-folder="databaseRow.name"
+                            :style="indent(1.875 + databaseRow.depth)"
+                            class="tree-row"
+                            data-drop-scope=""
                             data-testid="database-folder-row"
                             role="treeitem"
                             tabindex="0"
@@ -947,14 +1031,14 @@ defineExpose({
                                 :class="notes.isOpen(profile.id, '', databaseRow.name) ? 'i-lucide-folder-open' : 'i-lucide-folder'"
                                 class="size-4 shrink-0 text-warning"
                             />
-                            <span class="truncate text-on-surface-strong">{{ databaseRow.name }}</span>
+                            <span class="truncate text-on-surface-strong">{{ databaseRow.label }}</span>
                             <span class="grow" />
                             <span class="shrink-0 text-[11px] text-on-surface-variant">{{ databaseRow.count }}</span>
                         </div>
                         <!-- A database, moved in with all below it while it lies in a folder. -->
                         <div
                             v-else
-                            :style="databaseRow.folder ? { '--shift': '1rem' } : undefined"
+                            :style="databaseRow.depth > 0 ? { '--shift': `${databaseRow.depth}rem` } : undefined"
                         >
                             <template
                                 v-for="database in [databaseRow.node]"
@@ -965,8 +1049,11 @@ defineExpose({
                                     @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name })"
                                     @dblclick="toggleDatabase(profile, database)"
                                     @keydown.enter.self="toggleDatabase(profile, database)"
+                                    @pointerdown="startDrag($event, dragRows({ connectionId: profile.id, database: database.name }))"
                                     :aria-selected="isSelected({ connectionId: profile.id, database: database.name })"
                                     :class="rowClass({ connectionId: profile.id, database: database.name })"
+                                    :data-drop-connection="profile.id"
+                                    :data-drop-scope="database.name"
                                     :data-row="keyOf({ connectionId: profile.id, database: database.name })"
                                     :style="indent(1.875)"
                                     class="tree-row"
@@ -1004,7 +1091,11 @@ defineExpose({
                                             @click="notes.toggleFolder(profile.id, database.name, row.name)"
                                             @contextmenu.prevent="openFolderMenu($event, profile, database, row.name)"
                                             @keydown.enter.self="notes.toggleFolder(profile.id, database.name, row.name)"
-                                            :style="indent(2.875)"
+                                            @pointerdown="startDrag($event, { connectionId: profile.id, scope: database.name, folder: row.name })"
+                                            :data-drop-connection="profile.id"
+                                            :data-drop-folder="row.name"
+                                            :data-drop-scope="database.name"
+                                            :style="indent(2.875 + row.depth)"
                                             class="tree-row"
                                             data-testid="folder-row"
                                             role="treeitem"
@@ -1018,7 +1109,7 @@ defineExpose({
                                                 :class="notes.isOpen(profile.id, database.name, row.name) ? 'i-lucide-folder-open' : 'i-lucide-folder'"
                                                 class="size-4 shrink-0 text-warning"
                                             />
-                                            <span class="truncate text-on-surface-strong">{{ row.name }}</span>
+                                            <span class="truncate text-on-surface-strong">{{ row.label }}</span>
                                             <span class="grow" />
                                             <span class="shrink-0 text-[11px] text-on-surface-variant">{{ row.count }}</span>
                                         </div>
@@ -1032,10 +1123,11 @@ defineExpose({
                                                     @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection })"
                                                     @dblclick="openRow(profile, database, collection)"
                                                     @keydown.enter="openRow(profile, database, collection)"
+                                                    @pointerdown="startDrag($event, dragRows({ connectionId: profile.id, database: database.name, collection }))"
                                                     :aria-selected="isSelected({ connectionId: profile.id, database: database.name, collection })"
                                                     :class="rowClass({ connectionId: profile.id, database: database.name, collection })"
                                                     :data-row="keyOf({ connectionId: profile.id, database: database.name, collection })"
-                                                    :style="indent(row.kind === 'collection' && row.folder ? 3.875 : 2.875)"
+                                                    :style="indent(2.875 + row.depth)"
                                                     class="tree-row"
                                                     data-testid="collection-row"
                                                     role="treeitem"
@@ -1077,7 +1169,7 @@ defineExpose({
                                                         :aria-selected="isSelected({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
                                                         :class="rowClass({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
                                                         :data-row="keyOf({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
-                                                        :style="indent(row.kind === 'collection' && row.folder ? 6 : 5)"
+                                                        :style="indent(5 + row.depth)"
                                                         class="tree-row"
                                                         data-testid="index-row"
                                                         role="treeitem"

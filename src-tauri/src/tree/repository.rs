@@ -137,10 +137,12 @@ pub async fn rename_folder(
     folder: &TreeFolder,
     name: &str,
 ) -> Result<()> {
+    // Folders inside it (`a/b` below `a`) and what lies in them move along.
     sqlx::query!(
         r#"
-            update tree_folder set name = $4
-            where connection_id = $1 and database_name = $2 and name = $3
+            update tree_folder set name = $4 || substr(name, length($3) + 1)
+            where connection_id = $1 and database_name = $2
+                and (name = $3 or substr(name, 1, length($3) + 1) = $3 || '/')
         "#,
         connection_id,
         folder.database,
@@ -151,8 +153,9 @@ pub async fn rename_folder(
     .await?;
     sqlx::query!(
         r#"
-            update tree_node set folder = $4
-            where connection_id = $1 and folder = $3
+            update tree_node set folder = $4 || substr(folder, length($3) + 1)
+            where connection_id = $1
+                and (folder = $3 or substr(folder, 1, length($3) + 1) = $3 || '/')
                 and case when $2 = '' then path <> '' and instr(path, '/') = 0
                     else substr(path, 1, length($2) + 1) = $2 || '/' end
         "#,
@@ -166,14 +169,23 @@ pub async fn rename_folder(
     Ok(())
 }
 
-/// The folder goes; its collections leave it, and rows that note nothing else go too.
+/// The folder goes with the folders inside it; what lay in them moves to the folder around it (or
+/// out of all folders), and rows that note nothing else go too.
 pub async fn delete_folder(
     connection: &mut SqliteConnection,
     connection_id: Uuid,
     folder: &TreeFolder,
 ) -> Result<()> {
+    let parent = folder
+        .name
+        .rsplit_once('/')
+        .map(|(parent, _)| parent.to_owned());
     sqlx::query!(
-        "delete from tree_folder where connection_id = $1 and database_name = $2 and name = $3",
+        r#"
+            delete from tree_folder
+            where connection_id = $1 and database_name = $2
+                and (name = $3 or substr(name, 1, length($3) + 1) = $3 || '/')
+        "#,
         connection_id,
         folder.database,
         folder.name
@@ -182,14 +194,16 @@ pub async fn delete_folder(
     .await?;
     sqlx::query!(
         r#"
-            update tree_node set folder = null
-            where connection_id = $1 and folder = $3
+            update tree_node set folder = $4
+            where connection_id = $1
+                and (folder = $3 or substr(folder, 1, length($3) + 1) = $3 || '/')
                 and case when $2 = '' then path <> '' and instr(path, '/') = 0
                     else substr(path, 1, length($2) + 1) = $2 || '/' end
         "#,
         connection_id,
         folder.database,
-        folder.name
+        folder.name,
+        parent
     )
     .execute(&mut *connection)
     .await?;
@@ -368,6 +382,76 @@ mod tests {
         add_folder(&pool, id, &archive).await.unwrap();
         remove(&pool, id, "shop").await.unwrap();
         assert!(folders(&pool, id).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn folders_inside_folders_move_and_go_together() {
+        use super::super::{add_folder, delete_folder, folders, rename_folder};
+        let pool = db::memory_pool().await;
+        let id = connection(&pool).await;
+        let folder = |name: &str| TreeFolder {
+            database: "shop".into(),
+            name: name.into(),
+        };
+        for name in ["reports", "reports/2024", "reports/2024/q1", "reportsx"] {
+            add_folder(&pool, id, &folder(name)).await.unwrap();
+        }
+        let mut sales = node("shop/sales", None, false);
+        sales.folder = Some("reports/2024/q1".into());
+        save(&pool, id, sales).await.unwrap();
+        let mut costs = node("shop/costs", Some("red"), false);
+        costs.folder = Some("reports/2024".into());
+        save(&pool, id, costs).await.unwrap();
+        let mut other = node("shop/other", None, false);
+        other.folder = Some("reportsx".into());
+        save(&pool, id, other).await.unwrap();
+        let folder_of = |nodes: &[TreeNode], path: &str| {
+            nodes
+                .iter()
+                .find(|node| node.path == path)
+                .and_then(|node| node.folder.clone())
+        };
+
+        // Moving `reports/2024` into `reportsx` takes `q1` and the collections along.
+        rename_folder(&pool, id, &folder("reports/2024"), "reportsx/2024")
+            .await
+            .unwrap();
+        let names: Vec<String> = folders(&pool, id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|folder| folder.name)
+            .collect();
+        assert_eq!(
+            names,
+            ["reports", "reportsx", "reportsx/2024", "reportsx/2024/q1"]
+        );
+        let nodes = list_nodes(&pool, id).await.unwrap();
+        assert_eq!(
+            folder_of(&nodes, "shop/sales").as_deref(),
+            Some("reportsx/2024/q1")
+        );
+        assert_eq!(
+            folder_of(&nodes, "shop/costs").as_deref(),
+            Some("reportsx/2024")
+        );
+        assert_eq!(folder_of(&nodes, "shop/other").as_deref(), Some("reportsx"));
+
+        // Deleting `reportsx/2024` puts what lay in it and below into `reportsx`.
+        delete_folder(&pool, id, &folder("reportsx/2024"))
+            .await
+            .unwrap();
+        let names: Vec<String> = folders(&pool, id)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|folder| folder.name)
+            .collect();
+        assert_eq!(names, ["reports", "reportsx"]);
+        let nodes = list_nodes(&pool, id).await.unwrap();
+        for path in ["shop/sales", "shop/costs", "shop/other"] {
+            assert_eq!(folder_of(&nodes, path).as_deref(), Some("reportsx"));
+        }
     }
 
     #[tokio::test]

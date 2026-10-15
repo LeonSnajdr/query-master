@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            update tree_node set folder = $4 || substr(folder, length($3) + 1)\n            where connection_id = $1\n                and (folder = $3 or substr(folder, 1, length($3) + 1) = $3 || '/')\n                and case when $2 = '' then path <> '' and instr(path, '/') = 0\n                    else substr(path, 1, length($2) + 1) = $2 || '/' end\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "c2b9449ba00e18ee6e042b201a49147460182fce3f5665107cc37e30a35ab4bf"
+}

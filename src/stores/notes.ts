@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { reactive } from "vue";
 import { backend } from "@/api";
 import type { TreeFolder, TreeNote } from "@/api";
+import { folderLabel, folderWithin, parentFolder } from "@/tree/folders";
 
 /** The colors a row of the tree can carry: eight dots. */
 /** In the order of the swatches. */
@@ -34,14 +35,24 @@ export function readonlyIn(notes: Record<string, TreeNote> | undefined, place: N
     return pathsAbove(place).some(path => notes?.[path]?.readonly === true);
 }
 
+/**
+ * A folder row of the tree. Folders lie in folders: `name` is the whole path (`reports/2024`),
+ * `label` its last part; `count` is what lies in it and below; `depth` how many folders it is in.
+ */
+export interface FolderRow {
+    kind: "folder";
+    name: string;
+    label: string;
+    count: number;
+    depth: number;
+}
+
 /** A row of the collections of a database: a folder, or a collection (in a folder or not). */
-export type CollectionRow
-    = | { kind: "folder"; name: string; count: number }
-        | { kind: "collection"; name: string; folder?: string };
+export type CollectionRow = FolderRow | { kind: "collection"; name: string; folder?: string; depth: number };
 
 /**
- * The collections of a database as the tree shows them: each folder (also an empty one) with its
- * collections below it, then the collections in no folder. Folders are left out of `open`.
+ * The collections of a database as the tree shows them: each folder (also an empty one) with the
+ * folders and collections in it below it while open, then the collections in no folder.
  */
 export function collectionRows(
     collections: string[],
@@ -54,9 +65,7 @@ export function collectionRows(
 }
 
 /** A row of the databases of a connection: a folder, or a database (in a folder or not). */
-export type DatabaseRow
-    = | { kind: "folder"; name: string; count: number }
-        | { kind: "database"; name: string; folder?: string };
+export type DatabaseRow = FolderRow | { kind: "database"; name: string; folder?: string; depth: number };
 
 /** The databases of a connection as the tree shows them, grouped in the folders of the connection. */
 export function databaseRows(
@@ -76,18 +85,30 @@ function grouped<Kind extends "collection" | "database">(
     folders: string[],
     open: (folder: string) => boolean,
     kind: Kind
-): ({ kind: "folder"; name: string; count: number } | { kind: Kind; name: string; folder?: string })[] {
+): (FolderRow | { kind: Kind; name: string; folder?: string; depth: number })[] {
+    // A folder inside one that is not kept (any more) still shows inside it.
+    const all = new Set<string>();
+    for (const folder of folders) {
+        for (let path: string | undefined = folder; path !== undefined; path = parentFolder(path)) all.add(path);
+    }
     const folderOf = (name: string) => {
         const folder = notes?.[pathOf(name)]?.folder ?? undefined;
-        return folder && folders.includes(folder) ? folder : undefined;
+        return folder && all.has(folder) ? folder : undefined;
     };
-    const rows: ({ kind: "folder"; name: string; count: number } | { kind: Kind; name: string; folder?: string })[] = [];
-    for (const folder of [...folders].sort((a, b) => a.localeCompare(b))) {
-        const inside = names.filter(name => folderOf(name) === folder);
-        rows.push({ kind: "folder", name: folder, count: inside.length });
-        if (open(folder)) rows.push(...inside.map(name => ({ kind, name, folder })));
-    }
-    rows.push(...names.filter(name => folderOf(name) === undefined).map(name => ({ kind, name })));
+    const placed = names.map(name => ({ name, folder: folderOf(name) }));
+    const rows: (FolderRow | { kind: Kind; name: string; folder?: string; depth: number })[] = [];
+    const fill = (parent: string | undefined, depth: number) => {
+        const inside = [...all].filter(folder => parentFolder(folder) === parent).sort((a, b) => folderLabel(a).localeCompare(folderLabel(b)));
+        for (const folder of inside) {
+            const count = placed.filter(item => item.folder !== undefined && folderWithin(item.folder, folder)).length;
+            rows.push({ kind: "folder", name: folder, label: folderLabel(folder), count, depth });
+            if (open(folder)) fill(folder, depth + 1);
+        }
+        for (const item of placed.filter(entry => entry.folder === parent)) {
+            rows.push(item.folder === undefined ? { kind, name: item.name, depth } : { kind, name: item.name, folder: item.folder, depth });
+        }
+    };
+    fill(undefined, 0);
     return rows;
 }
 
@@ -132,10 +153,32 @@ export const useNotesStore = defineStore("notes", () => {
         await load(connectionId);
     }
 
+    /** `to` is the whole new path: renaming and moving into another folder are the same. */
     async function renameFolder(connectionId: string, database: string, name: string, to: string): Promise<void> {
         await backend.renameTreeFolder(connectionId, { database, name }, to);
-        if (openFolders.delete(folderKey(connectionId, database, name))) openFolders.add(folderKey(connectionId, database, to));
+        // The folders inside it move along, and stay open as they were.
+        const prefix = folderKey(connectionId, database, "");
+        for (const key of [...openFolders]) {
+            if (!key.startsWith(prefix)) continue;
+            const folder = key.slice(prefix.length);
+            if (!folderWithin(folder, name)) continue;
+            openFolders.delete(key);
+            openFolders.add(folderKey(connectionId, database, to + folder.slice(name.length)));
+        }
         await load(connectionId);
+    }
+
+    /**
+     * Puts a folder with all in it into another folder (`undefined`: to the top). Not into itself
+     * or a folder inside it; `false` when that was asked.
+     */
+    async function moveFolder(connectionId: string, database: string, name: string, into: string | undefined): Promise<boolean> {
+        if (into !== undefined && folderWithin(into, name)) return false;
+        const to = into === undefined ? folderLabel(name) : `${into}/${folderLabel(name)}`;
+        if (to === name) return true;
+        await renameFolder(connectionId, database, name, to);
+        if (into !== undefined) openFolders.add(folderKey(connectionId, database, into));
+        return true;
     }
 
     async function deleteFolder(connectionId: string, database: string, name: string): Promise<void> {
@@ -173,5 +216,5 @@ export const useNotesStore = defineStore("notes", () => {
         await load(connectionId);
     }
 
-    return { notes, folders, load, noteOf, isReadonly, change, rename, remove, foldersOf, isOpen, toggleFolder, addFolder, renameFolder, deleteFolder };
+    return { notes, folders, load, noteOf, isReadonly, change, rename, remove, foldersOf, isOpen, toggleFolder, addFolder, renameFolder, moveFolder, deleteFolder };
 });

@@ -676,6 +676,51 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await capped.waitFor();
     });
 
+    await step("folders lie in folders; a collection and a folder are dragged in and out", async () => {
+        const outer = `o${process.pid}`;
+        await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });
+        await chooseMenu("Add folder");
+        await id("prompt-input").fill(outer);
+        await id("prompt-submit").click();
+        const outerRow = page.locator("[data-testid=folder-row]", { hasText: outer });
+        await outerRow.click({ button: "right" });
+        await chooseMenu("Add folder inside");
+        await id("prompt-input").fill("inner");
+        await id("prompt-submit").click();
+        const innerRow = page.locator("[data-testid=folder-row]", { hasText: "inner" });
+        await innerRow.waitFor();
+
+        // Dragged with the mouse: pressed, moved past the threshold, let go on the folder.
+        const drag = async (from, to) => {
+            const a = await from.boundingBox();
+            const b = await to.boundingBox();
+            await page.mouse.move(a.x + 40, a.y + a.height / 2);
+            await page.mouse.down();
+            await page.mouse.move(a.x + 40, a.y + a.height / 2 + 10, { steps: 3 });
+            await page.mouse.move(b.x + 40, b.y + b.height / 2, { steps: 8 });
+            await page.mouse.up();
+        };
+        const capped = page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_capped` });
+        await drag(capped, innerRow);
+        await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=folder-row]")].some(row => row.textContent.includes("inner") && /1\s*$/.test(row.textContent)));
+        // The outer folder counts what lies below it.
+        assert.match(await outerRow.innerText(), /1\s*$/);
+        // Out again: onto its database.
+        await drag(capped, page.locator("[data-testid=database-row]", { hasText: DATABASE }));
+        await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=folder-row]")].some(row => row.textContent.includes("inner") && /0\s*$/.test(row.textContent)));
+
+        // The inner folder to the top, then the outer one deleted with all in it.
+        await drag(innerRow, page.locator("[data-testid=database-row]", { hasText: DATABASE }));
+        await page.waitForFunction(name => [...document.querySelectorAll("[data-testid=folder-row]")].filter(row => row.textContent.includes(name) || row.textContent.includes("inner")).every(row => row.style.paddingLeft.startsWith("calc(2.875rem")), outer);
+        for (const row of [innerRow, outerRow]) {
+            await row.click({ button: "right" });
+            await chooseMenu("Delete folder");
+            await id("confirm-action").click();
+            await row.waitFor({ state: "detached" });
+        }
+        await capped.waitFor();
+    });
+
     await step("a GridFS bucket shows as one row; its files are listed, renamed and deleted", async () => {
         const bucket = `${COLLECTION}_bucket`;
         await page.locator("[data-testid=database-row]", { hasText: DATABASE }).click({ button: "right" });

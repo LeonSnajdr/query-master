@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            delete from tree_folder\n            where connection_id = $1 and database_name = $2\n                and (name = $3 or substr(name, 1, length($3) + 1) = $3 || '/')\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "902b0b402fb49572182018c18f05508f71b02019e976912aafb721961c708545"
+}
