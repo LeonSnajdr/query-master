@@ -51,9 +51,10 @@ function takeFirst() {
         >
             <slot />
         </PopoverActivator>
+        <!-- At most as high as the room beside the button (the area of `position-area`); the list scrolls. -->
         <PopoverContent
             :positionArea
-            class="menu-panel"
+            class="menu-panel max-h-[calc(100%-0.5rem)] flex-col [&:popover-open]:flex"
         >
             <div
                 v-if="filtering"
@@ -72,8 +73,8 @@ function takeFirst() {
             </div>
             <MenuList
                 @done="open = false"
-                :class="filtering ? 'max-h-[60vh] overflow-y-auto' : ''"
                 :entries="shown"
+                class="min-h-0 overflow-y-auto"
             />
         </PopoverContent>
     </PopoverRoot>

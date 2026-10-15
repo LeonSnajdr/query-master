@@ -305,6 +305,7 @@ function createView() {
                 <span class="toolbar-rule" />
                 <DropMenu
                     :entries="stageEntries(addStage)"
+                    :filterAbove="8"
                     :label="$t('stage.add')"
                 >
                     <span
@@ -410,6 +411,7 @@ function createView() {
                     </span>
                     <DropMenu
                         :entries="stageEntries(operator => changeStage(stage, operator))"
+                        :filterAbove="8"
                         :label="$t('stage.change')"
                     >
                         <span
