@@ -31,6 +31,14 @@ export function useCopy() {
         notices.answer(t("copy.picked", { name: place.collection }));
     }
 
+    /** Collections selected together; views last, as with `copyAll`. */
+    function copyMany(places: Place[]) {
+        if (places.length === 1) return copy(places[0]!);
+        const isView = (place: Place) => connections.sessions[place.connectionId]?.databases.find(item => item.name === place.database)?.types[place.collection] === "view";
+        copied.value = [...places.filter(place => !isView(place)), ...places.filter(isView)].map(place => ({ ...place }));
+        notices.answer(t("copy.pickedSelected", { count: places.length }, places.length));
+    }
+
     /** Every collection and view of a database; the server's own (`system.*`) can not be created anew. */
     async function copyAll(connectionId: string, database: string) {
         try {
@@ -106,5 +114,5 @@ export function useCopy() {
         }
     }
 
-    return { copied, running: task.running, copy, copyAll, paste };
+    return { copied, running: task.running, copy, copyMany, copyAll, paste };
 }

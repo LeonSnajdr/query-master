@@ -533,6 +533,27 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         rmSync(folder, { recursive: true, force: true });
     });
 
+    await step("collections selected together with Ctrl are exported and dropped at once", async () => {
+        const row = suffix => page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}_${suffix}\\s*$`) });
+        await row("csv").click();
+        await row("json").click({ modifiers: ["Control"] });
+        assert.equal(await page.locator("[data-testid=collection-row][aria-selected=true]").count(), 2);
+        // The export wizard takes both.
+        await row("json").click({ button: "right" });
+        await page.locator("[data-testid=menu-item]", { hasText: "2 collections selected" }).waitFor();
+        await chooseMenu("Export...");
+        await page.locator("[data-testid=export-row]").nth(1).waitFor();
+        assert.equal(await page.locator("[data-testid=export-row]").count(), 2);
+        await id("export-close").click();
+        // One question for both, then both are gone.
+        await row("json").click({ button: "right" });
+        await chooseMenu("Drop 2 collections");
+        assert.match(await id("confirm-text").innerText(), new RegExp(`${COLLECTION}_csv, ${COLLECTION}_json`));
+        await id("confirm-action").click();
+        await row("csv").waitFor({ state: "detached" });
+        await row("json").waitFor({ state: "detached" });
+    });
+
     await step("a collection is copied with Ctrl+C and pasted under a new name", async () => {
         const row = page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) });
         await row.click();

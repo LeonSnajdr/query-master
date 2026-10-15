@@ -19,6 +19,7 @@ import type { DatabaseNode, TreeSelection } from "@/stores/connections";
 import { bucketOf, treeCollections } from "@/shell/gridfs";
 import { collectionRows, databaseRows, NOTE_COLORS, useNotesStore } from "@/stores/notes";
 import type { CollectionRow, NotePlace } from "@/stores/notes";
+import { all, click, keyOf, kindOf, rowOf, sameRow } from "@/tree/selection";
 
 /** The dock at the left: saved connections, the toolbar, and the tree of what is connected. */
 const { t } = useI18n();
@@ -176,12 +177,44 @@ function openRow(profile: Profile, database: DatabaseNode, collection: string) {
 }
 
 function isSelected(at: TreeSelection): boolean {
-    const selected = connections.selected;
-    return selected?.connectionId === at.connectionId && selected.database === at.database && selected.collection === at.collection && selected.index === at.index;
+    return connections.marked.length > 0 ? connections.marked.some(row => sameRow(row, at)) : sameRow(connections.selected, at);
 }
 
 function select(at: TreeSelection) {
     connections.selected = at;
+}
+
+/** One selected row is framed; rows selected together are filled, the focused one framed too. */
+function rowClass(at: TreeSelection): string {
+    if (connections.marked.length === 0) return sameRow(connections.selected, at) ? "tree-row-on" : "";
+    if (!isSelected(at)) return "";
+    return sameRow(connections.selected, at) ? "tree-row-marked border-primary/80!" : "tree-row-marked";
+}
+
+const treeElement = useTemplateRef("tree");
+/** Where a Shift click measures from: the row clicked last without Shift. */
+let anchor: TreeSelection | undefined;
+
+/** The rows of the tree as shown, top to bottom; each selectable row carries its key. */
+function shownRows(): TreeSelection[] {
+    return [...treeElement.value?.querySelectorAll<HTMLElement>("[data-row]") ?? []].map(element => rowOf(element.dataset.row!));
+}
+
+function setMarked(rows: TreeSelection[], focus: TreeSelection) {
+    // `marked` first: the watch on `selected` keeps it when the focus is one of its rows.
+    connections.marked = rows.length > 1 ? rows : [];
+    connections.selected = focus;
+}
+
+/** A click on a row: alone selects it, Ctrl adds or takes it away, Shift takes the rows up to it. */
+function onRowClick(event: MouseEvent, at: TreeSelection) {
+    const mode = event.shiftKey ? "range" : event.ctrlKey || event.metaKey ? "toggle" : "single";
+    const current = connections.marked.length > 0 ? connections.marked : connections.selected ? [connections.selected] : [];
+    const next = click({ rows: current, anchor: anchor ?? connections.selected }, at, mode, mode === "range" ? shownRows() : []);
+    anchor = next.anchor;
+    // Taken away with Ctrl: the focus moves to the last row that is still selected.
+    const focus = next.rows.some(row => sameRow(row, at)) ? at : next.rows.at(-1)!;
+    setMarked(next.rows, focus);
 }
 
 function toggleConnection(profile: Profile) {
@@ -331,7 +364,19 @@ const manageEntries = computed<MenuEntry[]>(() => [
 function onTreeKey(event: KeyboardEvent) {
     const at = connections.selected;
     if (!at) return;
-    if (keymap.matches(event, "tree.drop")) {
+    const many = connections.marked;
+    if ((event.ctrlKey || event.metaKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "a") {
+        // Every row shown of the kind of the selected one, as far as they go together.
+        setMarked(all(at, shownRows()), at);
+    } else if (event.key === "Escape" && many.length > 0) {
+        setMarked([], at);
+    } else if (many.length > 0 && keymap.matches(event, "tree.drop")) {
+        if (kindOf(at) === "connection") return;
+        void actions.dropMany(many.filter(row => row.index !== "_id_"));
+    } else if (many.length > 0 && keymap.matches(event, "tree.copy")) {
+        if (kindOf(at) !== "collection") return;
+        copying.copyMany(many.map(row => ({ connectionId: row.connectionId, database: row.database!, collection: row.collection! })));
+    } else if (keymap.matches(event, "tree.drop")) {
         if (at.index !== undefined) {
             if (at.index !== "_id_") void actions.dropIndex(at);
         } else if (at.collection !== undefined) {
@@ -358,7 +403,98 @@ function pasteLabel(): string {
     return picked[0] ? t("collection.pasteNamed", { name: picked[0].collection }) : t("collection.paste");
 }
 
+/**
+ * The menu of several rows selected together: what other clients offer there (DataGrip, DBeaver,
+ * Studio 3T) and the app can do for all of them at once. A line at the top says what is selected.
+ */
+function openManyMenu(event: MouseEvent, rows: TreeSelection[]) {
+    const first = rows[0]!;
+    const kind = kindOf(first);
+    const head: MenuEntry = { label: t(`tree.selected.${kind}`, { count: rows.length }, rows.length), icon: "i-lucide-list-checks", action: () => undefined, disabled: true };
+    const readonly = rows.every(row => notes.noteOf({ connectionId: row.connectionId, database: row.database, collection: row.collection })?.readonly === true);
+    const marks: MenuEntry[] = [
+        "separator",
+        { label: t("note.readonly"), icon: "i-lucide-lock", checked: readonly, action: () => void actions.toggleReadonlyMany(rows) },
+        { label: t("note.color"), swatches: NOTE_COLORS, current: null, choose: color => void actions.setColorMany(rows, color) }
+    ];
+    // Folders hold the databases of a connection or the collections of a database: all rows in one.
+    const folderOf = kind === "database" ? "" : first.database;
+    const folders = (kind === "database" || (kind === "collection" && rows.every(row => row.database === first.database)))
+        ? notes.foldersOf(first.connectionId, folderOf ?? "")
+        : [];
+    const inFolder = rows.some(row => notes.noteOf(row)?.folder);
+    const folderEntries: MenuEntry[] = folders.length > 0 || inFolder
+        ? ["separator", {
+                label: t("folder.menu"),
+                icon: "i-lucide-folder",
+                children: [
+                    ...folders.map(folder => ({ label: t("folder.moveTo", { name: folder }), icon: "i-lucide-folder-input", action: () => void actions.moveManyToFolder(rows, folder) })),
+                    ...(inFolder ? [{ label: t("folder.moveOutMany"), icon: "i-lucide-folder-output", action: () => void actions.moveManyToFolder(rows, null) }] : [])
+                ]
+            }]
+        : [];
+    const tail: MenuEntry[] = [
+        "separator",
+        { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void actions.refreshMany(rows) }
+    ];
+    let entries: MenuEntry[];
+    if (kind === "connection") {
+        entries = [
+            head,
+            "separator",
+            { label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", command: "tree.collapse", action: () => connections.collapseAll() },
+            // A connection from a typed string keeps no notes.
+            ...(rows.some(row => connections.isTransient(row.connectionId)) ? [] : marks),
+            ...tail,
+            { label: t("connection.disconnectMany", { count: rows.length }), command: "connection.disconnect", action: () => void actions.disconnectMany(rows) }
+        ];
+    } else if (kind === "database") {
+        entries = [
+            head,
+            "separator",
+            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(rows) },
+            "separator",
+            { label: t("database.dropMany", { count: rows.length }), command: "tree.drop", danger: true, action: () => void actions.dropMany(rows) },
+            ...folderEntries,
+            ...marks,
+            ...tail
+        ];
+    } else if (kind === "collection") {
+        const places = rows.map(row => ({ connectionId: row.connectionId, database: row.database!, collection: row.collection! }));
+        entries = [
+            head,
+            { label: t("tab.browseMany", { count: rows.length }), icon: "i-lucide-file-text", action: () => actions.browseMany(rows) },
+            "separator",
+            { label: t("collection.copyMany", { count: rows.length }), icon: "i-lucide-copy", command: "tree.copy", action: () => copying.copyMany(places) },
+            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(rows) },
+            "separator",
+            { label: t("collection.dropMany", { count: rows.length }), icon: "i-lucide-file-x-2", command: "tree.drop", danger: true, action: () => void actions.dropMany(rows) },
+            ...folderEntries,
+            ...marks,
+            ...tail
+        ];
+    } else {
+        // The index on _id belongs to the collection: it stays.
+        const droppable = rows.filter(row => row.index !== "_id_");
+        entries = [
+            head,
+            "separator",
+            { label: t("index.hideMany"), action: () => void actions.toggleIndexesHidden(droppable, true), disabled: droppable.length === 0 },
+            { label: t("index.unhideMany"), action: () => void actions.toggleIndexesHidden(droppable, false), disabled: droppable.length === 0 },
+            { label: t("index.dropMany", { count: droppable.length }), command: "tree.drop", danger: true, action: () => void actions.dropMany(droppable), disabled: droppable.length === 0 },
+            ...tail
+        ];
+    }
+    void menu.value?.open(event, entries);
+}
+
 function openMenu(event: MouseEvent, at: TreeSelection) {
+    if (connections.marked.length > 1 && connections.marked.some(row => sameRow(row, at))) {
+        connections.selected = at;
+        openManyMenu(event, connections.marked);
+        return;
+    }
+    anchor = at;
     select(at);
     // Pasting goes into the database of the row; the copy may come from another connection.
     const paste = (database: string): MenuEntry => ({
@@ -715,7 +851,9 @@ defineExpose({
         />
 
         <div
+            ref="tree"
             @keydown="onTreeKey"
+            aria-multiselectable="true"
             class="grow min-h-0 overflow-y-auto pt-2 pb-2 text-[13px]"
             role="tree"
         >
@@ -741,11 +879,13 @@ defineExpose({
                     data-testid="connection-color"
                 />
                 <div
-                    @click="select({ connectionId: profile.id })"
+                    @click="onRowClick($event, { connectionId: profile.id })"
                     @contextmenu="openMenu($event, { connectionId: profile.id })"
                     @dblclick="toggleConnection(profile)"
                     @keydown.enter.self="toggleConnection(profile)"
-                    :class="isSelected({ connectionId: profile.id }) ? 'tree-row-on' : ''"
+                    :aria-selected="isSelected({ connectionId: profile.id })"
+                    :class="rowClass({ connectionId: profile.id })"
+                    :data-row="keyOf({ connectionId: profile.id })"
                     class="tree-row pl-3.5"
                     data-testid="connection-row"
                     role="treeitem"
@@ -821,11 +961,13 @@ defineExpose({
                                 :key="database.name"
                             >
                                 <div
-                                    @click="select({ connectionId: profile.id, database: database.name })"
+                                    @click="onRowClick($event, { connectionId: profile.id, database: database.name })"
                                     @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name })"
                                     @dblclick="toggleDatabase(profile, database)"
                                     @keydown.enter.self="toggleDatabase(profile, database)"
-                                    :class="isSelected({ connectionId: profile.id, database: database.name }) ? 'tree-row-on' : ''"
+                                    :aria-selected="isSelected({ connectionId: profile.id, database: database.name })"
+                                    :class="rowClass({ connectionId: profile.id, database: database.name })"
+                                    :data-row="keyOf({ connectionId: profile.id, database: database.name })"
                                     :style="indent(1.875)"
                                     class="tree-row"
                                     data-testid="database-row"
@@ -886,11 +1028,13 @@ defineExpose({
                                                 :key="collection"
                                             >
                                                 <div
-                                                    @click="select({ connectionId: profile.id, database: database.name, collection })"
+                                                    @click="onRowClick($event, { connectionId: profile.id, database: database.name, collection })"
                                                     @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection })"
                                                     @dblclick="openRow(profile, database, collection)"
                                                     @keydown.enter="openRow(profile, database, collection)"
-                                                    :class="isSelected({ connectionId: profile.id, database: database.name, collection }) ? 'tree-row-on' : ''"
+                                                    :aria-selected="isSelected({ connectionId: profile.id, database: database.name, collection })"
+                                                    :class="rowClass({ connectionId: profile.id, database: database.name, collection })"
+                                                    :data-row="keyOf({ connectionId: profile.id, database: database.name, collection })"
                                                     :style="indent(row.kind === 'collection' && row.folder ? 3.875 : 2.875)"
                                                     class="tree-row"
                                                     data-testid="collection-row"
@@ -927,10 +1071,12 @@ defineExpose({
                                                     <div
                                                         v-for="index in database.details[collection]?.indexes"
                                                         :key="String(index.name)"
-                                                        @click="select({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                                        @click="onRowClick($event, { connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
                                                         @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
                                                         @dblclick="actions.indexInfo({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
-                                                        :class="isSelected({ connectionId: profile.id, database: database.name, collection, index: String(index.name) }) ? 'tree-row-on' : ''"
+                                                        :aria-selected="isSelected({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                                        :class="rowClass({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                                        :data-row="keyOf({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
                                                         :style="indent(row.kind === 'collection' && row.folder ? 6 : 5)"
                                                         class="tree-row"
                                                         data-testid="index-row"

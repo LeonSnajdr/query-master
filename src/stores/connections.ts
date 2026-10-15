@@ -1,5 +1,5 @@
 import { defineStore } from "pinia";
-import { computed, reactive, ref, shallowReactive } from "vue";
+import { computed, reactive, ref, shallowReactive, shallowRef, watch } from "vue";
 import { backend, errorMessage } from "@/api";
 import type { Profile, ProfileInput } from "@/api";
 import { isDoc, scalar } from "@/shell/ejson";
@@ -7,6 +7,7 @@ import type { Doc, Json } from "@/shell/ejson";
 import { SEARCH_LIMIT, collectValues, combineSearches, searchCommand, searchHints } from "@/shell/values";
 import type { ValueHint, ValueIndex, ValueSearch } from "@/shell/values";
 import { useNotesStore } from "@/stores/notes";
+import { sameRow } from "@/tree/selection";
 
 /** What the tree knows about a collection once it was unfolded. */
 export interface CollectionDetail {
@@ -84,6 +85,14 @@ export const useConnectionsStore = defineStore("connections", () => {
     const valueSearches = shallowReactive(new Map<string, ValueSearch>());
     /** The row of the tree the toolbar and the menus act on. */
     const selected = ref<TreeSelection>();
+    /**
+     * The rows of a multiple selection (Ctrl or Shift click), `selected` among them; empty while
+     * one row is selected. Selecting a row outside of them, from anywhere, ends it.
+     */
+    const marked = shallowRef<TreeSelection[]>([]);
+    watch(selected, (at) => {
+        if (!marked.value.some(row => sameRow(row, at))) marked.value = [];
+    });
 
     /** Connections made from a string that is not saved; they go with `disconnect`. */
     const transient: Profile[] = [];
@@ -223,6 +232,9 @@ export const useConnectionsStore = defineStore("connections", () => {
         // A connection still being opened is closed as soon as it is (see `open`).
         connecting.delete(id);
         if (selected.value?.connectionId === id) selected.value = undefined;
+        // Its rows leave the tree, and with them a multiple selection.
+        const left = marked.value.filter(row => row.connectionId !== id);
+        marked.value = left.length > 1 ? left : [];
         if (!wasOpen) {
             dropTransient(id);
             return;
@@ -339,5 +351,5 @@ export const useConnectionsStore = defineStore("connections", () => {
         return sampleValues.get(`${id}/${database}/${collection}`)?.get(field);
     }
 
-    return { profiles, saved, sessions, connecting, failed, selected, inTree, load, save, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, sampleValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
+    return { profiles, saved, sessions, connecting, failed, selected, marked, inTree, load, save, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, sampleValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
 });

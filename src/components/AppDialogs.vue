@@ -133,7 +133,10 @@ async function copyText() {
                 <DialogTitle class="dialog-title">
                     {{ state.confirm.title }}
                 </DialogTitle>
-                <DialogDescription class="m-0 text-sm text-on-surface">
+                <DialogDescription
+                    class="m-0 text-sm text-on-surface"
+                    data-testid="confirm-text"
+                >
                     {{ state.confirm.text }}
                 </DialogDescription>
                 <div class="flex justify-end gap-2">

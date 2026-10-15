@@ -107,8 +107,8 @@ export function useActions() {
         tabs.openSql({ connectionId: at.connectionId, database, collection: at.collection });
     }
 
-    /** The export wizard with the rows of the selection: the server's, a database's or one collection. */
-    async function exportWizard(at = target.value, filter?: string) {
+    /** The export wizard with the rows of the selection: the server's, a database's, one collection or several. */
+    async function exportWizard(at: TreeSelection | TreeSelection[] | undefined = target.value, filter?: string) {
         if (at) await wizardOf.openExport(at, filter);
     }
 
@@ -344,6 +344,86 @@ export function useActions() {
         await notes.change(notePlace(at), { folder }).catch(report);
     }
 
+    /**
+     * What a multiple selection in the tree does: each action takes rows of one kind, which the
+     * tree only selects together when they are of one connection (indexes: of one collection).
+     * Dropping asks once for all of them; a row that fails is reported and the others go on.
+     */
+    function namesOf(rows: TreeSelection[]): string {
+        const names = rows.map(row => row.index ?? row.collection ?? row.database ?? connections.profiles.find(profile => profile.id === row.connectionId)?.name ?? "");
+        const shown = names.slice(0, 8).join(", ");
+        return names.length > 8 ? `${shown} ${t("tree.more", { count: names.length - 8 })}` : shown;
+    }
+
+    async function dropMany(rows: TreeSelection[]) {
+        const first = rows[0];
+        if (!first || !rows.every(writable)) return;
+        const kind = first.index !== undefined ? "index" : first.collection !== undefined ? "collection" : "database";
+        const confirmed = await dialogs.confirm({
+            title: t(`${kind}.dropMany.title`, { count: rows.length }),
+            text: t(`${kind}.dropMany.text`, { count: rows.length, names: namesOf(rows) }),
+            action: t("action.drop")
+        });
+        if (!confirmed) return;
+        let dropped = 0;
+        for (const row of rows) {
+            const document: Doc = kind === "index" ? { dropIndexes: row.collection!, index: row.index! } : kind === "collection" ? { drop: row.collection! } : { dropDatabase: 1 };
+            try {
+                const failure = replyError(await backend.runCommand(row.connectionId, row.database!, document));
+                if (failure) throw new Error(`${row.index ?? row.collection ?? row.database}: ${say(failure)}`);
+                dropped++;
+                if (kind !== "index") await notes.remove(row.connectionId, kind === "collection" ? `${row.database}/${row.collection}` : row.database!).catch(report);
+            } catch (error) {
+                report(error);
+            }
+        }
+        connections.selected = kind === "index" ? { connectionId: first.connectionId, database: first.database, collection: first.collection } : kind === "collection" ? { connectionId: first.connectionId, database: first.database } : { connectionId: first.connectionId };
+        if (kind === "index") await connections.loadIndexes(first.connectionId, first.database!, first.collection!).catch(report);
+        else await connections.loadDatabases(first.connectionId).catch(report);
+        if (dropped > 0) notices.answer(t("tree.dropped", { count: dropped }, dropped));
+    }
+
+    /** Each collection in a tab of its own, as a double click on each would. */
+    function browseMany(rows: TreeSelection[]) {
+        for (const row of rows) browse(row);
+    }
+
+    async function setColorMany(rows: TreeSelection[], color: string | null) {
+        for (const row of rows) await setColor(row, color);
+    }
+
+    /** Read-only for all when one of them is not yet, else off for all. */
+    async function toggleReadonlyMany(rows: TreeSelection[]) {
+        const readonly = !rows.every(row => notes.noteOf(notePlace(row))?.readonly === true);
+        for (const row of rows) await notes.change(notePlace(row), { readonly }).catch(report);
+    }
+
+    async function moveManyToFolder(rows: TreeSelection[], folder: string | null) {
+        for (const row of rows) await moveToFolder(row, folder);
+    }
+
+    async function toggleIndexesHidden(rows: TreeSelection[], hidden: boolean) {
+        const first = rows[0];
+        if (first?.database === undefined || first.collection === undefined || !rows.every(writable)) return;
+        for (const row of rows) {
+            if (row.index === "_id_") continue;
+            const failure = replyError(await backend.runCommand(row.connectionId, row.database!, { collMod: row.collection!, index: { name: row.index!, hidden } }).catch((error: unknown) => {
+                report(error);
+                return {};
+            }));
+            if (failure) report(new Error(`${row.index}: ${say(failure)}`));
+        }
+        await connections.loadIndexes(first.connectionId, first.database, first.collection).catch(report);
+    }
+
+    async function refreshMany(rows: TreeSelection[]) {
+        for (const connectionId of new Set(rows.map(row => row.connectionId))) await refresh({ connectionId });
+    }
+
+    async function disconnectMany(rows: TreeSelection[]) {
+        for (const connectionId of new Set(rows.map(row => row.connectionId))) await disconnect({ connectionId });
+    }
+
     async function refresh(at = target.value) {
         if (at) await connections.loadDatabases(at.connectionId).catch(report);
     }
@@ -405,6 +485,7 @@ export function useActions() {
         openShell, browse, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, deleteFolder, moveToFolder,
+        dropMany, browseMany, setColorMany, toggleReadonlyMany, moveManyToFolder, toggleIndexesHidden, refreshMany, disconnectMany,
         refresh, connect, reconnect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };

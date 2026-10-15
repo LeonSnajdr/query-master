@@ -72,12 +72,23 @@ export function useExportWizard() {
         return { found, skipped };
     }
 
-    /** Opens the wizard with the rows of the selection; `filter` for the rows of a query. */
-    async function openExport(at: TreeSelection, filter?: string) {
-        if (busy.value || wizard.runId) return;
+    /**
+     * Opens the wizard with the rows of the selection, or of several rows of one connection
+     * selected together; `filter` for the rows of a query.
+     */
+    async function openExport(selection: TreeSelection | TreeSelection[], filter?: string) {
+        const all = Array.isArray(selection) ? selection : [selection];
+        const at = all[0];
+        if (!at || busy.value || wizard.runId) return;
         busy.value = true;
         try {
-            const { found: collections, skipped } = await collectionsOf(at);
+            const collections: { database: string; collection: string }[] = [];
+            const skipped: string[] = [];
+            for (const item of all) {
+                const of = await collectionsOf(item);
+                collections.push(...of.found);
+                skipped.push(...of.skipped);
+            }
             if (skipped.length > 0) notices.notify({ kind: "info", title: t("export.skippedSystem", skipped.length), detail: skipped.join(", ") });
             preset ??= readExportPreset(await backend.getPreset("export").catch(() => null));
             Object.assign(wizard, { open: true, step: "rows", progress: [], outcome: undefined });

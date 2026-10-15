@@ -11,7 +11,7 @@ export function useFocusAreas() {
     /** The selected row of the tree, else its first one. */
     function focusTree(): void {
         const tree = document.querySelector<HTMLElement>("aside [role=tree]");
-        const row = tree?.querySelector<HTMLElement>(".tree-row-on") ?? tree?.querySelector<HTMLElement>("[role=treeitem]");
+        const row = tree?.querySelector<HTMLElement>(".tree-row-on, .tree-row-marked") ?? tree?.querySelector<HTMLElement>("[role=treeitem]");
         row?.focus();
     }
 
