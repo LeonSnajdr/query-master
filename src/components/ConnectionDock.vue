@@ -611,11 +611,11 @@ defineExpose({
                                 role="treeitem"
                                 tabindex="0"
                             >
-                                <!-- The color of the connection, as a bar at the left edge. -->
+                                <!-- The color of the connection, as in the tree: a bar at the left edge, over the frame of the row. -->
                                 <span
                                     v-if="connectionColor(profile)"
                                     :class="`note-${connectionColor(profile)}`"
-                                    class="absolute z-1 left-4 inset-y-0 w-[5px]"
+                                    class="absolute z-1 -left-px -inset-y-px w-[5px] rounded-r-sm pointer-events-none"
                                 />
                                 <span class="relative size-4 shrink-0">
                                     <span class="i-lucide-server size-4 block text-on-surface" />
@@ -737,7 +737,7 @@ defineExpose({
                 <span
                     v-if="connectionColor(profile)"
                     :class="`note-${connectionColor(profile)}`"
-                    class="absolute z-1 left-px inset-y-0 w-[5px] rounded-sm pointer-events-none"
+                    class="absolute z-1 left-0 inset-y-0 w-[5px] rounded-r-sm pointer-events-none"
                     data-testid="connection-color"
                 />
                 <div
