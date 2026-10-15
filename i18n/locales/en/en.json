@@ -1263,6 +1263,7 @@
   "stage.all": "All stages are shown",
   "stage.change": "Change stage",
   "stage.down": "Move stage down",
+  "stage.drag": "Drag to move the stage",
   "stage.enabled": "Enable stage {name}",
   "stage.remove": "Remove stage",
   "stage.reset": "Reset fields",

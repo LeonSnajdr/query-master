@@ -19,7 +19,7 @@ import { STAGES } from "@/shell/catalog";
 import type { Environment } from "@/shell/complete";
 import { parseStatements, parseValue } from "@/shell/parse";
 import type { Json } from "@/shell/ejson";
-import { aggregateStatement, keepsDocuments, newStage, optionsOf, pipelineText, stagesOf, WRITING_STAGES } from "@/shell/pipeline";
+import { aggregateStatement, keepsDocuments, moveItem, newStage, optionsOf, pipelineText, stagesOf, WRITING_STAGES } from "@/shell/pipeline";
 import type { PipelineStage } from "@/shell/pipeline";
 import { collectFields, useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
@@ -154,9 +154,43 @@ function move(by: -1 | 1) {
     const index = currentIndex.value;
     const target = index + by;
     if (index === -1 || target < 0 || target >= stages.value.length) return;
-    const next = [...stages.value];
-    [next[index], next[target]] = [next[target]!, next[index]!];
-    tab.value.pipeline = next;
+    tab.value.pipeline = moveItem(stages.value, index, target);
+}
+
+/** The stage being dragged to another place in the pipeline. */
+const draggedId = shallowRef<number>();
+/** How far the pointer moves before a press on the grip becomes a drag. */
+const DRAG_DISTANCE = 4;
+
+/** Dragging a stage by its grip moves it up or down, past the middle of each stage it crosses. */
+function startStageDrag(event: PointerEvent, stage: PipelineStage): void {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    current.value = stage.id;
+    const list = (event.currentTarget as HTMLElement).closest("[data-stage-list]")!;
+    const start = event.clientY;
+    const drag = (moved: PointerEvent) => {
+        if (draggedId.value === undefined) {
+            if (Math.abs(moved.clientY - start) < DRAG_DISTANCE) return;
+            draggedId.value = stage.id;
+        }
+        const others = [...list.querySelectorAll<HTMLElement>("[data-stage-id]")].filter(item => Number(item.dataset.stageId) !== stage.id);
+        const index = others.filter((item) => {
+            const box = item.getBoundingClientRect();
+            return box.top + box.height / 2 < moved.clientY;
+        }).length;
+        const from = stages.value.findIndex(item => item.id === stage.id);
+        if (from !== index) tab.value.pipeline = moveItem(stages.value, from, index);
+    };
+    const end = () => {
+        draggedId.value = undefined;
+        window.removeEventListener("pointermove", drag);
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end);
+    };
+    window.addEventListener("pointermove", drag);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
 }
 
 async function copyPipeline() {
@@ -309,16 +343,29 @@ function createView() {
                 />
             </div>
 
-            <div class="shrink-0 max-h-[50vh] overflow-y-auto mx-5 mt-1.5 mb-1 border-t border-divider">
+            <div
+                class="shrink-0 max-h-[50vh] overflow-y-auto mx-5 mt-1.5 mb-1 border-t border-divider"
+                data-stage-list
+            >
                 <div
                     v-for="stage in stages"
                     :key="stage.id"
                     @focusin="focusStage(stage)"
                     @mousedown="current = stage.id"
-                    :class="current === stage.id ? 'border-l-primary' : 'border-l-transparent'"
+                    :class="[current === stage.id ? 'border-l-primary' : 'border-l-transparent', draggedId === stage.id ? 'bg-primary/10' : '']"
+                    :data-stage-id="stage.id"
                     class="flex items-start border-b border-divider border-l-3 py-0.5"
                     data-testid="pipeline-stage"
                 >
+                    <span
+                        @pointerdown="startStageDrag($event, stage)"
+                        :class="draggedId === stage.id ? 'cursor-grabbing' : 'cursor-grab'"
+                        :title="$t('stage.drag')"
+                        class="shrink-0 w-4 h-6.5 mt-0.5 -mr-3 flex items-center justify-center text-on-surface-variant hover:text-on-surface-strong"
+                        data-testid="stage-grip"
+                    >
+                        <span class="i-lucide-grip-vertical size-3.5" />
+                    </span>
                     <DropMenu
                         :entries="stageEntries(operator => changeStage(stage, operator))"
                         :label="$t('stage.change')"

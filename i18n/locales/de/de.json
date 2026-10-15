@@ -1263,6 +1263,7 @@
   "stage.all": "Alle Stufen werden angezeigt",
   "stage.change": "Stage ändern",
   "stage.down": "Stage nach unten",
+  "stage.drag": "Ziehen, um die Stage zu verschieben",
   "stage.enabled": "Stufe {name} einschalten",
   "stage.remove": "Stufe entfernen",
   "stage.reset": "Felder zurücksetzen",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseStatements } from "./parse";
-import { aggregateStatement, keepsDocuments, newStage, optionsOf, pipelineText, previewStages, stagesOf, stageTemplate } from "./pipeline";
+import { aggregateStatement, keepsDocuments, moveItem, newStage, optionsOf, pipelineText, previewStages, stagesOf, stageTemplate } from "./pipeline";
 
 describe("aggregateStatement", () => {
     it("leaves stages that are switched off out", () => {
@@ -54,5 +54,14 @@ describe("keepsDocuments", () => {
     it("is true only for stages that keep the documents as they are", () => {
         expect(keepsDocuments([newStage("$match"), newStage("$sort"), newStage("$project", "{ a: 1 }", false)])).toBe(true);
         expect(keepsDocuments([newStage("$match"), newStage("$project")])).toBe(false);
+    });
+});
+
+describe("moveItem", () => {
+    it("takes an item out and puts it in at the place among the others", () => {
+        expect(moveItem(["a", "b", "c", "d"], 0, 2)).toEqual(["b", "c", "a", "d"]);
+        expect(moveItem(["a", "b", "c", "d"], 3, 0)).toEqual(["d", "a", "b", "c"]);
+        expect(moveItem(["a", "b"], 1, 9)).toEqual(["a", "b"]);
+        expect(moveItem(["a", "b"], 5, 0)).toEqual(["a", "b"]);
     });
 });

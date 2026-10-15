@@ -81,3 +81,12 @@ export function optionsOf(statement: Statement): string {
 export function keepsDocuments(stages: PipelineStage[]): boolean {
     return stages.filter(stage => stage.enabled).every(stage => SHAPE_KEEPING.includes(stage.operator));
 }
+
+/** The list with the item at `from` taken out and put in at `to` (an index in the list without it). */
+export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
+    const next = [...items];
+    if (from < 0 || from >= next.length) return next;
+    const [item] = next.splice(from, 1);
+    next.splice(Math.max(0, Math.min(to, next.length)), 0, item!);
+    return next;
+}
