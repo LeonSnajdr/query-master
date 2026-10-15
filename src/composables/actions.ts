@@ -4,6 +4,7 @@ import { backend } from "@/api";
 import type { Profile } from "@/api";
 import { useDialogs } from "@/composables/dialogs";
 import { useExportWizard } from "@/composables/exportWizard";
+import type { ExportFormat } from "@/transfer/export";
 import { useImportWizard } from "@/composables/importWizard";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
@@ -109,8 +110,8 @@ export function useActions() {
     }
 
     /** The export wizard with the rows of the selection: the server's, a database's, one collection or several. */
-    async function exportWizard(at: TreeSelection | TreeSelection[] | undefined = target.value, filter?: string) {
-        if (at) await wizardOf.openExport(at, filter);
+    async function exportWizard(at: TreeSelection | TreeSelection[] | undefined = target.value, filter?: string, format?: ExportFormat) {
+        if (at) await wizardOf.openExport(at, filter, format);
     }
 
     /** The import wizard on the server of the selection; a collection chosen there takes every file. */

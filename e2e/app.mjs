@@ -456,7 +456,19 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.match(sql, new RegExp(`INSERT INTO "${COLLECTION}" \\("_id", "n", "name", "price"\\) VALUES \\('[0-9a-f]{24}', 2, 'two', 9\\.99\\);\\r\\n$`), sql);
         await id("export-close").click();
 
-        // Into a database: the same server, another collection name.
+        // "Export as" opens the wizard on the chosen tile.
+        await row.click({ button: "right" });
+        await openGroup("Export as");
+        await chooseMenu("CSV …");
+        await id("export-wizard").waitFor();
+        assert.equal(await id("export-tile-csv").getAttribute("aria-checked"), "true");
+        await id("export-close").click();
+        await id("export-wizard").waitFor({ state: "hidden" });
+
+        // Into a database: the same server, another collection name; an index of the source goes along.
+        const source = `db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}")`;
+        await id("dock-shell").click();
+        await runShell(`${source}.createIndex({ name: 1 }, { name: "e2e_export_name" })`);
         await openWizard();
         await id("export-tile-database").click();
         await shot("export-database");
@@ -467,6 +479,13 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.locator("[data-testid=export-progress-row][data-state=done]").waitFor();
         await id("export-close").click();
         await page.locator("[data-testid=collection-row]", { hasText: `${COLLECTION}_exported` }).waitFor();
+        // "Options and indexes too" is on by default: the index is there in the copy.
+        // The names as one text: the documents of `getIndexes()` show folded in the tree.
+        const indexes = await runShell(`db.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}_exported").getIndexes().map(function (index) { return index.name; }).join(",")`);
+        assert.match(await indexes.locator("[data-testid=query-result]").innerText(), /e2e_export_name/);
+        await runShell(`${source}.dropIndex("e2e_export_name")`);
+        // The steps after this one expect the tabs as they were.
+        await page.keyboard.press("Control+w");
     });
 
     await step("the import wizard reads exported JSON and CSV files back into new collections", async () => {

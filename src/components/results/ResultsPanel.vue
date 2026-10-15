@@ -10,6 +10,7 @@ import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import { useExportWizard } from "@/composables/exportWizard";
+import type { ExportFormat } from "@/transfer/export";
 import { useImportWizard } from "@/composables/importWizard";
 import { useNotices } from "@/composables/notices";
 import { useKeymap, useShortcut } from "@/keys/keymap";
@@ -301,10 +302,10 @@ function wizardFilter(): { collection: string; filter: string } | undefined {
  * The export wizard with the collection and the filter of the query. A result the wizard can not
  * read again (a script, another command, the browser preview) is saved as shown, in JSON.
  */
-async function openExport() {
+async function openExport(format?: ExportFormat) {
     const query = wizardFilter();
     if (inApp && query) {
-        await exportWizard.openExport({ connectionId: tab.value.connectionId, database: tab.value.plan!.database, collection: query.collection }, query.filter);
+        await exportWizard.openExport({ connectionId: tab.value.connectionId, database: tab.value.plan!.database, collection: query.collection }, query.filter, format);
         return;
     }
     if (!result.value) return;
@@ -464,7 +465,9 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
                 "separator",
                 { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", command: "result.importClipboard", action: () => void importClipboard(), disabled: locked },
                 { label: t("result.import"), icon: "i-lucide-download", command: "result.import", action: () => void importDocuments(), disabled: locked },
-                { label: t("export.menu"), icon: "i-lucide-upload", command: "result.export", action: () => void openExport() }
+                { label: t("export.menu"), icon: "i-lucide-upload", command: "result.export", action: () => void openExport() },
+                // A result the wizard can not read again is saved as shown, whatever the format.
+                ...(inApp && wizardFilter() ? [exportWizard.exportAsGroup(format => void openExport(format))] : [])
             ]
         },
         {

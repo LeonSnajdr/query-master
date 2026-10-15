@@ -11,6 +11,7 @@ import NoteMarks from "@/components/NoteMarks.vue";
 import { useActions } from "@/composables/actions";
 import { useCopy } from "@/composables/copy";
 import { useDialogs } from "@/composables/dialogs";
+import { useExportWizard } from "@/composables/exportWizard";
 import { useMessages } from "@/composables/messages";
 import { useKeymap } from "@/keys/keymap";
 import type { MenuEntry } from "@/menu";
@@ -30,6 +31,7 @@ const { report, say } = useMessages();
 const dialogs = useDialogs();
 const actions = useActions();
 const copying = useCopy();
+const exportWizard = useExportWizard();
 const keymap = useKeymap();
 
 /** The line under "no connection", with the key of the connection list as set. */
@@ -172,6 +174,14 @@ function folderEntries(at: TreeSelection): MenuEntry[] {
     // Many folders would make a long menu: they get one of their own.
     if (entries.length > 1) return ["separator", { label: t("folder.menu"), icon: "i-lucide-folder", children: entries }];
     return entries.length > 0 ? ["separator", ...entries] : [];
+}
+
+/** "Export..." and, as a shortcut, "Export as" with the wizard on the chosen format. */
+function exportEntries(at: TreeSelection | TreeSelection[]): MenuEntry[] {
+    return [
+        { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(at) },
+        exportWizard.exportAsGroup(format => void actions.exportWizard(at, undefined, format))
+    ];
 }
 
 /** The bucket a row stands for, when it is the `.files` of one. */
@@ -591,7 +601,7 @@ function openManyMenu(event: MouseEvent, rows: TreeSelection[]) {
         entries = [
             head,
             "separator",
-            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(rows) },
+            ...exportEntries(rows),
             "separator",
             { label: t("database.dropMany", { count: rows.length }), command: "tree.drop", danger: true, action: () => void actions.dropMany(rows) },
             ...folderEntries,
@@ -605,7 +615,7 @@ function openManyMenu(event: MouseEvent, rows: TreeSelection[]) {
             { label: t("tab.browseMany", { count: rows.length }), icon: "i-lucide-file-text", action: () => actions.browseMany(rows) },
             "separator",
             { label: t("collection.copyMany", { count: rows.length }), icon: "i-lucide-copy", command: "tree.copy", action: () => copying.copyMany(places) },
-            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(rows) },
+            ...exportEntries(rows),
             "separator",
             { label: t("collection.dropMany", { count: rows.length }), icon: "i-lucide-file-x-2", command: "tree.drop", danger: true, action: () => void actions.dropMany(rows) },
             ...folderEntries,
@@ -693,7 +703,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("collection.copy"), icon: "i-lucide-copy", command: "tree.copy", action: () => copying.copy({ connectionId: at.connectionId, database: at.database!, collection: at.collection! }) },
             paste(at.database!),
-            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(at) },
+            ...exportEntries(at),
             { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at), disabled: isView(at) },
             "separator",
             { label: t("collection.rename"), action: () => void actions.renameCollection(at) },
@@ -726,7 +736,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("database.stats"), action: () => actions.databaseStats(at) },
             { label: t("database.collectionsStats"), action: () => actions.collectionsStats(at) },
-            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(at) },
+            ...exportEntries(at),
             { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at) },
             "separator",
             { label: t("users.manage"), icon: "i-lucide-users", command: "users.manage", action: () => actions.manageUsers(at) },
@@ -747,7 +757,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("users.manage"), icon: "i-lucide-users", command: "users.manage", action: () => actions.manageUsers(at) },
             { label: t("roles.manage"), icon: "i-lucide-shield", command: "roles.manage", action: () => actions.manageRoles(at) },
             "separator",
-            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(at) },
+            ...exportEntries(at),
             { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at) },
             "separator",
             { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void actions.refresh(at) },

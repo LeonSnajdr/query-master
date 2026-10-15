@@ -763,6 +763,7 @@
   "error.transfer.writingPipeline": "Eine schreibende Pipeline ($out, $merge) wird für einen Export nicht ausgeführt.",
   "export.addCollection": "Collection hinzufügen",
   "export.allDocuments": "alle Dokumente",
+  "export.as": "Exportieren als",
   "export.column.collection": "Collection",
   "export.column.collection.hint.default": "Name",
   "export.column.database": "Datenbank",

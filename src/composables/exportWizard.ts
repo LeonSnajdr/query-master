@@ -7,7 +7,8 @@ import { useNotices } from "@/composables/notices";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
-import { DEFAULT_CSV, DEFAULT_SQL, exportJob, exportPreset, isSystemCollection, readExportPreset, rowsFor, switchFormat } from "@/transfer/export";
+import type { MenuEntry } from "@/menu";
+import { DEFAULT_CSV, DEFAULT_SQL, EXPORT_FORMATS, exportJob, exportPreset, isSystemCollection, readExportPreset, rowsFor, switchFormat } from "@/transfer/export";
 import type { ExportFormat, ExportPreset, ExportRow, ExportState } from "@/transfer/export";
 import { applyProgress, waitingRows } from "@/transfer/progress";
 import type { RowProgress } from "@/transfer/progress";
@@ -74,9 +75,10 @@ export function useExportWizard() {
 
     /**
      * Opens the wizard with the rows of the selection, or of several rows of one connection
-     * selected together; `filter` for the rows of a query.
+     * selected together; `filter` for the rows of a query. `format` is the tile chosen already
+     * ("Export as" in the menus); else JSON.
      */
-    async function openExport(selection: TreeSelection | TreeSelection[], filter?: string) {
+    async function openExport(selection: TreeSelection | TreeSelection[], filter?: string, format?: ExportFormat) {
         const all = Array.isArray(selection) ? selection : [selection];
         const at = all[0];
         if (!at || busy.value || wizard.runId) return;
@@ -105,6 +107,7 @@ export function useExportWizard() {
                 columns: {}
             });
             wizard.state.database = { connectionId: at.connectionId, database: "", insertMode: preset.insertMode, copyIndexes: preset.copyIndexes };
+            if (format !== undefined && format !== "json") setFormat(format);
         } catch (error) {
             report(error);
         } finally {
@@ -178,5 +181,14 @@ export function useExportWizard() {
         wizard.open = false;
     }
 
-    return { wizard, busy, openExport, setFormat, addRows, chooseTargetConnection, start, stop, close };
+    /** "Export as": a menu of the formats, each opening the wizard on its tile. */
+    function exportAsGroup(open: (format: ExportFormat) => void): MenuEntry {
+        return {
+            label: t("export.as"),
+            icon: "i-lucide-file-output",
+            children: EXPORT_FORMATS.map(format => ({ label: `${t(`export.format.${format}`)} …`, action: () => open(format) }))
+        };
+    }
+
+    return { wizard, busy, openExport, exportAsGroup, setFormat, addRows, chooseTargetConnection, start, stop, close };
 }
