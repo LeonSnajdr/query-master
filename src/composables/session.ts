@@ -14,7 +14,7 @@ import type { TabKind, WorkTab } from "@/stores/tabs";
 const SAVE_DELAY = 2000;
 
 /** Kinds of tab kept: all but none; a server tab keeps its page. */
-const KEPT_KINDS: TabKind[] = ["start", "browse", "shell", "aggregate", "sql", "server"];
+const KEPT_KINDS: TabKind[] = ["start", "browse", "shell", "aggregate", "sql", "server", "schema"];
 
 /** What a tab needs to be opened again, without results (stage 20). */
 export function sessionContent(tab: WorkTab): Json {

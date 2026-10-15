@@ -707,6 +707,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
         entries = [
             ...(bucket === undefined ? [] : [{ label: t("gridfs.open"), icon: "i-lucide-folder-archive", action: () => actions.openGridFs(at, bucket) }]),
             { label: t("tab.browse"), icon: "i-lucide-file-text", command: "tab.browse", action: () => actions.browse(at) },
+            { label: t("schema.open"), icon: "i-lucide-chart-column", command: "tab.schema", action: () => actions.schema(at) },
             "separator",
             { label: t("tab.shell"), icon: "i-lucide-square-terminal", command: "tab.shell", action: () => actions.openShell(at) },
             { label: t("tab.aggregation"), icon: "i-lucide-network", command: "tab.aggregation", action: () => actions.aggregation(at) },

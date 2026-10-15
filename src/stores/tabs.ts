@@ -4,13 +4,15 @@ import type { Ref } from "vue";
 import { backend, errorMessage } from "@/api";
 import { preferences } from "@/composables/appearance";
 import { useWriteGuard } from "@/composables/writeGuard";
-import { isDoc, toNumber, toShell } from "@/shell/ejson";
+import { isDoc, preview, toNumber, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError, scriptErrorPosition } from "@/shell/message";
 import type { Message } from "@/shell/message";
 import { convertQueryText, parseStatements, statementAt } from "@/shell/parse";
 import type { Statement } from "@/shell/parse";
 import { hintsOf, isExplain, readExplain } from "@/shell/explain";
+import { analyze, DEFAULT_SAMPLE, sampleCommand } from "@/shell/schema";
+import type { ChartPick, SchemaResult } from "@/shell/schema";
 import type { ExplainResult } from "@/shell/explain";
 import { isWrite, pageCommand, planStatement, replyError } from "@/shell/plan";
 import type { Plan } from "@/shell/plan";
@@ -43,7 +45,19 @@ export interface TabExplain {
     previousMs?: number;
 }
 /** The start page, a collection with its query fields, a shell, a pipeline, or a page about the server. */
-export type TabKind = "start" | "browse" | "shell" | "aggregate" | "sql" | "server";
+export type TabKind = "start" | "browse" | "shell" | "aggregate" | "sql" | "server" | "schema";
+
+/** What the schema analysis of a tab found (stage 23). */
+export interface TabSchema {
+    result: SchemaResult;
+    /** The sample size asked for; 0 for all documents. */
+    size: number;
+    /** Documents in the collection, when it could be told. */
+    total?: number;
+    milliseconds: number;
+    /** Reading all took too long: a sample was read instead. */
+    sampledInstead: boolean;
+}
 /** What a server tab shows. */
 /** What a server tab shows; `gridfs` the files of the bucket named in `collection`. */
 export type ServerPage = "status" | "log" | "users" | "roles" | "gridfs";
@@ -122,6 +136,9 @@ export interface WorkTab {
     pipeline?: PipelineStage[];
     /** Aggregate tabs: shell text of the options (`allowDiskUse`, `maxTimeMS` …). */
     aggregateOptions?: string;
+    /** Schema tabs: what the analysis found, and the bars chosen as a filter. */
+    schema?: TabSchema;
+    picks?: ChartPick[];
     /** The plan of the result (view "Plan"), read when that view shows. */
     explain?: TabExplain;
     /** Dotted path of the field chosen in the result; the status bar shows it. */
@@ -218,6 +235,55 @@ export const useTabsStore = defineStore("tabs", () => {
         const pageSize = toNumber(content.pageSize);
         if (pageSize !== undefined && pageSize > 0) options.pageSize = pageSize;
         return create(kind, options);
+    }
+
+    /** The schema analysis of a collection in a tab of its own (stage 23); it reads at once. */
+    function openSchema(target: { connectionId: string; database: string; collection: string }): WorkTab {
+        const open = tabs.value.find(item => item.kind === "schema" && item.connectionId === target.connectionId && item.database === target.database && item.collection === target.collection);
+        if (open) {
+            activeId.value = open.id;
+            return open;
+        }
+        const tab = create("schema", { ...target, picks: [] });
+        void analyzeSchema(tab, DEFAULT_SAMPLE);
+        return tab;
+    }
+
+    /**
+     * Reads a sample of the collection (all of it with `size` 0, within a time limit; when that
+     * runs out, a sample of 5000) and analyses it. The fields and values also go to the editor.
+     */
+    function analyzeSchema(tab: WorkTab, size = tab.schema?.size ?? DEFAULT_SAMPLE): Promise<boolean> {
+        return guarded(tab, async () => {
+            const collection = tab.collection ?? "";
+            const started = performance.now();
+            let sampledInstead = false;
+            let documents: Json[];
+            const read = async (count: number) => (await backend.runCursorCommand(tab.connectionId, tab.database, sampleCommand(collection, count), count > 0 ? count : 1_000_000)).documents;
+            try {
+                documents = await read(size);
+            } catch (error) {
+                if (size !== 0) throw error;
+                sampledInstead = true;
+                documents = await read(5000);
+            }
+            let total: number | undefined;
+            try {
+                total = toNumber((await backend.runCommand(tab.connectionId, tab.database, { count: collection })).n);
+            } catch {
+                total = undefined;
+            }
+            connections.rememberSample(tab.connectionId, tab.database, collection, documents);
+            tab.schema = markRaw({ result: analyze(documents), size, total, milliseconds: Math.round(performance.now() - started), sampledInstead });
+        });
+    }
+
+    /** The documents the chosen bars stand for, in the document browser of the collection. */
+    function browseFiltered(target: { connectionId: string; database: string; collection: string }, filter: Doc): WorkTab {
+        const tab = create("browse", target);
+        tab.stages[0]!.text = preview(filter, Number.POSITIVE_INFINITY);
+        void runBrowse(tab);
+        return tab;
     }
 
     function openStart(): void {
@@ -775,7 +841,7 @@ export const useTabsStore = defineStore("tabs", () => {
     return {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, move, step,
-        restoreTab, run, showResult, explainResult, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
+        openSchema, analyzeSchema, browseFiltered, restoreTab, run, showResult, explainResult, stop, runBrowse, runAggregate, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument
     };
 });

@@ -13,6 +13,7 @@ import BrowsePanel from "@/components/BrowsePanel.vue";
 import ConnectionDock from "@/components/ConnectionDock.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import IconButton from "@/components/IconButton.vue";
+import SchemaPanel from "@/components/SchemaPanel.vue";
 import ServerPanel from "@/components/server/ServerPanel.vue";
 import ShellPanel from "@/components/ShellPanel.vue";
 import SqlPanel from "@/components/SqlPanel.vue";
@@ -53,7 +54,7 @@ const focus = useFocusAreas();
 const dock = useTemplateRef("dock");
 const tabMenu = useTemplateRef("tabMenu");
 
-const TAB_ICONS = { start: "i-lucide-house", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", sql: "i-lucide-file-code-2", server: "i-lucide-activity" } as const;
+const TAB_ICONS = { start: "i-lucide-house", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", sql: "i-lucide-file-code-2", server: "i-lucide-activity", schema: "i-lucide-chart-column" } as const;
 
 const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield", gridfs: "i-lucide-folder-archive" } as const;
 
@@ -71,6 +72,7 @@ function titleOf(tab: WorkTab): string {
     if (tab.kind === "start") return t("start.title");
     if (tab.kind === "server") return t(`server.tab.${tab.page ?? "status"}`, { name: connections.profiles.find(item => item.id === tab.connectionId)?.name ?? "", database: tab.database, bucket: tab.collection ?? "" });
     if (tab.kind === "sql") return `SQL · ${tab.database}`;
+    if (tab.kind === "schema") return t("schema.tabTitle", { name: tab.collection ?? "" });
     if (tab.kind === "shell" && tab.file) return fileName(tab.file);
     return tab.kind === "browse" || tab.kind === "aggregate" ? tab.collection ?? "" : tab.database;
 }
@@ -160,6 +162,7 @@ const SHORTCUTS: Partial<Record<CommandId, () => void>> = {
     "connection.uri": () => void actions.viewUri(),
     "connection.disconnect": () => void actions.disconnect(),
     "tab.browse": () => actions.browse(),
+    "tab.schema": () => actions.schema(),
     "query.save": () => withActive(tab => isQueryTab(tab) && dialogs.saveQuery(tab.id)),
     "palette.open": () => (paletteOpen.value = true),
     "tab.shell": () => actions.openShell(),
@@ -371,6 +374,10 @@ onMounted(async () => {
                     <ServerPanel
                         v-else-if="tab.kind === 'server'"
                         :tab
+                    />
+                    <SchemaPanel
+                        v-else-if="tab.kind === 'schema'"
+                        :tabId="tab.id"
                     />
                     <ShellPanel
                         v-else

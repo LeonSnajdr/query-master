@@ -330,6 +330,18 @@ export const useConnectionsStore = defineStore("connections", () => {
         return fields.get(key) ?? [];
     }
 
+    /**
+     * A larger sample read elsewhere (the schema analysis): its fields and values serve the editor
+     * as well, in place of the small sample of `fieldsOf`.
+     */
+    function rememberSample(id: string, database: string, collection: string, documents: Json[]): void {
+        const key = `${id}/${database}/${collection}`;
+        const found = new Set<string>();
+        for (const document of documents) collectFields(document, "", 1, found);
+        fields.set(key, [...found].sort((a, b) => a.localeCompare(b)));
+        sampleValues.set(key, collectValues(documents));
+    }
+
     function searchKey(id: string, database: string, collection: string, field: string): string {
         return `${id}/${database}/${collection}/${field}\u0000`;
     }
@@ -389,5 +401,5 @@ export const useConnectionsStore = defineStore("connections", () => {
         return sampleValues.get(`${id}/${database}/${collection}`)?.get(field);
     }
 
-    return { profiles, saved, sessions, connecting, failed, selected, marked, inTree, load, save, setEnvironment, environmentOf, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
+    return { profiles, saved, sessions, connecting, failed, selected, marked, inTree, load, save, setEnvironment, environmentOf, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, rememberSample, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
 });

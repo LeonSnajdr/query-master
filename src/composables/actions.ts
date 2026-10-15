@@ -98,6 +98,11 @@ export function useActions() {
         }
     }
 
+    /** The schema analysis of the collection (stage 23). */
+    function schema(at = target.value) {
+        if (at?.database !== undefined && at.collection !== undefined) tabs.openSchema({ connectionId: at.connectionId, database: at.database, collection: at.collection });
+    }
+
     /** The aggregation builder on the collection. */
     function aggregation(at = target.value) {
         if (at?.database !== undefined && at.collection !== undefined) {
@@ -511,7 +516,7 @@ export function useActions() {
 
     return {
         target, hasConnection, hasDatabase, hasCollection,
-        openShell, browse, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
+        openShell, browse, schema, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,
         dropMany, browseMany, setColorMany, toggleReadonlyMany, moveManyToFolder, toggleIndexesHidden, refreshMany, disconnectMany,

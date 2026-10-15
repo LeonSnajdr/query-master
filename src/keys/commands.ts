@@ -57,6 +57,7 @@ const LIST = [
     command({ id: "tab.shell", label: "tab.shell", group: "tabs", scope: "global", keys: ["ctrl+t"] }),
     command({ id: "tab.aggregation", label: "tab.aggregation", group: "tabs", scope: "global", keys: ["ctrl+shift+q"] }),
     command({ id: "tab.sql", label: "tab.sql", group: "tabs", scope: "global", keys: ["ctrl+alt+q"] }),
+    command({ id: "tab.schema", label: "schema.open", group: "tabs", scope: "global", keys: [] }),
     command({ id: "tab.refresh", label: "action.refresh", group: "tabs", scope: "global", keys: ["ctrl+r"] }),
     command({ id: "tab.next", label: "tab.next", group: "tabs", scope: "global", keys: ["ctrl+tab"] }),
     command({ id: "tab.previous", label: "tab.previous", group: "tabs", scope: "global", keys: ["ctrl+shift+tab"] }),

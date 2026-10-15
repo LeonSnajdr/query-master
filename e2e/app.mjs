@@ -1301,6 +1301,21 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("settings-close").click();
     });
 
+    await step("the schema analysis shows a card per field; a bar opens the documents with that value", async () => {
+        await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).click({ button: "right" });
+        await chooseMenu("Analyse schema");
+        const schemaPanel = page.locator("[data-testid=schema-panel]:visible");
+        const card = schemaPanel.locator("[data-testid=schema-card]", { has: page.locator("[data-testid=schema-field]", { hasText: /^n$/ }) });
+        await card.waitFor();
+        assert.match(await schemaPanel.locator("[data-testid=schema-overview]").innerText(), /of \d+ documents/);
+        // Each value of `n` is in one document: its bar filters to that one.
+        await card.locator("[data-testid=schema-bar]").first().click();
+        assert.match((await schemaPanel.locator("[data-testid=schema-filter]").innerText()).trim(), /^\{ n: \d+ \}$/);
+        await schemaPanel.locator("[data-testid=schema-open]").click();
+        await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 1"));
+        await page.keyboard.press("Control+w");
+    });
+
     await step("a shortcut changed in the settings acts, shows on the buttons, outlasts a reload and is reset", async () => {
         const browseRow = page.locator("dialog[open] [data-command='tab.browse']");
         await page.keyboard.press("Control+Alt+P");

@@ -88,6 +88,8 @@ watch([open, () => props.request], async ([isOpen]) => {
     viewOn.value = props.request.collection ?? collections.value[0] ?? "";
     pipeline.value = props.request.pipeline ?? "[\n    \n]";
     if (mode.value === "validator") await loadValidator(props.request).catch(cause => (error.value = say(errorMessage(cause))));
+    // A proposal (the schema analysis) replaces the current validator; level and action stay as read.
+    if (props.request?.validator) validator.value = props.request.validator;
 });
 
 function parse(text: string, what: string): Json {

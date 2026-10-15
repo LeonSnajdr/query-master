@@ -50,6 +50,8 @@ export interface CollectionRequest {
     collection?: string;
     /** A new view: the pipeline to start with, as text. */
     pipeline?: string;
+    /** The validator to start with instead of the current one (from the schema analysis), as text. */
+    validator?: string;
 }
 
 /** The index dialog: a new index of a collection, a copy of `index`, or `index` made anew. */
