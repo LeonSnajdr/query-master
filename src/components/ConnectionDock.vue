@@ -437,8 +437,70 @@ const manageEntries = computed<MenuEntry[]>(() => [
     { label: t("roles.manage"), icon: "i-lucide-shield", command: "roles.manage", action: () => actions.manageRoles(), disabled: !actions.hasConnection.value }
 ]);
 
+/** Arrow left on a row: an open row closes; a closed one leaves it to the tree, which goes up. */
+function fold(event: KeyboardEvent, open: boolean, toggle: () => unknown): void {
+    if (!open || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    event.preventDefault();
+    void toggle();
+}
+
+/** Arrow right on a row: a closed row opens; an open one leaves it to the tree, which goes down. */
+function unfold(event: KeyboardEvent, open: boolean, toggle: () => unknown): void {
+    if (open || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    event.preventDefault();
+    void toggle();
+}
+
+/** The rows of the tree a key moves between, top to bottom. */
+function treeItems(): HTMLElement[] {
+    return [...treeElement.value?.querySelectorAll<HTMLElement>("[role=treeitem]") ?? []];
+}
+
+/** Focuses a row; one that can be selected is selected alone (with Shift: the rows up to it). */
+function focusItem(item: HTMLElement | undefined, extend: boolean): void {
+    if (!item) return;
+    item.focus();
+    item.scrollIntoView({ block: "nearest" });
+    const key = item.dataset.row;
+    if (key === undefined) return;
+    const at = rowOf(key);
+    if (!extend) {
+        anchor = at;
+        setMarked([], at);
+        return;
+    }
+    const current = connections.marked.length > 0 ? connections.marked : connections.selected ? [connections.selected] : [];
+    const next = click({ rows: current, anchor: anchor ?? connections.selected }, at, "range", shownRows());
+    setMarked(next.rows, at);
+}
+
+/**
+ * Arrows as in a tree view (WAI-ARIA): up and down to the row above or below, Home and End to the
+ * first and last; right into an open row, left out to the row it lies in.
+ */
+function onArrowKey(event: KeyboardEvent): boolean {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return false;
+    const items = treeItems();
+    const current = (event.target as HTMLElement).closest<HTMLElement>("[role=treeitem]");
+    const at = current ? items.indexOf(current) : -1;
+    if (!current || at === -1) return false;
+    const level = (item: HTMLElement | undefined) => Number(item?.getAttribute("aria-level") ?? 0);
+    let target: HTMLElement | undefined;
+    if (event.key === "ArrowDown") target = items[at + 1];
+    else if (event.key === "ArrowUp") target = items[at - 1];
+    else if (event.key === "Home") target = items[0];
+    else if (event.key === "End") target = items.at(-1);
+    else if (event.key === "ArrowRight" && current.getAttribute("aria-expanded") === "true" && level(items[at + 1]) > level(current)) target = items[at + 1];
+    else if (event.key === "ArrowLeft") target = items.slice(0, at).reverse().find(item => level(item) < level(current));
+    else return false;
+    event.preventDefault();
+    focusItem(target, event.shiftKey && (event.key === "ArrowDown" || event.key === "ArrowUp"));
+    return true;
+}
+
 /** Keys on a focused row act on the selected one: Del drops, Ctrl+C copies, Ctrl+V pastes. */
 function onTreeKey(event: KeyboardEvent) {
+    if (onArrowKey(event)) return;
     const at = connections.selected;
     if (!at) return;
     const many = connections.marked;
@@ -960,10 +1022,14 @@ defineExpose({
                     @contextmenu="openMenu($event, { connectionId: profile.id })"
                     @dblclick="toggleConnection(profile)"
                     @keydown.enter.self="toggleConnection(profile)"
+                    @keydown.left.self="fold($event, connections.sessions[profile.id]?.open === true, () => toggleConnection(profile))"
+                    @keydown.right.self="unfold($event, connections.sessions[profile.id]?.open !== false, () => toggleConnection(profile))"
+                    :aria-expanded="connections.sessions[profile.id] ? connections.sessions[profile.id]!.open : undefined"
                     :aria-selected="isSelected({ connectionId: profile.id })"
                     :class="rowClass({ connectionId: profile.id })"
                     :data-drop-connection="profile.id"
                     :data-row="keyOf({ connectionId: profile.id })"
+                    aria-level="1"
                     class="tree-row pl-3.5"
                     data-drop-scope=""
                     data-testid="connection-row"
@@ -1013,7 +1079,11 @@ defineExpose({
                             @click="notes.toggleFolder(profile.id, '', databaseRow.name)"
                             @contextmenu.prevent="openFolderMenu($event, profile, undefined, databaseRow.name)"
                             @keydown.enter.self="notes.toggleFolder(profile.id, '', databaseRow.name)"
+                            @keydown.left.self="fold($event, notes.isOpen(profile.id, '', databaseRow.name), () => notes.toggleFolder(profile.id, '', databaseRow.name))"
+                            @keydown.right.self="unfold($event, notes.isOpen(profile.id, '', databaseRow.name), () => notes.toggleFolder(profile.id, '', databaseRow.name))"
                             @pointerdown="startDrag($event, { connectionId: profile.id, scope: '', folder: databaseRow.name })"
+                            :aria-expanded="notes.isOpen(profile.id, '', databaseRow.name)"
+                            :aria-level="2 + databaseRow.depth"
                             :data-drop-connection="profile.id"
                             :data-drop-folder="databaseRow.name"
                             :style="indent(1.875 + databaseRow.depth)"
@@ -1049,7 +1119,11 @@ defineExpose({
                                     @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name })"
                                     @dblclick="toggleDatabase(profile, database)"
                                     @keydown.enter.self="toggleDatabase(profile, database)"
+                                    @keydown.left.self="fold($event, database.open, () => toggleDatabase(profile, database))"
+                                    @keydown.right.self="unfold($event, database.open, () => toggleDatabase(profile, database))"
                                     @pointerdown="startDrag($event, dragRows({ connectionId: profile.id, database: database.name }))"
+                                    :aria-expanded="database.open"
+                                    :aria-level="2 + databaseRow.depth"
                                     :aria-selected="isSelected({ connectionId: profile.id, database: database.name })"
                                     :class="rowClass({ connectionId: profile.id, database: database.name })"
                                     :data-drop-connection="profile.id"
@@ -1091,7 +1165,11 @@ defineExpose({
                                             @click="notes.toggleFolder(profile.id, database.name, row.name)"
                                             @contextmenu.prevent="openFolderMenu($event, profile, database, row.name)"
                                             @keydown.enter.self="notes.toggleFolder(profile.id, database.name, row.name)"
+                                            @keydown.left.self="fold($event, notes.isOpen(profile.id, database.name, row.name), () => notes.toggleFolder(profile.id, database.name, row.name))"
+                                            @keydown.right.self="unfold($event, notes.isOpen(profile.id, database.name, row.name), () => notes.toggleFolder(profile.id, database.name, row.name))"
                                             @pointerdown="startDrag($event, { connectionId: profile.id, scope: database.name, folder: row.name })"
+                                            :aria-expanded="notes.isOpen(profile.id, database.name, row.name)"
+                                            :aria-level="3 + databaseRow.depth + row.depth"
                                             :data-drop-connection="profile.id"
                                             :data-drop-folder="row.name"
                                             :data-drop-scope="database.name"
@@ -1123,7 +1201,11 @@ defineExpose({
                                                     @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection })"
                                                     @dblclick="openRow(profile, database, collection)"
                                                     @keydown.enter="openRow(profile, database, collection)"
+                                                    @keydown.left.self="fold($event, database.details[collection]?.open === true, () => toggleCollection(profile, database, collection))"
+                                                    @keydown.right.self="unfold($event, database.types[collection] === 'view' || database.details[collection]?.open === true, () => toggleCollection(profile, database, collection))"
                                                     @pointerdown="startDrag($event, dragRows({ connectionId: profile.id, database: database.name, collection }))"
+                                                    :aria-expanded="database.types[collection] === 'view' ? undefined : database.details[collection]?.open === true"
+                                                    :aria-level="3 + databaseRow.depth + row.depth"
                                                     :aria-selected="isSelected({ connectionId: profile.id, database: database.name, collection })"
                                                     :class="rowClass({ connectionId: profile.id, database: database.name, collection })"
                                                     :data-row="keyOf({ connectionId: profile.id, database: database.name, collection })"
@@ -1166,6 +1248,7 @@ defineExpose({
                                                         @click="onRowClick($event, { connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
                                                         @contextmenu="openMenu($event, { connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
                                                         @dblclick="actions.indexInfo({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
+                                                        :aria-level="4 + databaseRow.depth + row.depth"
                                                         :aria-selected="isSelected({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
                                                         :class="rowClass({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
                                                         :data-row="keyOf({ connectionId: profile.id, database: database.name, collection, index: String(index.name) })"
