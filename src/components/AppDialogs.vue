@@ -32,6 +32,13 @@ const { copied: scriptCopied, copy: copyScriptText } = useCopy();
 function copyScript() {
     void copyScriptText(state.confirm?.script ?? "");
 }
+/** The id of a previewed document, copied from its head; the head shows the check for that one. */
+const { copied: idCopied, copy: copyIdText } = useCopy();
+const copiedId = shallowRef<string>();
+function copyId(id: string) {
+    copiedId.value = id;
+    void copyIdText(id);
+}
 const textOpen = computed({ get: () => state.text !== undefined, set: open => !open && (state.text = undefined) });
 
 const answer = shallowRef("");
@@ -133,71 +140,124 @@ function copyText() {
 
     <DialogRoot v-model="confirmOpen">
         <!-- No display class on the dialog itself: it would show the closed dialog. -->
-        <DialogContent class="dialog">
+        <DialogContent
+            :class="state.confirm?.environment ? (state.confirm.environment.kind === 'production' ? 'border-t-3 border-t-error w-[min(92vw,38rem)]!' : 'border-t-3 border-t-warning w-[min(92vw,38rem)]!') : ''"
+            class="dialog"
+        >
             <div
                 v-if="state.confirm"
                 class="flex flex-col gap-4"
             >
-                <DialogTitle class="dialog-title">
-                    {{ state.confirm.title }}
-                </DialogTitle>
+                <div class="flex items-center gap-2.5">
+                    <span
+                        v-if="state.confirm.environment"
+                        :class="[state.confirm.deleting ? 'i-lucide-trash-2' : 'i-lucide-triangle-alert', state.confirm.environment.kind === 'production' ? 'text-error' : 'text-warning']"
+                        aria-hidden="true"
+                        class="size-5 shrink-0"
+                    />
+                    <DialogTitle class="dialog-title">
+                        {{ state.confirm.title }}
+                    </DialogTitle>
+                    <span
+                        v-if="state.confirm.environment"
+                        :class="state.confirm.environment.kind === 'production' ? 'bg-error/15 text-error' : 'bg-warning/15 text-warning'"
+                        class="ml-auto shrink-0 max-w-[45%] truncate px-2 rounded-sm text-[11.5px] leading-5"
+                        data-testid="confirm-environment"
+                    >
+                        {{ state.confirm.environment.name ? `${state.confirm.environment.name} · ` : "" }}{{ $t(`environment.${state.confirm.environment.kind}`) }}
+                    </span>
+                </div>
                 <DialogDescription
+                    v-if="state.confirm.summary"
+                    class="m-0 -mt-2 text-[13px] text-on-surface break-words"
+                    data-testid="confirm-summary"
+                >
+                    <I18nT
+                        :keypath="state.confirm.summary.keypath"
+                        :plural="state.confirm.summary.plural"
+                        scope="global"
+                        tag="span"
+                    >
+                        <template
+                            v-for="(value, key) in state.confirm.summary.values"
+                            :key="key"
+                            #[key]
+                        >
+                            <span :class="key === 'command' ? 'text-on-surface-variant' : 'text-on-surface-strong'">{{ value }}</span>
+                        </template>
+                    </I18nT>
+                </DialogDescription>
+                <DialogDescription
+                    v-else
                     class="m-0 text-sm text-on-surface"
                     data-testid="confirm-text"
                 >
                     {{ state.confirm.text }}
                 </DialogDescription>
-                <dl
-                    v-if="state.confirm.facts?.length"
-                    class="m-0 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[13px]"
-                    data-testid="confirm-facts"
-                >
-                    <template
-                        v-for="fact in state.confirm.facts"
-                        :key="fact.label"
-                    >
-                        <dt class="text-on-surface-variant">
-                            {{ fact.label }}
-                        </dt>
-                        <dd class="m-0 font-mono text-on-surface-strong break-all">
-                            {{ fact.value }}
-                        </dd>
-                    </template>
-                </dl>
                 <div
-                    v-if="state.confirm.table?.rows.length"
-                    class="max-h-56 overflow-auto"
+                    v-if="state.confirm.changes?.length"
+                    class="flex flex-col gap-2"
+                    data-testid="confirm-changes"
                 >
-                    <table
-                        class="plain-table"
-                        data-testid="confirm-table"
-                    >
-                        <thead>
-                            <tr>
-                                <th
-                                    v-for="head in state.confirm.table.heads"
-                                    :key="head"
-                                    class="text-left"
+                    <span
+                        v-if="state.confirm.more"
+                        class="text-[12px] text-on-surface-variant"
+                    >{{ $t("guard.previewFirst", { count: state.confirm.changes.length }) }}</span>
+                    <div class="max-h-64 overflow-auto flex flex-col gap-2">
+                        <div
+                            v-for="(change, index) in state.confirm.changes"
+                            :key="index"
+                            class="rounded-sm border border-divider"
+                        >
+                            <div class="h-7 pl-3 pr-1 flex items-center gap-2 border-b border-divider font-mono text-[12px] text-on-surface-variant">
+                                <span class="truncate">_id: {{ change.id }}</span>
+                                <ButtonRoot
+                                    @click="copyId(change.id)"
+                                    :aria-label="$t('action.copy')"
+                                    :title="$t('action.copy')"
+                                    class="ml-auto size-6 shrink-0 inline-flex items-center justify-center rounded-sm hover:bg-surface-variant"
                                 >
-                                    {{ head }}
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr
-                                v-for="(row, index) in state.confirm.table.rows"
-                                :key="index"
+                                    <ButtonContent>
+                                        <span
+                                            :class="idCopied && copiedId === change.id ? 'i-lucide-check text-success' : 'i-lucide-copy'"
+                                            class="block size-3.5"
+                                        />
+                                    </ButtonContent>
+                                </ButtonRoot>
+                            </div>
+                            <div
+                                v-if="change.removed !== undefined"
+                                class="p-2"
                             >
-                                <td
-                                    v-for="(cell, column) in row"
-                                    :key="column"
-                                    class="font-mono"
+                                <div class="px-2 py-0.5 rounded-sm bg-error/12 text-error font-mono text-[12px] break-all">
+                                    − {{ change.removed }}
+                                </div>
+                            </div>
+                            <div
+                                v-else
+                                class="p-2 pl-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 items-start font-mono text-[12px]"
+                            >
+                                <template
+                                    v-for="field in change.fields"
+                                    :key="field.field"
                                 >
-                                    {{ cell }}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                                    <span class="pt-0.5 text-on-surface-variant">{{ field.field }}</span>
+                                    <div class="flex flex-col gap-0.5">
+                                        <span class="px-2 py-0.5 rounded-sm bg-error/12 text-error break-all">− {{ field.before }}</span>
+                                        <span class="px-2 py-0.5 rounded-sm bg-success/12 text-success break-all">+ {{ field.after }}</span>
+                                    </div>
+                                </template>
+                                <span
+                                    v-if="change.fields.length === 0"
+                                    class="col-span-2 font-sans text-on-surface-variant"
+                                >{{ $t("guard.noFields") }}</span>
+                            </div>
+                        </div>
+                    </div>
+                    <span
+                        v-if="state.confirm.more"
+                        class="text-[12px] text-on-surface-variant"
+                    >{{ $t("guard.more", { count: state.confirm.more.toLocaleString($i18n.locale) }, state.confirm.more) }}</span>
                 </div>
                 <label
                     v-if="state.confirm.requireName !== undefined"
@@ -239,8 +299,8 @@ function copyText() {
                     </DialogClose>
                     <ButtonRoot
                         @click="confirmFree && resolveConfirm(true)"
+                        :class="state.confirm.environment?.kind === 'test' ? 'btn-base bg-warning text-on-warning font-semibold' : 'btn-danger'"
                         :disabled="!confirmFree"
-                        class="btn-danger"
                         data-testid="confirm-action"
                     >
                         <ButtonContent>{{ state.confirm.action }}</ButtonContent>

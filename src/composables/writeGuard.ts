@@ -3,6 +3,7 @@ import { useDialogs } from "@/composables/dialogs";
 import i18n from "@/plugins/i18n";
 import { preview, toNumber, toShell } from "@/shell/ejson";
 import type { Doc } from "@/shell/ejson";
+import type { ConfirmChange, ConfirmRequest } from "@/composables/dialogs";
 import { changesOf, countCommand, needsConfirm, needsName, scriptWrites, touched, writeInfo } from "@/shell/guard";
 import type { Environment, WriteInfo } from "@/shell/guard";
 import { useConnectionsStore } from "@/stores/connections";
@@ -13,13 +14,44 @@ const confirmedEdits = new Set<string>();
 /** Documents shown before and after in the confirmation. */
 const PREVIEWED = 2;
 
-function t(key: string, params: Record<string, unknown> = {}): string {
-    return (i18n.global.t as (key: string, params: Record<string, unknown>) => string)(key, params);
+function t(key: string, params: Record<string, unknown> = {}, plural?: number): string {
+    const translate = i18n.global.t as (key: string, params: Record<string, unknown>, plural?: number) => string;
+    return plural === undefined ? translate(key, params) : translate(key, params, plural);
 }
 
 /** Numbers as the language writes them: 1 204 / 1,204. */
 function number(value: number): string {
     return value.toLocaleString(i18n.global.locale.value);
+}
+
+/** Whether the write takes documents away: a delete, or a findAndModify that removes. */
+function removes(info: WriteInfo): boolean {
+    return info.command === "delete" || (info.command === "findAndModify" && info.update === undefined);
+}
+
+/** What the write does, for the title and the sentence of the confirmation. */
+function kindOf(info: WriteInfo): "write" | "delete" | "drop" | "dropDatabase" {
+    if (info.command === "drop" || info.command === "dropDatabase") return info.command;
+    return removes(info) ? "delete" : "write";
+}
+
+/** The sentence of the confirmation: what happens, where, to how many documents. */
+function summaryOf(info: WriteInfo, target: string, count: number | undefined): NonNullable<ConfirmRequest["summary"]> {
+    const values = { target, command: info.command };
+    if (info.command === "dropDatabase") return { keypath: "guard.summary.dropDatabase", values };
+    if (count === undefined) {
+        if (info.command === "drop") return { keypath: "guard.summary.dropUncounted", values };
+        return { keypath: info.filter === undefined ? "guard.summary.writes" : "guard.summary.uncounted", values };
+    }
+    const keypath = info.command === "drop" ? "guard.summary.drop" : info.command === "insert" ? "guard.summary.insert" : removes(info) ? "guard.summary.delete" : "guard.summary.change";
+    return { keypath, values: { ...values, count: number(count) }, plural: count };
+}
+
+/** The label of the button: what it does, with the number of documents when known. */
+function actionOf(info: WriteInfo, count: number | undefined): string {
+    if (info.command === "drop" || info.command === "dropDatabase") return t(`guard.action.${info.command}`);
+    const kind = info.command === "insert" ? "insert" : removes(info) ? "delete" : "change";
+    return count === undefined ? t(`guard.action.${kind}`) : t(`guard.action.${kind}Count`, { count: number(count) }, count);
 }
 
 /**
@@ -41,6 +73,11 @@ export function useWriteGuard() {
         return environment === "test" || environment === "production";
     }
 
+    /** The name of the connection, for the mark of the dialog. */
+    function nameOf(connectionId: string): string {
+        return connections.profiles.find(item => item.id === connectionId)?.name ?? "";
+    }
+
     /** How many documents the write touches; `undefined` when it could not be told in time. */
     async function countOf(connectionId: string, database: string, info: WriteInfo): Promise<number | undefined> {
         if (info.inserted !== undefined) return info.inserted;
@@ -59,20 +96,16 @@ export function useWriteGuard() {
     }
 
     /** Two documents the write touches, field by field before and after (or the documents that go). */
-    async function previewOf(connectionId: string, database: string, info: WriteInfo): Promise<{ heads: string[]; rows: string[][] } | undefined> {
+    async function previewOf(connectionId: string, database: string, info: WriteInfo): Promise<ConfirmChange[] | undefined> {
         if (info.collection === undefined || info.filter === undefined) return undefined;
         try {
             const page = await backend.runCursorCommand(connectionId, database, { find: info.collection, filter: info.filter, limit: PREVIEWED }, PREVIEWED);
-            const rows: string[][] = [];
-            for (const document of page.documents) {
-                const id = preview(document._id ?? null, 30);
-                if (info.command === "delete" || (info.command === "findAndModify" && info.update === undefined)) {
-                    rows.push([id, "", preview(document, 60), t("guard.removed")]);
-                    continue;
-                }
-                for (const change of changesOf(document, info.update) ?? []) rows.push([id, change.field, change.before, change.after ?? "?"]);
-            }
-            return { heads: [t("guard.document"), t("guard.field"), t("guard.before"), t("guard.after")], rows };
+            return page.documents.map((document) => {
+                const id = preview(document._id ?? null, 60);
+                if (removes(info)) return { id, fields: [], removed: preview(document, 160) };
+                const fields = (changesOf(document, info.update) ?? []).map(change => ({ field: change.field, before: change.before, after: change.after ?? "?" }));
+                return { id, fields };
+            });
         } catch {
             return undefined;
         }
@@ -91,20 +124,17 @@ export function useWriteGuard() {
         const count = await countOf(connectionId, database, info);
         if (!needsConfirm(environment, info, count)) return true;
         const target = info.collection === undefined ? database : `${database}.${info.collection}`;
-        const profile = connections.profiles.find(item => item.id === connectionId);
-        const documents = count === undefined ? (info.filter === undefined ? "–" : t("guard.countStopped")) : number(count);
+        const changes = await previewOf(connectionId, database, info);
         const confirmed = await dialogs.confirm({
-            title: t(`guard.title.${environment}`),
-            text: t("guard.text", { name: profile?.name ?? "" }),
-            facts: [
-                { label: t("guard.command"), value: info.command },
-                { label: t("guard.target"), value: target },
-                { label: t("guard.documents"), value: documents }
-            ],
-            table: await previewOf(connectionId, database, info),
+            title: t(`guard.title.${kindOf(info)}.${environment}`),
+            environment: { kind: environment, name: nameOf(connectionId) },
+            summary: summaryOf(info, target, count),
+            changes,
+            more: count === undefined || !changes?.length ? undefined : count - changes.length,
+            deleting: removes(info) || info.dropping,
             requireName: needsName(environment, info, count) ? info.collection ?? database : undefined,
             script: options.statement ?? `db.getSiblingDB(${JSON.stringify(database)}).runCommand(${toShell(command)})`,
-            action: count === undefined || info.dropping ? t("guard.action") : t("guard.actionCount", { count: number(count) })
+            action: actionOf(info, count)
         });
         if (confirmed && options.editOnce !== undefined && !info.many) confirmedEdits.add(options.editOnce);
         return confirmed;
@@ -116,11 +146,10 @@ export function useWriteGuard() {
         const writes = scriptWrites(source);
         if (writes === undefined || environment === "development" || environment === null) return true;
         if (environment === "test" && writes !== "many") return true;
-        const profile = connections.profiles.find(item => item.id === connectionId);
         return dialogs.confirm({
-            title: t(`guard.title.${environment}`),
-            text: t("guard.script", { name: profile?.name ?? "" }),
-            facts: [{ label: t("guard.target"), value: database }],
+            title: t(`guard.title.script.${environment}`),
+            environment: { kind: environment, name: nameOf(connectionId) },
+            summary: { keypath: "guard.summary.script", values: { target: database } },
             requireName: writes === "many" ? database : undefined,
             action: t("guard.runScript")
         });
@@ -130,12 +159,12 @@ export function useWriteGuard() {
     async function confirmJob(connectionId: string, database: string, what: string): Promise<boolean> {
         const environment = environmentOf(connectionId);
         if (environment !== "test" && environment !== "production") return true;
-        const profile = connections.profiles.find(item => item.id === connectionId);
         return dialogs.confirm({
-            title: t(`guard.title.${environment}`),
-            text: t("guard.text", { name: profile?.name ?? "" }),
-            facts: [{ label: t("guard.command"), value: what }, { label: t("guard.target"), value: database }],
-            action: t("guard.action")
+            title: t(`guard.title.write.${environment}`),
+            environment: { kind: environment, name: nameOf(connectionId) },
+            // "Import..." as the menu says it, without the dots.
+            summary: { keypath: "guard.summary.job", values: { target: database, command: what.replace(/(\.\.\.|…)$/, "") } },
+            action: t("guard.action.change")
         });
     }
 

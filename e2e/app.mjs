@@ -249,10 +249,11 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         // Cancelled: nothing is written.
         await write(panel, statement);
         await panel.locator("[data-testid=query-run]").click();
-        await id("confirm-facts").waitFor();
-        assert.match(await id("confirm-facts").innerText(), /Documents\s*2/);
-        // The field `n`, before and after, in a column of its own.
-        assert.match(await id("confirm-table").innerText(), /\tn\t/);
+        await id("confirm-summary").waitFor();
+        assert.match(await id("confirm-summary").innerText(), /Changes 2 documents/);
+        assert.match(await id("confirm-environment").innerText(), /Production/);
+        // The field `n`, before and after, in a line of its own each.
+        assert.match(await id("confirm-changes").innerText(), /\bn\s+− \d+\s+\+ \d+/);
         await page.keyboard.press("Escape");
         await panel.locator("[data-testid=query-error]", { hasText: "cancelled" }).waitFor();
 

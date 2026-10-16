@@ -15,14 +15,30 @@ export interface PromptRequest {
     suggestions?: string[];
 }
 
+/** One document a write touches, as the confirmation shows it: its fields before and after, or the whole of it when it goes. */
+export interface ConfirmChange {
+    id: string;
+    fields: { field: string; before: string; after: string }[];
+    removed?: string;
+}
+
 export interface ConfirmRequest {
     title: string;
-    text: string;
+    /** The text below the title; or `summary`. */
+    text?: string;
     action: string;
-    /** Lines below the text, label and value (command, collection, documents touched). */
-    facts?: { label: string; value: string }[];
-    /** A table below (before and after of a write): the heads, then the rows. */
-    table?: { heads: string[]; rows: string[][] };
+    /** The environment asked for (a write guard): marks the dialog in its color, with the connection's name. */
+    environment?: { kind: "test" | "production"; name: string };
+    /**
+     * One sentence of what happens, as an i18n key: its values (`target`, `count`, `command` …) are
+     * set off a little from the sentence; `plural` chooses the form.
+     */
+    summary?: { keypath: string; values: Record<string, string>; plural?: number };
+    /** Documents the write touches (some of them), and how many more it touches than are shown. */
+    changes?: ConfirmChange[];
+    more?: number;
+    /** Deletes: a bin instead of the warning sign. */
+    deleting?: boolean;
     /** The button is free only once this is typed (the collection, before a large write or a drop). */
     requireName?: string;
     /** Offers "Copy as script" with this text. */
