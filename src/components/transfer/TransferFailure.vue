@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { ButtonContent, ButtonRoot, useTimer } from "@vuetify/v0";
-import { computed, shallowRef } from "vue";
+import { ButtonContent, ButtonRoot } from "@vuetify/v0";
+import { computed } from "vue";
+import CopiedLabel from "@/components/CopiedLabel.vue";
+import { useCopy } from "@/composables/clipboard";
 import type { RowProgress } from "@/transfer/progress";
 
 /**
@@ -22,14 +24,9 @@ const shown = computed(() => {
     return { source: props.rows[index]?.source ?? "", error: props.progress[index]!.error! };
 });
 
-const copied = shallowRef(false);
-const copiedTimer = useTimer(() => (copied.value = false), { duration: 1500 });
-
-async function copy() {
-    if (!shown.value) return;
-    await navigator.clipboard.writeText(shown.value.error);
-    copied.value = true;
-    copiedTimer.start();
+const { copied, copy: copyText } = useCopy();
+function copy() {
+    if (shown.value) void copyText(shown.value.error);
 }
 </script>
 
@@ -47,7 +44,9 @@ async function copy() {
                 @click="copy"
                 class="shrink-0 text-primary hover:underline"
             >
-                <ButtonContent>{{ $t(copied ? "action.copied" : "action.copy") }}</ButtonContent>
+                <ButtonContent>
+                    <CopiedLabel :copied />
+                </ButtonContent>
             </ButtonRoot>
         </template>
     </div>

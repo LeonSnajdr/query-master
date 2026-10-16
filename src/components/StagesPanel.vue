@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
 import { computed, reactive, shallowRef } from "vue";
-import { useI18n } from "vue-i18n";
 import { backend } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
 import DropMenu from "@/components/DropMenu.vue";
@@ -11,9 +10,9 @@ import SaveQueryStar from "@/components/SaveQueryStar.vue";
 import ReadonlyToggle from "@/components/ReadonlyToggle.vue";
 import ResultsPanel from "@/components/results/ResultsPanel.vue";
 import { useDialogs } from "@/composables/dialogs";
+import { useCopy } from "@/composables/clipboard";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
-import { useNotices } from "@/composables/notices";
 import { useValueSearch, useValueSources } from "@/composables/values";
 import type { MenuEntry } from "@/menu";
 import { STAGES } from "@/shell/catalog";
@@ -39,10 +38,8 @@ const props = defineProps<{
 /** Lines a stage editor grows to before it scrolls. */
 const MAX_LINES = 14;
 
-const { t } = useI18n();
 const keymap = useKeymap();
 const { report } = useMessages();
-const notices = useNotices();
 const dialogs = useDialogs();
 const { layout } = useLayout();
 const connections = useConnectionsStore();
@@ -236,13 +233,9 @@ function startStageDrag(event: PointerEvent, stage: PipelineStage): void {
     window.addEventListener("pointercancel", end);
 }
 
-async function copyPipeline() {
-    try {
-        await navigator.clipboard.writeText(wholeStatement());
-        notices.answer(t("action.copied"));
-    } catch (error) {
-        report(error);
-    }
+const { copied: pipelineCopied, copy } = useCopy();
+function copyPipeline() {
+    void copy(wholeStatement());
 }
 
 /** Takes a `find` or `aggregate` statement apart into rows: one copied here, or one of the history. */
@@ -367,8 +360,9 @@ function createView() {
                 <span class="toolbar-rule" />
                 <IconButton
                     @click="copyPipeline"
-                    :label="isBrowse ? $t('query.copy') : $t('aggregate.copy')"
-                    icon="i-lucide-copy"
+                    :icon="pipelineCopied ? 'i-lucide-check' : 'i-lucide-copy'"
+                    :label="pipelineCopied ? $t('action.copied') : isBrowse ? $t('query.copy') : $t('aggregate.copy')"
+                    :tint="pipelineCopied ? 'text-success' : undefined"
                 />
                 <IconButton
                     @click="pastePipeline"

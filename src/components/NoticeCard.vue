@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ButtonContent, ButtonRoot, useResizeObserver, useTimer } from "@vuetify/v0";
+import { useResizeObserver, useTimer } from "@vuetify/v0";
 import { computed, onMounted, useTemplateRef, watch } from "vue";
 import { useNotices } from "@/composables/notices";
-import type { Notice, NoticeAction } from "@/composables/notices";
+import type { Notice } from "@/composables/notices";
+import NoticeActionButton from "./NoticeActionButton.vue";
 
 const emit = defineEmits<{
     height: [id: number, height: number];
@@ -47,10 +48,6 @@ useResizeObserver(card, (entries) => {
     emit("height", props.notice.id, height);
 });
 
-async function act(action: NoticeAction) {
-    await action.run();
-    if (!action.keep) notices.dismiss(props.notice.id);
-}
 </script>
 
 <template>
@@ -102,16 +99,14 @@ async function act(action: NoticeAction) {
             v-if="notice.actions.length > 0"
             class="col-start-2 col-span-2 flex flex-wrap gap-1.5 mt-1.5"
         >
-            <ButtonRoot
+            <NoticeActionButton
                 v-for="(action, index) in notice.actions"
                 :key="action.label"
-                @click="act(action)"
+                @done="notices.dismiss(notice.id)"
+                :action
                 :class="index === 0 && notice.kind !== 'error' ? 'btn-primary' : 'btn-secondary'"
                 class="h-6.5! px-2.5! text-[12px]!"
-                data-testid="notice-action"
-            >
-                <ButtonContent>{{ action.label }}</ButtonContent>
-            </ButtonRoot>
+            />
         </div>
         <!-- The time the card has left: a thin line on its own track inside the card, clear of the
              rounded edge, in the color of its symbol. -->

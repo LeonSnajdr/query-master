@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogDescription, DialogRoot, DialogTitle, useTimer } from "@vuetify/v0";
+import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogDescription, DialogRoot, DialogTitle } from "@vuetify/v0";
 import { computed, shallowRef, watch } from "vue";
 import { namesAsChoices } from "@/choice";
 import ChoiceField from "@/components/ChoiceField.vue";
@@ -12,6 +12,8 @@ import ImportWizard from "@/components/transfer/ImportWizard.vue";
 import IndexDialog from "@/components/IndexDialog.vue";
 import SaveQueryDialog from "@/components/SaveQueryDialog.vue";
 import SettingsDialog from "@/components/SettingsDialog.vue";
+import CopiedLabel from "@/components/CopiedLabel.vue";
+import { useCopy } from "@/composables/clipboard";
 import { useDialogState } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 
@@ -26,12 +28,9 @@ const typedName = shallowRef("");
 watch(() => state.confirm, () => (typedName.value = ""));
 const confirmFree = computed(() => state.confirm?.requireName === undefined || typedName.value === state.confirm.requireName);
 
-async function copyScript() {
-    try {
-        await navigator.clipboard.writeText(state.confirm?.script ?? "");
-    } catch (error) {
-        report(error);
-    }
+const { copied: scriptCopied, copy: copyScriptText } = useCopy();
+function copyScript() {
+    void copyScriptText(state.confirm?.script ?? "");
 }
 const textOpen = computed({ get: () => state.text !== undefined, set: open => !open && (state.text = undefined) });
 
@@ -68,13 +67,9 @@ async function submitText() {
     }
 }
 
-const copied = shallowRef(false);
-const copiedTimer = useTimer(() => (copied.value = false), { duration: 1500 });
-
-async function copyText() {
-    await navigator.clipboard.writeText(text.value).catch(report);
-    copied.value = true;
-    copiedTimer.start();
+const { copied, copy } = useCopy();
+function copyText() {
+    void copy(text.value);
 }
 </script>
 
@@ -232,7 +227,12 @@ async function copyText() {
                         class="btn-ghost mr-auto"
                         data-testid="confirm-script"
                     >
-                        <ButtonContent>{{ $t("confirm.copyScript") }}</ButtonContent>
+                        <ButtonContent>
+                            <CopiedLabel
+                                :copied="scriptCopied"
+                                :label="$t('confirm.copyScript')"
+                            />
+                        </ButtonContent>
                     </ButtonRoot>
                     <DialogClose class="btn-ghost">
                         {{ $t("action.cancel") }}
@@ -298,7 +298,9 @@ async function copyText() {
                         @click="copyText"
                         class="btn-secondary mr-auto"
                     >
-                        <ButtonContent>{{ $t(copied ? "action.copied" : "action.copy") }}</ButtonContent>
+                        <ButtonContent>
+                            <CopiedLabel :copied />
+                        </ButtonContent>
                     </ButtonRoot>
                     <DialogClose class="btn-ghost">
                         {{ $t(state.text.action ? "action.cancel" : "action.close") }}

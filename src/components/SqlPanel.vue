@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { SplitterHandle, SplitterPanel, SplitterRoot } from "@vuetify/v0";
 import { computed, useTemplateRef } from "vue";
-import { useI18n } from "vue-i18n";
 import CodeEditor from "@/components/CodeEditor.vue";
 import IconButton from "@/components/IconButton.vue";
 import QueryHistory from "@/components/QueryHistory.vue";
@@ -9,8 +8,8 @@ import SaveQueryStar from "@/components/SaveQueryStar.vue";
 import ReadonlyToggle from "@/components/ReadonlyToggle.vue";
 import ResultsPanel from "@/components/results/ResultsPanel.vue";
 import { useLayout } from "@/composables/layout";
+import { useCopy } from "@/composables/clipboard";
 import { useMessages } from "@/composables/messages";
-import { useNotices } from "@/composables/notices";
 import { sqlCollection, sqlToShell } from "@/sql/sql";
 import { useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
@@ -21,11 +20,9 @@ const props = defineProps<{
     tabId: string;
 }>();
 
-const { t } = useI18n();
 const { report } = useMessages();
 const keymap = useKeymap();
 const editor = useTemplateRef("editor");
-const notices = useNotices();
 const { layout } = useLayout();
 const connections = useConnectionsStore();
 const tabs = useTabsStore();
@@ -61,14 +58,9 @@ function openInShell() {
     }
 }
 
-async function copyStatement() {
-    if (!statement.value) return;
-    try {
-        await navigator.clipboard.writeText(statement.value);
-        notices.answer(t("action.copied"));
-    } catch (error) {
-        report(error);
-    }
+const { copied: statementCopied, copy } = useCopy();
+function copyStatement() {
+    if (statement.value) void copy(statement.value);
 }
 </script>
 
@@ -109,8 +101,9 @@ async function copyStatement() {
             <IconButton
                 @click="copyStatement"
                 :disabled="!statement"
-                :label="$t('sql.copy')"
-                icon="i-lucide-copy"
+                :icon="statementCopied ? 'i-lucide-check' : 'i-lucide-copy'"
+                :label="statementCopied ? $t('action.copied') : $t('sql.copy')"
+                :tint="statementCopied ? 'text-success' : undefined"
             />
             <IconButton
                 @click="openInShell"

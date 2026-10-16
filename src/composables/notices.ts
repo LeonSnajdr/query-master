@@ -9,6 +9,8 @@ export interface NoticeAction {
     run: () => unknown;
     /** The card stays after the action (e.g. "Copy" of an error); otherwise it closes. */
     keep?: boolean;
+    /** It copies: its button says "Copied" for a moment after. */
+    copies?: boolean;
 }
 
 export interface Notice {

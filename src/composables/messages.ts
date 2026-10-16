@@ -16,7 +16,7 @@ export function useMessages() {
     }
 
     /**
-     * Shows what went wrong as a card that stays until it is closed, with a way to copy the text.
+     * Shows what went wrong as a card, with a way to copy the text.
      * Work stopped on purpose is no error: that is said briefly, and the card goes by itself.
      */
     function report(error: unknown): void {
@@ -26,7 +26,7 @@ export function useMessages() {
             notices.notify({ kind: "info", title: text });
             return;
         }
-        notices.notify({ kind: "error", title: text, actions: [{ label: t("action.copy"), run: () => navigator.clipboard.writeText(text), keep: true }] });
+        notices.notify({ kind: "error", title: text, actions: [{ label: t("action.copy"), run: () => navigator.clipboard.writeText(text), keep: true, copies: true }] });
     }
 
     return { say, report };

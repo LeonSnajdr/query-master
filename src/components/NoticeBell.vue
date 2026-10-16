@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ButtonContent, ButtonRoot, PopoverActivator, PopoverContent, PopoverRoot } from "@vuetify/v0";
+import { PopoverActivator, PopoverContent, PopoverRoot } from "@vuetify/v0";
 import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useNotices } from "@/composables/notices";
 import type { Notice } from "@/composables/notices";
+import NoticeActionButton from "./NoticeActionButton.vue";
 
 /**
  * The right end of the status bar: the work that runs (a click shows its card again) and the
@@ -159,15 +160,13 @@ function time(at: Date): string {
                             v-if="notice.actions.length > 0"
                             class="col-start-2 col-span-3 flex flex-wrap gap-1.5 mt-1"
                         >
-                            <ButtonRoot
+                            <NoticeActionButton
                                 v-for="action in notice.actions"
                                 :key="action.label"
-                                @click="action.run()"
+                                :action
                                 class="btn-secondary h-6! px-2.5! text-[12px]!"
                                 data-testid="notice-entry-action"
-                            >
-                                <ButtonContent>{{ action.label }}</ButtonContent>
-                            </ButtonRoot>
+                            />
                         </div>
                     </li>
                 </ul>
