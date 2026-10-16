@@ -16,6 +16,8 @@ import { useKeymap } from "@/keys/keymap";
 import { scriptPlace, suggest, valueDetail, valuePlace } from "@/shell/complete";
 import type { Environment, Suggestion, SuggestionType, ValuePlace } from "@/shell/complete";
 import { toDraft } from "@/shell/edit";
+import { formatCode } from "@/shell/format";
+import type { FormatKind } from "@/shell/format";
 import type { Json } from "@/shell/ejson";
 import type { ValueField } from "@/shell/values";
 
@@ -49,6 +51,12 @@ const props = defineProps<{
     compact?: boolean;
     /** Test id of the editable text. */
     testid?: string;
+    /**
+     * How the text is formatted (Shift+Alt+F): by default SQL with a schema, one value where the
+     * text continues a `prefix` (a stage, a query field), else a script; `none` for none. (Not
+     * `false`: Vue would take a missing prop of a boolean type for `false`.)
+     */
+    formatAs?: FormatKind | "none";
 }>();
 
 const text = defineModel<string>({ required: true });
@@ -57,11 +65,52 @@ const text = defineModel<string>({ required: true });
 const language = new Compartment();
 /** The run keys, swapped when they are changed in the settings. */
 const runKeys = new Compartment();
+/** The keys that format, swapped when they are changed in the settings. */
+const formatKeys = new Compartment();
 const shortcuts = useKeymap();
 
 function runKeymap(): Extension {
     const keys = shortcuts.keys("query.run").map(codeMirrorKey).filter((key): key is string => key !== undefined);
     return keymap.of([...keys.map(key => ({ key, run })), ...(props.singleLine ? [{ key: "Enter", run }] : [])]);
+}
+
+/** What the text is, for formatting; `undefined` where it is not formatted (one line, read only, one value of a field). */
+function formatKind(): FormatKind | undefined {
+    if (props.formatAs === "none" || props.readonly || props.singleLine || props.valueField) return undefined;
+    if (props.formatAs) return props.formatAs;
+    if (props.sqlSchema) return "sql";
+    return props.prefix === undefined ? "script" : "value";
+}
+
+/**
+ * Formats the text, the cursor at the same place in the code. Undo takes it back in one step. A
+ * mistake in the text is reported with its place and the text stays.
+ */
+async function format(target = view): Promise<boolean> {
+    const kind = formatKind();
+    if (!target || !kind) return false;
+    const before = target.state.doc.toString();
+    try {
+        const result = await formatCode(before, kind, target.state.selection.main.head);
+        // Typed on meanwhile: that is not overwritten.
+        if (result.text === before || target.state.doc.toString() !== before) return true;
+        target.dispatch({ changes: { from: 0, to: before.length, insert: result.text }, selection: { anchor: Math.min(result.cursor, result.text.length) }, scrollIntoView: true, userEvent: "format" });
+    } catch (error) {
+        report(error);
+    }
+    return true;
+}
+
+function formatKeymap(): Extension {
+    if (!formatKind()) return [];
+    const keys = shortcuts.keys("editor.format").map(codeMirrorKey).filter((key): key is string => key !== undefined);
+    return keymap.of(keys.map(key => ({
+        key,
+        run: (target: EditorView) => {
+            void format(target);
+            return true;
+        }
+    })));
 }
 
 function languageExtension(): Extension {
@@ -390,6 +439,7 @@ function extensions(): Extension[] {
             : autocompletion({ override: props.valueField ? [completeValue] : [complete, completeVariables, completeStatement], icons: true }),
         // Before the default keys, so Ctrl+Enter is not taken as "new line below".
         runKeys.of(runKeymap()),
+        formatKeys.of(formatKeymap()),
         keymap.of([
             ...closeBracketsKeymap,
             ...completionKeymap,
@@ -433,6 +483,8 @@ watch(() => props.sqlSchema, () => view?.dispatch({ effects: language.reconfigur
 
 watch(() => shortcuts.keys("query.run"), () => view?.dispatch({ effects: runKeys.reconfigure(runKeymap()) }));
 
+watch(() => shortcuts.keys("editor.format"), () => view?.dispatch({ effects: formatKeys.reconfigure(formatKeymap()) }));
+
 watch(() => props.errorPosition, (position) => {
     if (!view || position === undefined) return;
     view.dispatch({ selection: { anchor: Math.min(position, view.state.doc.length) }, scrollIntoView: true });
@@ -442,7 +494,9 @@ watch(() => props.errorPosition, (position) => {
 defineExpose({
     /** The cursor and the selected text, for buttons that run. */
     cursor: () => ({ position: view?.state.selection.main.head ?? 0, selection: view ? selected(view.state) : "" }),
-    focus: () => view?.focus()
+    focus: () => view?.focus(),
+    /** Formats the text (the button of a toolbar); `false` where this editor does not format. */
+    format: () => format()
 });
 </script>
 

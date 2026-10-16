@@ -18,6 +18,7 @@ import { useValueSearch, useValueSources } from "@/composables/values";
 import type { MenuEntry } from "@/menu";
 import { STAGES } from "@/shell/catalog";
 import type { Environment } from "@/shell/complete";
+import { formatCode } from "@/shell/format";
 import { convertQueryText, parseStatements, parseValue } from "@/shell/parse";
 import type { Json } from "@/shell/ejson";
 import { browseStages, keepsDocuments, moveItem, newStage, optionsOf, pipelineText, stagesOfQuery, WRITING_STAGES } from "@/shell/pipeline";
@@ -157,6 +158,22 @@ function toggleJson(stage: PipelineStage) {
         stage.json = !stage.json;
     } catch (error) {
         report(error);
+    }
+}
+
+/**
+ * Formats every stage (and the options) as one value each, strict JSON in Json mode. A stage
+ * that does not read stays as it is; the first mistake is reported.
+ */
+async function formatStages() {
+    let failed = false;
+    for (const stage of stages.value) {
+        try {
+            stage.text = (await formatCode(stage.text, stage.json ? "json" : "value")).text;
+        } catch (error) {
+            if (!failed) report(error);
+            failed = true;
+        }
     }
 }
 
@@ -379,6 +396,12 @@ function createView() {
                     icon="i-lucide-sliders-horizontal"
                 />
                 <IconButton
+                    @click="formatStages"
+                    :label="keymap.titled($t('shortcut.format'), 'editor.format')"
+                    data-testid="editor-format"
+                    icon="i-lucide-wand-sparkles"
+                />
+                <IconButton
                     @click="resetStages"
                     :label="$t('stage.reset')"
                     data-testid="stage-reset"
@@ -437,6 +460,7 @@ function createView() {
                             v-model="stage.text"
                             @run="run()"
                             :environment="environmentAt(stage)"
+                            :formatAs="stage.json ? 'json' : 'value'"
                             :label="stage.operator"
                             :prefix="prefix(stage)"
                         />

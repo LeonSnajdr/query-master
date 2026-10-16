@@ -38,6 +38,8 @@
         "@vuetify/v0": "^1.2.3",
         "acorn": "^8.19.0",
         "pinia": "^3.0.4",
+        "prettier": "3.6.2",
+        "sql-formatter": "15.6.6",
         "vue": "^3.5.30",
         "vue-i18n": "11"
     },

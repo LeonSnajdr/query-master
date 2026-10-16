@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { SplitterHandle, SplitterPanel, SplitterRoot } from "@vuetify/v0";
-import { computed } from "vue";
+import { computed, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
 import CodeEditor from "@/components/CodeEditor.vue";
 import IconButton from "@/components/IconButton.vue";
@@ -24,6 +24,7 @@ const props = defineProps<{
 const { t } = useI18n();
 const { report } = useMessages();
 const keymap = useKeymap();
+const editor = useTemplateRef("editor");
 const notices = useNotices();
 const { layout } = useLayout();
 const connections = useConnectionsStore();
@@ -100,6 +101,12 @@ async function copyStatement() {
             <ReadonlyToggle :tabId />
             <span class="toolbar-rule" />
             <IconButton
+                @click="editor?.format()"
+                :label="keymap.titled($t('shortcut.format'), 'editor.format')"
+                data-testid="editor-format"
+                icon="i-lucide-wand-sparkles"
+            />
+            <IconButton
                 @click="copyStatement"
                 :disabled="!statement"
                 :label="$t('sql.copy')"
@@ -126,11 +133,13 @@ async function copyStatement() {
             >
                 <div class="grow min-h-0 mx-5 mt-1 rounded-sm border border-divider bg-background">
                     <CodeEditor
+                        ref="editor"
                         v-model="tab.text"
                         @run="run"
                         :errorPosition="tab.errorPosition"
                         :label="$t('sql.editor')"
                         :sqlSchema="schema"
+                        formatAs="sql"
                     />
                 </div>
                 <p

@@ -245,6 +245,12 @@ function openInBuilder() {
             <ReadonlyToggle :tabId />
             <span class="toolbar-rule" />
             <IconButton
+                @click="editor?.format()"
+                :label="keymap.titled($t('shortcut.format'), 'editor.format')"
+                data-testid="editor-format"
+                icon="i-lucide-wand-sparkles"
+            />
+            <IconButton
                 @click="openInBuilder"
                 :label="$t('aggregate.fromShell')"
                 data-testid="shell-to-builder"

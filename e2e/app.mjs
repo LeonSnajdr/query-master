@@ -1015,6 +1015,13 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await sqlRun(`SELECT * ${COLLECTION}`);
         await panel.locator("[data-testid=query-error]").waitFor();
         assert.match(await panel.locator("[data-testid=query-error]").innerText(), /Expected FROM/);
+
+        // Shift+Alt+F formats the text, here as SQL; the query still runs the same.
+        await write(editor, `select name, n from ${COLLECTION} where n >= 2`);
+        await page.keyboard.press("Shift+Alt+F");
+        await page.waitForFunction(() => [...document.querySelectorAll(".cm-content")].some(element => element.offsetParent && /^SELECT\n/.test(element.innerText)));
+        await panel.locator("[data-testid=query-run]").click();
+        await page.waitForFunction(() => [...document.querySelectorAll("[data-testid=result-range]")].some(element => element.offsetParent && element.textContent.trim() === "1 – 2"));
         await page.keyboard.press("Control+w");
         await visible("browse-title").waitFor();
     });
