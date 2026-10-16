@@ -2,11 +2,13 @@
 import { ButtonRoot } from "@vuetify/v0";
 import { computed, nextTick, onMounted, ref, shallowRef, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
+import CodeEditor from "@/components/CodeEditor.vue";
 import MenuList from "@/components/MenuList.vue";
 import type { MenuEntry } from "@/menu";
 import { convertDraft, DRAFT_TYPES, EMPTY_TYPES, fromDraft, toDraft } from "@/shell/edit";
 import type { Draft } from "@/shell/edit";
 import type { Json, ValueType } from "@/shell/ejson";
+import type { ValueField } from "@/shell/values";
 
 const emit = defineEmits<{
     /** The new value in shell notation; only when it changed. */
@@ -25,7 +27,12 @@ const props = defineProps<{
     label: string;
     /** Test id of the text field. */
     testid: string;
+    /** The field the value belongs to: its known values are suggested as in a filter. */
+    suggest?: ValueField;
 }>();
+
+/** Types whose values are suggested: those a filter suggests (strings, numbers, booleans). */
+const SUGGESTED: readonly ValueType[] = ["string", "int", "long", "double", "decimal", "bool"];
 
 const { t, te } = useI18n();
 
@@ -34,8 +41,15 @@ const draft = ref<Draft>({ ...initial });
 const empty = computed(() => EMPTY_TYPES.includes(draft.value.type));
 const typeName = computed(() => (te(`result.type.${draft.value.type}`) ? t(`result.type.${draft.value.type}`) : draft.value.type));
 
+/**
+ * With suggestions the text is edited in the shell's editor, which lists the known values and
+ * searches all data (Ctrl+Space) as it does in a filter; else in a plain field.
+ */
+const suggest = props.suggest && SUGGESTED.includes(initial.type) ? props.suggest : undefined;
+
 const root = useTemplateRef<HTMLDivElement>("root");
 const input = useTemplateRef<HTMLInputElement>("input");
+const code = useTemplateRef<InstanceType<typeof CodeEditor>>("code");
 const area = useTemplateRef<HTMLTextAreaElement>("area");
 const types = useTemplateRef<HTMLDivElement>("types");
 const large = useTemplateRef<HTMLDivElement>("large");
@@ -44,6 +58,23 @@ const largeAt = shallowRef({ left: 0, top: 0, width: 480 });
 const expanded = shallowRef(false);
 
 onMounted(() => input.value?.select());
+
+function focusField() {
+    if (code.value) code.value.focus();
+    else input.value?.select();
+}
+
+/** A value chosen from the list brings its type: `2` stays a number in a field shown as text. */
+function pick(value: Json) {
+    draft.value = toDraft(value);
+}
+
+/** Esc that closed the list of suggestions leaves the editor open. */
+function onEscape(event: KeyboardEvent) {
+    if (event.defaultPrevented) return;
+    event.stopPropagation();
+    emit("close", true);
+}
 
 function commit() {
     const changed = draft.value.type !== initial.type || draft.value.text !== initial.text;
@@ -60,7 +91,7 @@ function onFocusOut(event: FocusEvent) {
 
 function choose(type: ValueType) {
     draft.value = convertDraft(draft.value, type);
-    void nextTick(() => input.value?.select());
+    void nextTick(focusField);
 }
 
 function item(type: ValueType): MenuEntry {
@@ -122,7 +153,8 @@ async function openLarge() {
 function closeLarge() {
     if (large.value?.matches(":popover-open")) large.value.hidePopover();
     expanded.value = false;
-    input.value?.focus();
+    if (code.value) code.value.focus();
+    else input.value?.focus();
 }
 </script>
 
@@ -132,10 +164,24 @@ function closeLarge() {
         @click.stop
         @dblclick.stop
         @focusout="onFocusOut"
-        @keydown.esc.stop="emit('close', true)"
+        @keydown.esc="onEscape"
         class="flex items-center min-w-0 bg-surface-variant"
     >
+        <CodeEditor
+            v-if="suggest"
+            ref="code"
+            v-model="draft.text"
+            @pick="pick"
+            @run="commit"
+            :label
+            :testid
+            :valueField="suggest"
+            class="grow min-w-0 h-full font-mono"
+            compact
+            singleLine
+        />
         <input
+            v-else
             ref="input"
             v-model="draft.text"
             @keydown.enter.prevent.stop="commit"

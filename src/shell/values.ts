@@ -41,6 +41,17 @@ export interface ValueSearcher {
     run: (collection: string, field: string, prefix: string) => Promise<ValueSearch>;
 }
 
+/**
+ * The field one value belongs to, where it is edited by itself (in the result tree or table): its
+ * known values and the search of all data, as the editor offers them in a filter.
+ */
+export interface ValueField {
+    collection: string;
+    field: string;
+    values?: ValueSource;
+    search?: ValueSearcher;
+}
+
 /** Values kept per field; a field with more is likely an id or a name, not a choice. */
 const MAX_VALUES = 100;
 /** Longer strings are text, not a choice. */

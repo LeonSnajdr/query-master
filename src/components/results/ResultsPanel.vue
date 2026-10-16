@@ -17,7 +17,10 @@ import { useKeymap, useShortcut } from "@/keys/keymap";
 import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { isDoc, scalar, toShell } from "@/shell/ejson";
-import { valueAtPath } from "@/shell/values";
+import { filterPath, valueAtPath } from "@/shell/values";
+import type { ValueField } from "@/shell/values";
+import { useValueSearch, useValueSources } from "@/composables/values";
+import { useConnectionsStore } from "@/stores/connections";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
 import { parseValue } from "@/shell/parse";
@@ -502,7 +505,24 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
     void menu.value?.open(event, entries);
 }
 
-provideResultContext({ editable, selected, marked, choose, fold, pinned, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument });
+const valueSources = useValueSources(() => tab.value);
+const valueSearch = useValueSearch(() => tab.value);
+const connections = useConnectionsStore();
+
+/**
+ * The values to suggest for a value edited in place: those of its field in the collection the
+ * documents come from (`items.0.sku` is `items.sku`), as the filter suggests them.
+ */
+function suggest(path: string): ValueField | undefined {
+    const collection = tabs.sourceCollection(tab.value);
+    const field = filterPath(path);
+    if (collection === undefined || !field) return undefined;
+    // Reads the sample of the collection, whose values count too, if it was not read yet.
+    connections.fieldsOf(tab.value.connectionId, tab.value.plan?.database ?? tab.value.database, collection);
+    return { collection, field, values: valueSources, search: valueSearch };
+}
+
+provideResultContext({ editable, selected, marked, choose, fold, pinned, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument, suggest });
 </script>
 
 <template>

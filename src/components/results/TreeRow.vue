@@ -152,6 +152,7 @@ function startEdit() {
                 @close="editing = false"
                 @commit="text => context.commit(target, text)"
                 :label="title"
+                :suggest="context.suggest?.(path)"
                 :value
                 class="grow min-w-40 h-[19px] outline outline-1 -outline-offset-1 outline-primary"
                 testid="tree-edit"

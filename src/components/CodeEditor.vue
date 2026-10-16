@@ -13,12 +13,17 @@ import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
 import { useMessages } from "@/composables/messages";
 import { codeMirrorKey } from "@/keys/hotkey";
 import { useKeymap } from "@/keys/keymap";
-import { scriptPlace, suggest, valuePlace } from "@/shell/complete";
-import type { Environment, Suggestion, SuggestionType } from "@/shell/complete";
+import { scriptPlace, suggest, valueDetail, valuePlace } from "@/shell/complete";
+import type { Environment, Suggestion, SuggestionType, ValuePlace } from "@/shell/complete";
+import { toDraft } from "@/shell/edit";
+import type { Json } from "@/shell/ejson";
+import type { ValueField } from "@/shell/values";
 
 const emit = defineEmits<{
     /** The run keys (Ctrl+Enter, F5; in a single line also Enter): run, with the cursor and the selected text. */
     run: [position: number, selection: string];
+    /** A value of `valueField` was chosen from the list; its text is in the editor. */
+    pick: [value: Json];
 }>();
 /** An editor for shell code: a script, one field of a query, or a result to read. */
 const props = defineProps<{
@@ -34,6 +39,16 @@ const props = defineProps<{
     errorPosition?: number;
     /** SQL instead of shell code: keywords, and the collections with their fields to suggest. */
     sqlSchema?: Record<string, string[]>;
+    /**
+     * The text is one value of this field, without quotes (the result tree and table edit it so):
+     * its known values are suggested as they are in a filter, with the search of all data. The
+     * list opens at once, with all values until something is typed.
+     */
+    valueField?: ValueField;
+    /** Without room above and below the line, to fit a row of the result. */
+    compact?: boolean;
+    /** Test id of the editable text. */
+    testid?: string;
 }>();
 
 const text = defineModel<string>({ required: true });
@@ -50,6 +65,7 @@ function runKeymap(): Extension {
 }
 
 function languageExtension(): Extension {
+    if (props.valueField) return [];
     return props.sqlSchema ? sql({ schema: props.sqlSchema, upperCaseKeywords: true }) : javascript();
 }
 const { say, report } = useMessages();
@@ -105,15 +121,50 @@ const completeVariables: CompletionSource = context => (scriptPlaceAt(context) ?
 /** Keywords where a statement starts. */
 const completeStatement: CompletionSource = context => (scriptPlaceAt(context) === "statement" ? completeKeywords(context) : null);
 
+/** Where values come from and how all data is searched: of the one field, or of the shell code. */
+const valueSource = () => (props.valueField ? props.valueField.values : props.environment?.values);
+const searcher = () => (props.valueField ? props.valueField.search : props.environment?.search);
+
+/** Something was typed since the editor opened: the list of one field's values then filters. */
+let touched = false;
+
 /** The value of a field at `position`, where the editor can search all data for values. */
-function searchPlace(state: EditorState, position: number) {
-    if (!props.environment?.search) return undefined;
+function searchPlace(state: EditorState, position: number): ValuePlace | undefined {
+    if (!searcher()) return undefined;
+    if (props.valueField) {
+        // Untouched, the text is the value as it was: the search is for all values.
+        return { collection: props.valueField.collection, field: props.valueField.field, prefix: touched ? state.sliceDoc(0, position) : "", inString: true };
+    }
     return valuePlace((props.prefix ?? "") + state.sliceDoc(0, position));
 }
 
+/**
+ * The known values of `valueField`, the most frequent first, as a filter suggests them. Chosen, a
+ * value replaces the whole text and brings its type along (`pick`).
+ */
+const completeValue: CompletionSource = (context) => {
+    const field = props.valueField;
+    const hints = field?.values?.(field.collection, field.field) ?? [];
+    if (!field || hints.length === 0) return null;
+    const options: Completion[] = hints.map((hint, rank) => {
+        const text = toDraft(hint.value).text;
+        return {
+            label: text,
+            type: ICONS.value,
+            detail: valueDetail(hint),
+            boost: Math.max(0, 30 - rank),
+            apply: (target: EditorView) => {
+                target.dispatch({ changes: { from: 0, to: target.state.doc.length, insert: text }, selection: { anchor: text.length } });
+                emit("pick", hint.value);
+            }
+        };
+    });
+    return touched ? { from: 0, options } : { from: 0, to: context.state.doc.length, options, filter: false };
+};
+
 /** Searches all data for the values of the field at the cursor; the list shows them when found. */
 function searchAll(view: EditorView): boolean {
-    const search = props.environment?.search;
+    const search = searcher();
     const place = searchPlace(view.state, view.state.selection.main.head);
     if (!search || !place) return false;
     const reopen = () => {
@@ -131,10 +182,10 @@ function searchAll(view: EditorView): boolean {
  * cursor), so whatever is typed, it is never filtered away.
  */
 const completeSearch: CompletionSource = (context) => {
-    const search = props.environment?.search;
+    const search = searcher();
     const place = searchPlace(context.state, context.pos);
     if (!search || !place) return null;
-    const known = props.environment?.values?.(place.collection, place.field)?.length ?? 0;
+    const known = valueSource()?.(place.collection, place.field)?.length ?? 0;
     if (!context.explicit && known === 0) return null;
     const state = search.state(place.collection, place.field, place.prefix);
     let label = place.prefix ? say({ key: "complete.search.prefix", params: { text: place.prefix } }) : say({ key: "complete.search.all" });
@@ -182,7 +233,7 @@ const highlight = HighlightStyle.define([
 const theme = EditorView.theme({
     "&": { height: "100%", fontSize: "var(--editor-font-size, 13px)", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
     "&.cm-focused": { outline: "none" },
-    ".cm-content": { caretColor: "var(--v0-primary)", padding: props.singleLine ? "5px 0" : "8px 0" },
+    ".cm-content": { caretColor: "var(--v0-primary)", padding: props.compact ? "0" : props.singleLine ? "5px 0" : "8px 0" },
     ".cm-line": { padding: props.singleLine ? "0 2px" : "0 6px" },
     ".cm-cursor": { borderLeftColor: "var(--v0-primary)" },
     ".cm-gutters": { backgroundColor: "transparent", color: "var(--v0-on-surface-variant)", border: "none", paddingLeft: "8px" },
@@ -216,7 +267,7 @@ function extensions(): Extension[] {
         indentUnit.of("    "),
         language.of(languageExtension()),
         syntaxHighlighting(highlight),
-        EditorView.contentAttributes.of({ "aria-label": props.label }),
+        EditorView.contentAttributes.of({ "aria-label": props.label, ...(props.testid ? { "data-testid": props.testid } : {}) }),
         theme
     ];
     if (!props.singleLine) base.push(lineNumbers(), highlightActiveLine());
@@ -231,7 +282,9 @@ function extensions(): Extension[] {
         Prec.highest(keymap.of([{ key: "Ctrl-Space", run: target => completionStatus(target.state) === "active" && searchAll(target) }])),
         // SQL completes from its language (keywords, schema); shell code from the shell's catalog,
         // and a script also with its own variables and the JavaScript keywords.
-        props.sqlSchema ? autocompletion({ icons: true }) : autocompletion({ override: [complete, completeVariables, completeStatement, completeSearch], icons: true }),
+        props.sqlSchema
+            ? autocompletion({ icons: true })
+            : autocompletion({ override: props.valueField ? [completeValue, completeSearch] : [complete, completeVariables, completeStatement, completeSearch], icons: true }),
         // Before the default keys, so Ctrl+Enter is not taken as "new line below".
         runKeys.of(runKeymap()),
         keymap.of([
@@ -248,13 +301,21 @@ function extensions(): Extension[] {
                     : transaction))]
             : []),
         EditorView.updateListener.of((update) => {
-            if (update.docChanged) text.value = update.state.doc.toString();
+            if (!update.docChanged) return;
+            touched = true;
+            text.value = update.state.doc.toString();
         })
     ];
 }
 
 onMounted(() => {
     view = new EditorView({ parent: host.value!, state: EditorState.create({ doc: text.value, extensions: extensions() }) });
+    // One value of a field: ready to type over, its known values open below.
+    if (props.valueField) {
+        view.focus();
+        view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
+        if (props.valueField.values?.(props.valueField.collection, props.valueField.field)?.length) startCompletion(view);
+    }
 });
 
 onBeforeUnmount(() => view?.destroy());

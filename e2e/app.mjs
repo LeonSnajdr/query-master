@@ -1114,7 +1114,13 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
     await step("a value is changed in place in the tree", async () => {
         const value = panel.locator("[data-testid=tree-row]", { hasText: /^\s*1\s*name/ }).locator("[data-testid=tree-value]");
         await value.dblclick();
+        // The values of the field are offered at once (stage 24), as in a filter.
+        const list = page.locator(".cm-tooltip-autocomplete:visible");
+        await list.locator("li", { hasText: "two" }).waitFor();
         await panel.locator("[data-testid=tree-edit]").fill("THREE");
+        // "THREE" fits "three" of the list: Esc closes the list, Enter then writes what is typed.
+        await page.waitForTimeout(300);
+        if (await list.count() > 0) await page.keyboard.press("Escape");
         await page.keyboard.press("Enter");
         await panel.locator("[data-testid=tree-value]", { hasText: "THREE" }).first().waitFor();
     });
@@ -1122,7 +1128,19 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
     await step("a cell is changed in place in the table", async () => {
         await panel.locator("[data-testid=view-table]").click();
         await panel.locator("[data-testid=table-cell]", { hasText: "two" }).dblclick();
+        // Typing narrows the values; Enter takes one (with its type), Esc leaves without writing.
+        const list = page.locator(".cm-tooltip-autocomplete:visible");
+        await list.locator("li", { hasText: "one" }).waitFor();
+        await page.keyboard.type("on");
+        await page.waitForFunction(() => [...document.querySelectorAll(".cm-tooltip-autocomplete li")].map(item => item.textContent).join("|").match(/^one/));
+        await page.keyboard.press("Enter");
+        assert.equal(await panel.locator("[data-testid=table-edit]").innerText(), "one");
+        await page.keyboard.press("Escape");
+        await panel.locator("[data-testid=table-edit]").waitFor({ state: "detached" });
+        await panel.locator("[data-testid=table-cell]", { hasText: "two" }).dblclick();
         await panel.locator("[data-testid=table-edit]").fill("TWO");
+        await page.waitForTimeout(300);
+        if (await list.count() > 0) await page.keyboard.press("Escape");
         await page.keyboard.press("Enter");
         await panel.locator("[data-testid=table-cell]", { hasText: "TWO" }).waitFor();
         await panel.locator("[data-testid=view-tree]").click();

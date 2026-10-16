@@ -399,6 +399,7 @@ function onKey(event: KeyboardEvent) {
                             @close="stopEditing"
                             @commit="text => commit(index, column, text)"
                             :label="column"
+                            :suggest="context.suggest?.(fullPath(column))"
                             :value="cell(value, column)"
                             class="absolute left-0 top-0 z-1 h-full min-w-full w-56 pl-2 outline outline-1 -outline-offset-1 outline-primary"
                             testid="table-edit"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { suggest, valuePlace } from "./complete";
+import { suggest, valueDetail, valuePlace } from "./complete";
 import type { Environment } from "./complete";
 import type { Json } from "./ejson";
 import {
@@ -201,5 +201,13 @@ describe("valueCondition", () => {
         expect(valueAtPath(document, "at")).toEqual({ $date: "2024-01-01T00:00:00Z" });
         expect(valueAtPath(document, "at.$date")).toBeUndefined();
         expect(valueAtPath(document, "missing.x")).toBeUndefined();
+    });
+});
+
+describe("valueDetail", () => {
+    it("says how often a value was seen and marks what the validator allows", () => {
+        expect(valueDetail({ value: "open", count: 12 })).toBe("12×");
+        expect(valueDetail({ value: "open", count: 3, allowed: true })).toBe("✓ 3×");
+        expect(valueDetail({ value: "refunded", count: 0, allowed: true })).toBe("✓");
     });
 });

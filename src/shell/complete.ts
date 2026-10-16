@@ -268,14 +268,17 @@ export function valuePlace(text: string): ValuePlace | undefined {
     return placeIn(cursorContext(text));
 }
 
+/** How often a value was seen; allowed by the validator: no count when none was seen, a mark either way. */
+export function valueDetail(hint: ValueHint): string {
+    return hint.allowed ? (hint.count > 0 ? `✓ ${hint.count}×` : "✓") : `${hint.count}×`;
+}
+
 /** A value as a suggestion: strings without quotes in the list, with them when inserted outside a string. */
 function valueSuggestion(hint: ValueHint, rank: number, inString: boolean): Suggestion {
     const text = typeof hint.value === "string" ? hint.value : scalar(hint.value)?.text ?? "";
     const quoted = typeof hint.value === "string" ? JSON.stringify(hint.value) : text;
     // The most frequent first, as long as the typed text fits them equally well.
-    // Allowed by the validator: no count when none was seen, a mark either way.
-    const detail = hint.allowed ? (hint.count > 0 ? `✓ ${hint.count}×` : "✓") : `${hint.count}×`;
-    return { label: text, type: "value", detail, apply: inString ? quoted.slice(1, -1) : quoted, boost: Math.max(0, 30 - rank) };
+    return { label: text, type: "value", detail: valueDetail(hint), apply: inString ? quoted.slice(1, -1) : quoted, boost: Math.max(0, 30 - rank) };
 }
 
 /** Numbers the places of a snippet in the order they are written, so Tab walks them that way. */
