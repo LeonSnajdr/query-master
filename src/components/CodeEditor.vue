@@ -5,9 +5,9 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { javascript, localCompletionSource, snippets } from "@codemirror/lang-javascript";
 import { sql } from "@codemirror/lang-sql";
 import { HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
-import { Compartment, EditorState, Prec } from "@codemirror/state";
+import { Compartment, EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
 import type { Extension } from "@codemirror/state";
-import { EditorView, drawSelection, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
+import { EditorView, ViewPlugin, drawSelection, highlightActiveLine, keymap, lineNumbers, showTooltip } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
 import { useMessages } from "@/composables/messages";
@@ -121,8 +121,7 @@ const completeVariables: CompletionSource = context => (scriptPlaceAt(context) ?
 /** Keywords where a statement starts. */
 const completeStatement: CompletionSource = context => (scriptPlaceAt(context) === "statement" ? completeKeywords(context) : null);
 
-/** Where values come from and how all data is searched: of the one field, or of the shell code. */
-const valueSource = () => (props.valueField ? props.valueField.values : props.environment?.values);
+/** How all data is searched: for the one field, or for the shell code. */
 const searcher = () => (props.valueField ? props.valueField.search : props.environment?.search);
 
 /** Something was typed since the editor opened: the list of one field's values then filters. */
@@ -171,44 +170,114 @@ function searchAll(view: EditorView): boolean {
         if (view.hasFocus) startCompletion(view);
     };
     void search.run(place.collection, place.field, place.prefix).then(reopen, report);
-    // At once "Searching …"; the list was just closed by choosing the entry.
-    void Promise.resolve().then(reopen);
+    // At once "Searching …" in the footer: the search state changed outside the editor.
+    void Promise.resolve().then(() => {
+        view.dispatch({});
+        reopen();
+    });
     return true;
 }
 
+function element(tag: string, className: string, text?: string): HTMLElement {
+    const node = document.createElement(tag);
+    node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+}
+
 /**
- * The last entry of the list where a value of a field stands: search all data. Shown with what is
- * known already, or alone when asked for with Ctrl+Space. It replaces nothing (`from` is the
- * cursor), so whatever is typed, it is never filtered away.
+ * The footer of the list where a value of a field stands (as VS Code and JetBrains have one): not
+ * an entry, so the arrows and Enter stay with the values. Left the search of all data (a click or
+ * Ctrl+Space), right where the values come from or what the search found. `false` elsewhere.
  */
-const completeSearch: CompletionSource = (context) => {
+function renderSearchBar(dom: HTMLElement, view: EditorView): boolean {
     const search = searcher();
-    const place = searchPlace(context.state, context.pos);
-    if (!search || !place) return null;
-    const known = valueSource()?.(place.collection, place.field)?.length ?? 0;
-    if (!context.explicit && known === 0) return null;
+    const place = searchPlace(view.state, view.state.selection.main.head);
+    dom.replaceChildren();
+    if (!search || !place) return false;
     const state = search.state(place.collection, place.field, place.prefix);
+    dom.title = state?.error ? say(state.error) : say({ key: "complete.search.info" });
+    if (state?.running) {
+        dom.append(element("span", "cm-searchAll-spin"), element("span", "cm-searchAll-running", say({ key: "complete.search.running" })));
+        return true;
+    }
     let label = place.prefix ? say({ key: "complete.search.prefix", params: { text: place.prefix } }) : say({ key: "complete.search.all" });
-    if (state?.running) label = say({ key: "complete.search.running" });
-    else if (state) label = say({ key: "complete.search.again" });
-    let detail = say({ key: "complete.search.keys" });
-    if (state?.error) detail = say({ key: "complete.search.failed" });
-    else if (state?.sampled) detail = say({ key: "complete.search.sampled" });
-    else if (state?.truncated) detail = say({ key: "complete.search.truncated", params: { count: state.hints.length } });
-    else if (state && !state.running) detail = say({ key: "complete.search.found", params: { count: state.hints.length } });
-    return {
-        from: context.pos,
-        options: [{
-            label,
-            detail,
-            info: state?.error ? say(state.error) : say({ key: "complete.search.info" }),
-            type: "text",
-            // Last, so it is never chosen by a plain Enter; a line above it sets it apart (theme).
-            boost: -99,
-            apply: view => void (state?.running || searchAll(view))
-        }]
+    if (state) label = say({ key: "complete.search.again" });
+    const action = element("button", "cm-searchAll-action", `⌕ ${label}`) as HTMLButtonElement;
+    action.type = "button";
+    action.tabIndex = -1;
+    action.dataset.testid = "search-all";
+    // A press keeps the focus in the editor, as on an entry of the list.
+    action.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        searchAll(view);
+    });
+    let status = say({ key: "complete.search.known" });
+    let warn = false;
+    if (state?.error) [status, warn] = [say({ key: "complete.search.failed" }), true];
+    else if (state?.sampled) [status, warn] = [say({ key: "complete.search.sampled" }), true];
+    else if (state?.truncated) status = say({ key: "complete.search.truncated", params: { count: state.hints.length } });
+    else if (state) status = say({ key: "complete.search.found", params: { count: state.hints.length } });
+    dom.append(action, element("kbd", "cm-searchAll-keys", say({ key: "complete.search.keys" })), element("span", warn ? "cm-searchAll-status cm-searchAll-warn" : "cm-searchAll-status", status));
+    return true;
+}
+
+/** Puts the footer under the list of suggestions while one is open at a value of a field. */
+const searchFooter = ViewPlugin.define((view) => {
+    const footer = element("div", "cm-searchAll");
+    footer.dataset.testid = "search-footer";
+    const sync = () => {
+        const list = view.dom.querySelector(".cm-tooltip-autocomplete");
+        if (!list || !renderSearchBar(footer, view)) {
+            footer.remove();
+            return;
+        }
+        // The list puts a new <ul> at its end when its entries change: the footer stays last.
+        if (list.lastElementChild !== footer) {
+            list.appendChild(footer);
+            view.requestMeasure();
+        }
     };
-};
+    // After the update, when the list has drawn its entries.
+    return { update: () => void setTimeout(sync), destroy: () => footer.remove() };
+});
+
+const showSearchBar = StateEffect.define<boolean>();
+
+/**
+ * The footer alone, for Ctrl+Space at a value of a field without any value to suggest: it is
+ * hidden while a list shows, and goes when the text or the cursor changes, or with Esc.
+ */
+const searchBarAlone = StateField.define<boolean>({
+    create: () => false,
+    update(open, transaction) {
+        for (const effect of transaction.effects) if (effect.is(showSearchBar)) return effect.value;
+        return transaction.docChanged || transaction.selection ? false : open;
+    },
+    provide: field => showTooltip.from(field, open => (open
+        ? {
+                pos: 0,
+                above: false,
+                create: (view) => {
+                    const dom = element("div", "cm-searchAll cm-searchAll-alone");
+                    const render = () => {
+                        const shown = renderSearchBar(dom, view) && completionStatus(view.state) === null;
+                        dom.style.display = shown ? "" : "none";
+                    };
+                    render();
+                    return { dom, update: render, positioned: render };
+                }
+            }
+        : null))
+});
+
+/** Ctrl+Space: with the list open at a value, search all data; else open it, with the footer alone where no value is known. */
+function ctrlSpace(target: EditorView): boolean {
+    if (completionStatus(target.state) === "active") return searchAll(target);
+    if (searchPlace(target.state, target.state.selection.main.head)) target.dispatch({ effects: showSearchBar.of(true) });
+    // The list's own key opens it as usual.
+    return false;
+}
 
 function selected(state: EditorState): string {
     const range = state.selection.main;
@@ -256,7 +325,35 @@ const theme = EditorView.theme({
     ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "var(--v0-primary)", color: "var(--v0-on-primary)" },
     ".cm-completionDetail": { marginLeft: "1em", opacity: "0.7", fontStyle: "normal", fontSize: "0.85em" },
     ".cm-completionInfo": { padding: "6px 10px", maxWidth: "22rem", fontFamily: "\"Open Sans\", system-ui, sans-serif" },
-    ".cm-tooltip-autocomplete ul li:has(.cm-completionIcon-text)": { borderTop: "1px solid var(--v0-divider)" },
+    ".cm-searchAll": {
+        display: "flex",
+        alignItems: "center",
+        gap: "6px",
+        padding: "3px 8px",
+        borderTop: "1px solid var(--v0-divider)",
+        backgroundColor: "color-mix(in srgb, var(--v0-on-surface) 4%, transparent)",
+        fontFamily: "\"Open Sans\", system-ui, sans-serif",
+        fontSize: "11.5px",
+        color: "var(--v0-on-surface-variant)",
+        whiteSpace: "nowrap"
+    },
+    // Alone it is the tooltip itself, with the look of the list.
+    ".cm-searchAll.cm-searchAll-alone": { borderTop: "1px solid var(--v0-divider)", backgroundColor: "var(--v0-dock)", padding: "4px 8px" },
+    ".cm-searchAll-action": { color: "var(--v0-primary)", background: "none", border: "none", padding: "0", font: "inherit", cursor: "pointer" },
+    ".cm-searchAll-action:hover": { textDecoration: "underline" },
+    ".cm-searchAll-keys": { fontFamily: "inherit", fontSize: "10.5px", padding: "0 4px", border: "1px solid var(--v0-divider)", borderRadius: "3px" },
+    ".cm-searchAll-status": { marginLeft: "auto", paddingLeft: "12px" },
+    ".cm-searchAll-warn": { color: "var(--v0-warning)" },
+    ".cm-searchAll-running": { color: "var(--v0-on-surface)" },
+    ".cm-searchAll-spin": {
+        width: "9px",
+        height: "9px",
+        border: "2px solid var(--v0-primary)",
+        borderRightColor: "transparent",
+        borderRadius: "50%",
+        animation: "cm-searchAll-turn 0.8s linear infinite"
+    },
+    "@keyframes cm-searchAll-turn": { to: { transform: "rotate(360deg)" } },
     ".cm-snippetField": { backgroundColor: "color-mix(in srgb, var(--v0-primary) 18%, transparent)" }
 });
 
@@ -279,12 +376,18 @@ function extensions(): Extension[] {
         closeBrackets(),
         // Ctrl+Space again, with the list open at a value: search all data. Ahead of the list's own
         // keys (also of the highest precedence, so the order decides), which take it to open the list.
-        Prec.highest(keymap.of([{ key: "Ctrl-Space", run: target => completionStatus(target.state) === "active" && searchAll(target) }])),
+        // Esc closes the footer shown alone.
+        Prec.highest(keymap.of([
+            { key: "Ctrl-Space", run: ctrlSpace },
+            { key: "Escape", run: target => target.state.field(searchBarAlone) && (target.dispatch({ effects: showSearchBar.of(false) }), true) }
+        ])),
+        searchBarAlone,
+        searchFooter,
         // SQL completes from its language (keywords, schema); shell code from the shell's catalog,
         // and a script also with its own variables and the JavaScript keywords.
         props.sqlSchema
             ? autocompletion({ icons: true })
-            : autocompletion({ override: props.valueField ? [completeValue, completeSearch] : [complete, completeVariables, completeStatement, completeSearch], icons: true }),
+            : autocompletion({ override: props.valueField ? [completeValue] : [complete, completeVariables, completeStatement], icons: true }),
         // Before the default keys, so Ctrl+Enter is not taken as "new line below".
         runKeys.of(runKeymap()),
         keymap.of([

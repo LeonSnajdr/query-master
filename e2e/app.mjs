@@ -1117,6 +1117,12 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         // The values of the field are offered at once (stage 24), as in a filter.
         const list = page.locator(".cm-tooltip-autocomplete:visible");
         await list.locator("li", { hasText: "two" }).waitFor();
+        // Below the values, not among them: the search of all data, with what it found.
+        const footer = page.locator("[data-testid=search-footer]:visible");
+        await footer.filter({ hasText: "sample and page" }).waitFor();
+        await footer.locator("[data-testid=search-all]").click();
+        await footer.filter({ hasText: /\d+ found/ }).waitFor();
+        assert.equal(await list.locator("li", { hasText: "Search all data" }).count(), 0);
         await panel.locator("[data-testid=tree-edit]").fill("THREE");
         // "THREE" fits "three" of the list: Esc closes the list, Enter then writes what is typed.
         await page.waitForTimeout(300);
