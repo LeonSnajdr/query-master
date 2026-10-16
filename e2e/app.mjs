@@ -1139,6 +1139,8 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await list.locator("li", { hasText: "one" }).waitFor();
         await page.keyboard.type("on");
         await page.waitForFunction(() => [...document.querySelectorAll(".cm-tooltip-autocomplete li")].map(item => item.textContent).join("|").match(/^one/));
+        // The list takes no Enter for a moment after it changed (CodeMirror's interactionDelay).
+        await page.waitForTimeout(150);
         await page.keyboard.press("Enter");
         assert.equal(await panel.locator("[data-testid=table-edit]").innerText(), "one");
         await page.keyboard.press("Escape");
