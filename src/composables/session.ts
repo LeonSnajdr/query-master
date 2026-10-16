@@ -1,8 +1,9 @@
 import { watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { backend } from "@/api";
+import { backend, errorMessage } from "@/api";
 import type { SessionTab } from "@/api";
 import { startupChoice, useAppearance } from "@/composables/appearance";
+import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
 import { isDoc } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
@@ -39,6 +40,12 @@ export function sessionOf(tabs: WorkTab[], activeId: string | undefined, kept: (
         .map(tab => ({ active: tab.id === activeId, connectionId: tab.kind === "start" ? null : tab.connectionId, content: sessionContent(tab) }));
 }
 
+/** The saved connections the tabs of a session use, each once, the active tab's first. */
+export function sessionConnections(tabs: SessionTab[], kept: (connectionId: string) => boolean): string[] {
+    const ordered = [...tabs.filter(tab => tab.active), ...tabs.filter(tab => !tab.active)];
+    return [...new Set(ordered.flatMap(tab => (tab.connectionId !== null && kept(tab.connectionId) ? [tab.connectionId] : [])))];
+}
+
 /** Tabs worth offering: more than the start page alone. */
 export function worthRestoring(tabs: SessionTab[]): boolean {
     return tabs.some(tab => isDoc(tab.content) && tab.content.kind !== "start");
@@ -46,11 +53,14 @@ export function worthRestoring(tabs: SessionTab[]): boolean {
 
 /**
  * Keeps the open tabs in SQLite while the app runs and offers them at the next start, as the
- * setting "At the start" says (ask, restore, start empty). Tabs come back without running: a
- * connection is opened when a tab runs, so a start without network does not hang.
+ * setting "At the start" says (ask, restore, start empty). Tabs come back without running; their
+ * connections open in the tree behind them, as in Studio 3T or TablePro. Nothing waits for that:
+ * a connection that can not be opened stays in the tree with its red mark, its tabs stay open and
+ * connect when they run, and one card names what failed, with a way to try again.
  */
 export function useSession() {
     const { t } = useI18n();
+    const { say } = useMessages();
     const notices = useNotices();
     const tabs = useTabsStore();
     const connections = useConnectionsStore();
@@ -81,7 +91,27 @@ export function useSession() {
             if (entry.active) active = tab.id;
         }
         if (active) tabs.activeId = active;
+        void reopen(sessionConnections(saved, kept));
         return restored;
+    }
+
+    /** Opens the connections of the restored tabs side by side; those that fail are named in one card. */
+    async function reopen(ids: string[]): Promise<void> {
+        const opening = ids.filter(id => !connections.sessions[id] && !connections.connecting.has(id));
+        const outcomes = await Promise.allSettled(opening.map(id => connections.connect(id)));
+        // Closed in the tree meanwhile, or opened by a tab that ran: not a failure to report.
+        const failed = opening.filter((id, index) => outcomes[index]?.status === "rejected" && connections.failed.has(id));
+        if (failed.length === 0) return;
+        const name = (id: string) => connections.profiles.find(profile => profile.id === id)?.name ?? id;
+        notices.notify({
+            kind: "warning",
+            title: t("session.notConnected", { name: name(failed[0]!), count: failed.length }, failed.length),
+            detail: [
+                ...failed.map(id => `${name(id)}: ${say(errorMessage(connections.failed.get(id)))}`),
+                t("session.notConnectedHint")
+            ].join("\n"),
+            actions: [{ label: t("connection.reconnect"), run: () => reopen(failed.filter(id => connections.failed.has(id))) }]
+        });
     }
 
     async function start(): Promise<void> {

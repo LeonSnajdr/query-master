@@ -1355,6 +1355,8 @@
   "server.total": "Since start",
   "server.uptime": "Up for",
   "session.never": "Do not ask again",
+  "session.notConnected": "Could not open the connection {name} | Could not open {count} connections",
+  "session.notConnectedHint": "The tabs stay open and connect when they run.",
   "session.restore": "Restore",
   "session.restored": "{count} tabs restored",
   "session.title": "Restore the last session?",

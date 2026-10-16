@@ -1355,6 +1355,8 @@
   "server.total": "Seit Start",
   "server.uptime": "Läuft seit",
   "session.never": "Nicht mehr fragen",
+  "session.notConnected": "Verbindung {name} konnte nicht geöffnet werden | {count} Verbindungen konnten nicht geöffnet werden",
+  "session.notConnectedHint": "Die Tabs bleiben offen und verbinden sich beim Ausführen.",
   "session.restore": "Wiederherstellen",
   "session.restored": "{count} Tabs wiederhergestellt",
   "session.title": "Letzte Sitzung wiederherstellen?",

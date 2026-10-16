@@ -472,7 +472,9 @@ export function useActions() {
 
     async function reconnect(at = target.value) {
         if (!at) return;
-        tabs.closeConnection(at.connectionId);
+        // The tabs of an open connection go with its old server session; those of a failed one
+        // (restored tabs, for example) stay and work once it is open.
+        if (connections.sessions[at.connectionId]) tabs.closeConnection(at.connectionId);
         await connections.reconnect(at.connectionId).catch(report);
     }
 

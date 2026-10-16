@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { WorkTab } from "@/stores/tabs";
-import { sessionContent, sessionOf, worthRestoring } from "./session";
+import { sessionConnections, sessionContent, sessionOf, worthRestoring } from "./session";
 
 function tab(fields: Partial<WorkTab>): WorkTab {
     return { id: "t", kind: "shell", connectionId: "c", database: "shop", text: "", view: "tree", pageSize: 20, readonly: false, search: "", running: false, ...fields };
@@ -23,5 +23,16 @@ describe("session", () => {
     it("offers a session only with more than the start page", () => {
         expect(worthRestoring([{ active: true, connectionId: null, content: { kind: "start" } }])).toBe(false);
         expect(worthRestoring([{ active: true, connectionId: "c", content: { kind: "shell" } }])).toBe(true);
+    });
+
+    it("opens each saved connection of the tabs once, the active tab's first", () => {
+        const saved = [
+            { active: false, connectionId: null, content: { kind: "start" } },
+            { active: false, connectionId: "a", content: { kind: "shell" } },
+            { active: false, connectionId: "gone", content: { kind: "shell" } },
+            { active: true, connectionId: "b", content: { kind: "browse" } },
+            { active: false, connectionId: "a", content: { kind: "sql" } }
+        ];
+        expect(sessionConnections(saved, id => id !== "gone")).toEqual(["b", "a"]);
     });
 });

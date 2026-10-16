@@ -1408,9 +1408,12 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.reload();
         await id("dock-browse").waitFor();
         assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ B\)$/);
-        // The card at the start brings the tabs of before back, without running them (stage 20).
+        // The card at the start brings the tabs of before back, without running them (stage 20);
+        // their connection opens in the tree behind them.
         await page.locator("[data-testid=notice-action]:visible", { hasText: "Restore" }).click();
         await page.waitForFunction(count => document.querySelectorAll("[data-testid=tab]").length === count, before);
+        await page.locator("[data-testid=connection-row]", { hasText: NAME }).waitFor();
+        await id("database-row").first().waitFor();
 
         await page.keyboard.press("Control+Alt+P");
         await visible("settings-tab-keys").click();
@@ -1421,8 +1424,8 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         if (startupBefore && (await startupText()) !== startupBefore) await choose(startup, startupBefore);
         await visible("settings-close").click();
         assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ Q\)$/);
-        // The reload closed the connection and emptied the tree; the next steps work on it. The
-        // start page is the first tab; a restored one lies in front of it.
+        // The restore opened the connection again; the next steps work on it. The start page is the
+        // first tab; a restored one lies in front of it.
         await id("tab").first().click();
         await page.locator("[data-testid=recent-connection]", { hasText: NAME }).click();
         await id("database-row").first().waitFor();

@@ -29,7 +29,13 @@ function inFolderOf(path: string, database: string): boolean {
 const keybindings: Record<string, string[]> = {};
 let setting: Setting = { language: null, theme: null, pageSize: null, resultView: null, editorFontSize: null, startup: null };
 const savedQueries: SavedQuery[] = [];
-let session: SessionTab[] = [];
+/** `?session` starts with a last session: a tab on the made-up data and one on the unreachable server. */
+let session: SessionTab[] = location.search.includes("session")
+    ? [
+            { active: true, connectionId: "demo", content: { kind: "shell", database: "shop", text: "db.orders.find({})", view: "tree", pageSize: 20 } },
+            { active: false, connectionId: "offline", content: { kind: "shell", database: "test", text: "db.stats()", view: "tree", pageSize: 20 } }
+        ]
+    : [];
 
 const STATUS = ["open", "paid", "shipped", "cancelled"];
 

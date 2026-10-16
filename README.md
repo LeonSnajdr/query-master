@@ -15,7 +15,8 @@ bun run app:dev
 ```
 
 `bun run dev` alone opens the interface in a browser with made-up data (`src/api.mock.ts`);
-`http://localhost:1420/?demo` opens a collection of it right away.
+`http://localhost:1420/?demo` opens a collection of it right away, `?session` starts with a last
+session to restore (one of its connections can not be reached).
 
 ```bash
 bun run lint

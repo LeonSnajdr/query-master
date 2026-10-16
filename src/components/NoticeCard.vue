@@ -74,7 +74,7 @@ async function act(action: NoticeAction) {
         </button>
         <span
             v-if="notice.detail"
-            class="col-start-2 col-span-2 text-[12px] text-on-surface-variant break-words line-clamp-4"
+            class="col-start-2 col-span-2 text-[12px] text-on-surface-variant break-words whitespace-pre-line line-clamp-4"
         >{{ notice.detail }}</span>
         <div
             v-if="notice.kind === 'progress'"
