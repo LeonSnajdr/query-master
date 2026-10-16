@@ -1230,33 +1230,34 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         // An answer to a click: only in the status bar, no card.
         await panel.locator("[data-testid=result-count]").click();
         await page.locator("[data-testid=status-message]", { hasText: /matches 1 document/ }).waitFor();
-        // A problem: a card that stays, with "Copy", until it is closed. The clipboard holds no document.
+        // A problem: a card with "Copy" that stays longer than a success. The clipboard holds no document.
         await page.evaluate(() => navigator.clipboard.writeText("not a document"));
         await page.keyboard.press("Control+Shift+V");
         const error = page.locator("[data-testid=notice][data-kind=error]").first();
         await error.waitFor();
         await error.locator("[data-testid=notice-action]", { hasText: "Copy" }).waitFor();
         await page.waitForTimeout(4500);
-        assert.equal(await error.isVisible(), true, "an error went away by itself");
-        // With a dialog open the stack moves to the top right, over the dialog, away from its buttons.
+        assert.equal(await error.isVisible(), true, "an error went away as fast as a success");
+        // With a dialog open the stack stays in its corner, over the dialog's backdrop.
         await page.keyboard.press("Control+Alt+P");
         await visible("settings").waitFor();
-        await page.locator("[data-testid=notice-stack][data-placement=top]").waitFor();
-        const onTop = await error.evaluate((card) => {
+        // The card lies over the dialog's backdrop, not under it.
+        await page.waitForFunction(() => {
+            const card = document.querySelector("[data-testid=notice][data-kind=error]");
+            if (!card) return false;
             const box = card.getBoundingClientRect();
             return card.contains(document.elementFromPoint(box.left + box.width / 2, box.top + 12));
         });
-        assert.equal(onTop, true, "the card lies under the dialog's backdrop");
         await shot("notice-over-dialog");
         await visible("settings-close").click();
-        await page.locator("[data-testid=notice-stack][data-placement=bottom]").waitFor();
-        await error.locator("[data-testid=notice-close]").click();
-        await error.waitFor({ state: "hidden" });
-        // Behind the bell: the session's notices, the error among them; opening reads them.
+        // Behind the bell: the session's notices, the error among them; opening reads them and
+        // takes the cards into the list, the error with its "Copy".
         assert.match(await id("notice-count").innerText(), /^\d+$/);
         await id("notice-bell").click();
+        await error.waitFor({ state: "hidden" });
         const entries = page.locator("[data-testid=notice-entry]:visible");
         assert.ok(await entries.count() >= 2);
+        await entries.locator("[data-testid=notice-entry-action]", { hasText: "Copy" }).first().waitFor();
         await entries.filter({ hasText: /matches 1 document/ }).first().waitFor();
         await shot("notice-center");
         await visible("notice-clear").click();

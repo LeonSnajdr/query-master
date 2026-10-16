@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { PopoverActivator, PopoverContent, PopoverRoot } from "@vuetify/v0";
-import { computed, shallowRef, watch } from "vue";
+import { ButtonContent, ButtonRoot, PopoverActivator, PopoverContent, PopoverRoot } from "@vuetify/v0";
+import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { useNotices } from "@/composables/notices";
 import type { Notice } from "@/composables/notices";
@@ -8,11 +8,17 @@ import type { Notice } from "@/composables/notices";
 /**
  * The right end of the status bar: the work that runs (a click shows its card again) and the
  * bell with the session's notices, the unread ones counted on it, red when an error is among them.
+ * The open list takes the place of the cards (as VS Code): they go into it, with their buttons, and
+ * what comes while it is open shows in it instead of as a card. Like the cards, the newest is at
+ * the foot, next to the bell.
  */
 const { locale, t } = useI18n();
 const notices = useNotices();
-const open = shallowRef(false);
-/** What was unread when the list opened: shown in bold this once. */
+const open = computed({
+    get: () => notices.state.centerOpen,
+    set: value => notices.setCenterOpen(value)
+});
+/** What was unread when the list opened, or came while it is open: shown in bold. */
 const fresh = shallowRef(new Set<number>());
 
 watch(open, (value) => {
@@ -20,6 +26,17 @@ watch(open, (value) => {
     fresh.value = new Set(notices.unread.value.map(notice => notice.id));
     notices.markAllRead();
 });
+watch(() => notices.history.value[0]?.id, (id) => {
+    if (open.value && id !== undefined) fresh.value = new Set([...fresh.value, id]);
+});
+
+/** Oldest first, so the newest lies at the foot, where the cards had it. */
+const entries = computed(() => [...notices.history.value].reverse());
+const list = useTemplateRef("list");
+// On opening and when one comes, the foot shows: the newest is in view.
+watch([open, () => notices.history.value[0]?.id, list], () => {
+    if (open.value && list.value) list.value.scrollTop = list.value.scrollHeight;
+}, { flush: "post" });
 
 const count = computed(() => notices.unread.value.length);
 const alarming = computed(() => notices.unread.value.some(notice => notice.kind === "error" || notice.kind === "warning"));
@@ -77,8 +94,9 @@ function time(at: Date): string {
                 data-testid="notice-count"
             >{{ count > 99 ? "99+" : count }}</span>
         </PopoverActivator>
+        <!-- In the cards' place: their width, and as far above the status bar (its foot 36px off the window's). -->
         <PopoverContent
-            class="menu-panel p-0 w-[min(calc(100vw-2rem),24rem)]"
+            class="[margin:0_0_0.625rem]! p-0 w-[min(calc(100vw-2.25rem),22rem)] rounded-sm bg-dock text-on-surface border border-divider shadow-[0_6px_20px_rgb(0_0_0/0.4)]"
             positionArea="top span-left"
         >
             <div
@@ -105,12 +123,13 @@ function time(at: Date): string {
                 </p>
                 <ul
                     v-else
+                    ref="list"
                     class="m-0 p-0 py-1 list-none overflow-y-auto"
                 >
                     <li
-                        v-for="notice in notices.history.value"
+                        v-for="notice in entries"
                         :key="notice.id"
-                        class="grid grid-cols-[1rem_1fr_auto] gap-x-2.5 gap-y-0.5 items-start px-3 py-1.5 hover:bg-on-surface/5"
+                        class="group grid grid-cols-[1rem_1fr_auto_1.25rem] gap-x-2.5 gap-y-0.5 items-start pl-3 pr-1.5 py-1.5 hover:bg-on-surface/5"
                         data-testid="notice-entry"
                     >
                         <span
@@ -122,10 +141,34 @@ function time(at: Date): string {
                             class="min-w-0 text-on-surface-strong break-words"
                         >{{ notice.title }}</span>
                         <span class="text-[11px] tabular-nums text-on-surface-variant mt-0.5">{{ time(notice.at) }}</span>
+                        <button
+                            @click="notices.forget(notice.id)"
+                            :aria-label="$t('notices.forget')"
+                            :title="$t('notices.forget')"
+                            class="size-5 -mt-0.5 inline-flex items-center justify-center rounded-sm text-on-surface-variant opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:text-on-surface-strong hover:bg-on-surface/10"
+                            data-testid="notice-forget"
+                            type="button"
+                        >
+                            <span class="i-lucide-x size-3.5" />
+                        </button>
                         <span
                             v-if="notice.detail"
-                            class="col-start-2 col-span-2 text-[12px] text-on-surface-variant break-words"
+                            class="col-start-2 col-span-3 text-[12px] text-on-surface-variant break-words"
                         >{{ notice.detail }}</span>
+                        <div
+                            v-if="notice.actions.length > 0"
+                            class="col-start-2 col-span-3 flex flex-wrap gap-1.5 mt-1"
+                        >
+                            <ButtonRoot
+                                v-for="action in notice.actions"
+                                :key="action.label"
+                                @click="action.run()"
+                                class="btn-secondary h-6! px-2.5! text-[12px]!"
+                                data-testid="notice-entry-action"
+                            >
+                                <ButtonContent>{{ action.label }}</ButtonContent>
+                            </ButtonRoot>
+                        </div>
                     </li>
                 </ul>
             </div>

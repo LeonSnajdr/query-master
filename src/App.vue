@@ -414,8 +414,6 @@ onMounted(async () => {
             </span>
             <StatusMessage />
             <span class="grow" />
-            <NoticeBell />
-            <span class="toolbar-rule" />
             <span
                 class="tabular-nums text-on-surface-variant"
                 data-testid="status-time"
@@ -439,6 +437,9 @@ onMounted(async () => {
                 :label="$t('layout.editor')"
                 icon="i-lucide-panel-bottom-close"
             />
+            <span class="toolbar-rule" />
+            <!-- At the right end, as VS Code: its list opens in the same corner as the cards. -->
+            <NoticeBell />
         </footer>
 
         <ContextMenu ref="tabMenu" />

@@ -23,6 +23,13 @@ const ICONS: Record<Notice["kind"], string> = {
     error: "i-lucide-circle-x text-error",
     progress: "i-lucide-loader-circle animate-spin text-primary"
 };
+const TIME_COLORS: Record<Notice["kind"], string> = {
+    success: "text-success",
+    info: "text-primary",
+    warning: "text-warning",
+    error: "text-error",
+    progress: "text-primary"
+};
 
 const timer = useTimer(() => notices.dismiss(props.notice.id), { duration: () => props.notice.lifetime });
 onMounted(() => {
@@ -49,7 +56,7 @@ async function act(action: NoticeAction) {
 <template>
     <div
         ref="card"
-        :class="notice.kind === 'error' ? 'border-error/45' : 'border-divider'"
+        :class="[notice.kind === 'error' ? 'border-error/45' : 'border-divider', notice.lifetime > 0 ? 'pb-3.5' : '']"
         :data-kind="notice.kind"
         :role="notice.kind === 'error' ? 'alert' : 'status'"
         class="relative overflow-hidden grid grid-cols-[1rem_1fr_auto] gap-x-2.5 gap-y-0.5 items-start pl-3 pr-2 py-2.5 rounded-lg bg-dock border shadow-[0_8px_24px_rgb(0_0_0/0.45)] text-[13px]"
@@ -106,12 +113,18 @@ async function act(action: NoticeAction) {
                 <ButtonContent>{{ action.label }}</ButtonContent>
             </ButtonRoot>
         </div>
-        <!-- The time the card has left. -->
+        <!-- The time the card has left: a thin line on its own track inside the card, clear of the
+             rounded edge, in the color of its symbol. -->
         <span
             v-if="notice.lifetime > 0"
-            :class="notice.kind === 'success' ? 'text-success' : 'text-primary'"
-            :style="{ width: `${left * 100}%` }"
-            class="absolute left-0 bottom-0 h-0.5 bg-current opacity-30"
-        />
+            class="absolute left-3 right-3 bottom-1.5 h-0.5 rounded-full bg-on-surface/10 overflow-hidden"
+            data-testid="notice-time"
+        >
+            <span
+                :class="TIME_COLORS[notice.kind]"
+                :style="{ width: `${left * 100}%` }"
+                class="block h-full rounded-full bg-current opacity-60"
+            />
+        </span>
     </div>
 </template>

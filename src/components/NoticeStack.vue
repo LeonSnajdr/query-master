@@ -5,67 +5,47 @@ import { useNotices, VISIBLE_CARDS } from "@/composables/notices";
 import NoticeCard from "./NoticeCard.vue";
 
 /**
- * The cards of the notices: the newest in front, the two before it as edges behind it; with the
- * pointer (or the keyboard) on it the stack fans out and the time of every card stands still.
- * At the bottom right above the status bar; while a dialog is open at the top right below the
- * title bar instead, so no card lies over the dialog's buttons. Over open dialogs as well.
+ * The cards of the notices, like VS Code's toasts: a plain column at the bottom right above the
+ * status bar, the newest nearest the corner. A new card fades in, a closed one fades out and the
+ * others slide into place; nothing else moves. With the pointer (or the keyboard) on the column the
+ * time of every card stands still; Esc closes them all. Over open dialogs as well, in the same
+ * corner. While the list behind the bell is open there are no cards: they are in the list.
  */
 const notices = useNotices();
 const hovering = shallowRef(false);
 const focused = shallowRef(false);
-const expanded = computed(() => hovering.value || focused.value);
+const paused = computed(() => hovering.value || focused.value);
 
-// A dialog is open as long as a <dialog open> is in the page. The stack lives in the topmost one
-// (else a modal dialog's backdrop would cover it); a closed dialog stays in the page, hidden, so
-// when the topmost dialog changes the stack is mounted anew where it belongs now.
-const dialogOpen = shallowRef(false);
+// The stack lives in the topmost open <dialog> (else a modal dialog's backdrop would cover it); a
+// closed dialog stays in the page, hidden, so when the topmost dialog changes the stack is mounted
+// anew where it belongs now. Same corner, no appear transition: nothing shows of the move.
 const portalKey = shallowRef(0);
 let topmost: Element | undefined;
 function lookForDialogs() {
-    const open = [...document.querySelectorAll("dialog[open]")];
-    dialogOpen.value = open.length > 0;
-    if (open.at(-1) !== topmost) {
-        topmost = open.at(-1);
+    const open = [...document.querySelectorAll("dialog[open]")].at(-1);
+    if (open !== topmost) {
+        topmost = open;
         portalKey.value++;
     }
 }
 useMutationObserver(document.body, lookForDialogs, { subtree: true, childList: true, attributes: true, attributeFilter: ["open"] });
 lookForDialogs();
-/** Which way the stack grows from its corner: up from the bottom, down from the top. */
-const atTop = computed(() => dialogOpen.value);
 
-const shown = computed(() => notices.cards.value.slice(0, VISIBLE_CARDS));
-const hidden = computed(() => notices.cards.value.length - shown.value.length);
+const shown = computed(() => (notices.state.centerOpen ? [] : notices.cards.value.slice(0, VISIBLE_CARDS)));
+const more = computed(() => notices.bumped.value.length);
 const heights = reactive(new Map<number, number>());
 
 const GAP = 8;
-/** Collapsed, each card behind the front one peeks out by this much. */
-const PEEK = 10;
 
-/** Where each card lies and how high the stack is. */
+/** Where each card lies (upwards from the corner) and how high the column is. */
 const layout = computed(() => {
-    const direction = atTop.value ? 1 : -1;
-    const front = heights.get(shown.value[0]?.id ?? -1) ?? 0;
     let offset = 0;
-    const cards = shown.value.map((notice, index) => {
-        if (expanded.value) {
-            const style = { transform: `translateY(${direction * offset}px)`, zIndex: VISIBLE_CARDS - index };
-            offset += (heights.get(notice.id) ?? 0) + GAP;
-            return { notice, style };
-        }
-        return {
-            notice,
-            style: {
-                transform: `translateY(${direction * index * PEEK}px) scale(${1 - index * 0.05})`,
-                zIndex: VISIBLE_CARDS - index,
-                opacity: index === 0 ? 1 : 1 - index * 0.3,
-                // Behind the front card only its edge shows: as high as the front one.
-                ...(index > 0 && front > 0 ? { height: `${front}px` } : {})
-            }
-        };
+    const cards = shown.value.map((notice) => {
+        const style = { transform: `translateY(${-offset}px)` };
+        offset += (heights.get(notice.id) ?? 0) + GAP;
+        return { notice, style };
     });
-    const height = expanded.value ? Math.max(0, offset - GAP) : front + Math.min(VISIBLE_CARDS - 1, shown.value.length - 1) * PEEK;
-    return { cards, height };
+    return { cards, height: Math.max(0, offset - GAP) };
 });
 
 function measured(id: number, height: number) {
@@ -85,38 +65,58 @@ function focusOut(event: FocusEvent) {
         :scrim="false"
         to="top-layer"
     >
+        <!-- Stays in the page while empty, so the last card can fade out. -->
         <section
-            v-if="shown.length > 0"
             @focusin="focused = true"
             @focusout="focusOut"
+            @keydown.esc.stop="notices.dismissAll()"
             @mouseenter="hovering = true"
             @mouseleave="hovering = false"
             :aria-label="$t('notices.region')"
-            :class="atTop ? 'top-12' : 'bottom-9'"
-            :data-placement="atTop ? 'top' : 'bottom'"
             :style="{ zIndex, height: `${layout.height}px` }"
-            class="fixed right-4 w-[min(calc(100vw-2rem),22rem)]"
+            class="fixed bottom-9 right-4.5 w-[min(calc(100vw-2.25rem),22rem)]"
             data-testid="notice-stack"
         >
-            <span
-                v-if="hidden > 0"
-                :style="atTop ? { top: `${layout.height + 4}px` } : { bottom: `${layout.height + 4}px` }"
-                class="absolute right-1 text-[11px] text-on-surface-variant"
-                data-testid="notice-more"
-            >{{ $t("notices.more", { count: hidden }, hidden) }}</span>
+            <!-- Above the column: what newer cards pushed behind the bell, and closing them all. -->
             <div
-                v-for="card in layout.cards"
-                :key="card.notice.id"
-                :class="[atTop ? 'top-0 origin-bottom' : 'bottom-0 origin-top', expanded ? '' : '[&>div]:h-full']"
-                :style="card.style"
-                class="absolute right-0 w-full transition-[transform,opacity] duration-200 ease-out"
+                v-if="shown.length > 0"
+                :style="{ bottom: `${layout.height + 4}px` }"
+                class="absolute inset-x-0 flex items-center gap-2 text-[11px] transition-[bottom] duration-200 ease-out motion-reduce:transition-none"
             >
-                <NoticeCard
-                    @height="measured"
-                    :notice="card.notice"
-                    :paused="expanded"
-                />
+                <button
+                    v-if="more > 0"
+                    @click="notices.setCenterOpen(true)"
+                    class="px-1 rounded-sm text-on-surface-variant hover:text-on-surface-strong hover:underline"
+                    data-testid="notice-more"
+                    type="button"
+                >
+                    {{ $t("notices.more", { count: more }, more) }}
+                </button>
+                <button
+                    v-if="shown.length > 1"
+                    @click="notices.dismissAll()"
+                    :class="paused ? 'opacity-100' : 'opacity-0'"
+                    class="ml-auto px-1 rounded-sm text-on-surface-variant hover:text-on-surface-strong hover:underline transition-opacity duration-150 focus-visible:opacity-100"
+                    data-testid="notice-close-all"
+                    type="button"
+                >
+                    {{ $t("notices.closeAll") }}
+                </button>
             </div>
+            <TransitionGroup name="notice">
+                <div
+                    v-for="card in layout.cards"
+                    :key="card.notice.id"
+                    :style="card.style"
+                    class="notice-slot absolute bottom-0 right-0 w-full"
+                >
+                    <NoticeCard
+                        @height="measured"
+                        :notice="card.notice"
+                        :paused="paused"
+                    />
+                </div>
+            </TransitionGroup>
         </section>
     </Portal>
 </template>

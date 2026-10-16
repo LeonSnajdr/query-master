@@ -107,6 +107,35 @@ export default defineConfig({
           scrollbar-width: thin;
           scrollbar-color: color-mix(in srgb, var(--v0-on-surface) 30%, transparent) transparent;
         }
+
+        /* Notice cards: a card fades in, a closed one fades out, the others glide to their place.
+           The place sits in transform, the coming in translate, so the two do not fight. */
+        .notice-slot {
+          transition: transform 200ms cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        .notice-enter-active {
+          transition: transform 200ms cubic-bezier(0.2, 0, 0, 1), translate 200ms cubic-bezier(0.2, 0, 0, 1), opacity 200ms cubic-bezier(0.2, 0, 0, 1);
+        }
+
+        .notice-leave-active {
+          transition: opacity 150ms ease-in;
+        }
+
+        .notice-enter-from {
+          opacity: 0;
+          translate: 0 8px;
+        }
+
+        .notice-leave-to {
+          opacity: 0;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .notice-slot, .notice-enter-active, .notice-leave-active {
+            transition: none;
+          }
+        }
       `
         }
     ],
