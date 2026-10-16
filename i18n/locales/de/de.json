@@ -863,7 +863,6 @@
   "export.schema.remove": "Gewählte Spalten entfernen",
   "export.schema.reset": "Zurück zu den Feldern der ersten Ebene",
   "export.server": "Server",
-  "export.skippedSystem": "Eine Collection des Servers selbst bleibt draußen: Sie lässt sich nicht wieder importieren. | {n} Collections des Servers selbst bleiben draußen: Sie lassen sich nicht wieder importieren.",
   "export.sql.createTable": "CREATE TABLE voranstellen",
   "export.sql.dialect": "SQL-Format",
   "export.sql.dialect.msSql": "MSSQL",

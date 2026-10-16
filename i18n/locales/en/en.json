@@ -863,7 +863,6 @@
   "export.schema.remove": "Remove the selected columns",
   "export.schema.reset": "Back to the fields of the first level",
   "export.server": "Server",
-  "export.skippedSystem": "A collection of the server itself is left out: it cannot be imported again. | {n} collections of the server itself are left out: they cannot be imported again.",
   "export.sql.createTable": "Add CREATE TABLE statement",
   "export.sql.dialect": "SQL format",
   "export.sql.dialect.msSql": "MSSQL",

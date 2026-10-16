@@ -53,14 +53,14 @@ export function useExportWizard() {
     /**
      * The collections a selection stands for: of the connection, the database, or the one. Of a
      * connection or database, the server's own `system.*` collections are left out (the profiler's
-     * entries, the definitions of views): they are written by the server and cannot be imported.
+     * entries, the definitions of views), silently as mongodump: they are written by the server and
+     * cannot be imported. Chosen on its own, such a collection is exported.
      */
-    async function collectionsOf(at: TreeSelection): Promise<{ found: { database: string; collection: string }[]; skipped: string[] }> {
+    async function collectionsOf(at: TreeSelection): Promise<{ database: string; collection: string }[]> {
         const session = connections.sessions[at.connectionId];
-        if (!session) return { found: [], skipped: [] };
+        if (!session) return [];
         const databases = at.database === undefined ? session.databases.map(database => database.name) : [at.database];
         const found: { database: string; collection: string }[] = [];
-        const skipped: string[] = [];
         for (const database of databases) {
             if (at.collection !== undefined) {
                 found.push({ database, collection: at.collection });
@@ -68,11 +68,10 @@ export function useExportWizard() {
             }
             await connections.loadCollections(at.connectionId, database).catch(() => undefined);
             for (const collection of connections.collectionsOf(at.connectionId, database)) {
-                if (isSystemCollection(collection)) skipped.push(`${database}.${collection}`);
-                else found.push({ database, collection });
+                if (!isSystemCollection(collection)) found.push({ database, collection });
             }
         }
-        return { found, skipped };
+        return found;
     }
 
     /**
@@ -88,13 +87,7 @@ export function useExportWizard() {
         busy.value = true;
         try {
             const collections: { database: string; collection: string }[] = [];
-            const skipped: string[] = [];
-            for (const item of all) {
-                const of = await collectionsOf(item);
-                collections.push(...of.found);
-                skipped.push(...of.skipped);
-            }
-            if (skipped.length > 0) notices.notify({ kind: "info", title: t("export.skippedSystem", skipped.length), detail: skipped.join(", ") });
+            for (const item of all) collections.push(...await collectionsOf(item));
             preset ??= readExportPreset(await backend.getPreset("export").catch(() => null));
             Object.assign(wizard, { open: true, step: "rows", progress: [], outcome: undefined });
             // Always JSON into a folder first; the options are those of the last run.
