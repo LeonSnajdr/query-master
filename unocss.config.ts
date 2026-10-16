@@ -99,6 +99,11 @@ export default defineConfig({
           outline-offset: -1px;
         }
 
+        /* A modal dialog takes the focus itself when nothing in it asks for it: no frame around it. */
+        dialog:focus, dialog:focus-visible {
+          outline: none;
+        }
+
         .font-mono, .cm-editor .cm-scroller {
           font-family: "JetBrains Mono", ui-monospace, Consolas, monospace;
         }

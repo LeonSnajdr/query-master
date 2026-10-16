@@ -26,6 +26,15 @@ const confirmOpen = computed({ get: () => state.confirm !== undefined, set: open
 /** What is typed to free the button of a confirmation that asks for a name. */
 const typedName = shallowRef("");
 watch(() => state.confirm, () => (typedName.value = ""));
+/**
+ * Where the focus starts once the confirmation is drawn: in the name to type, else on Cancel. Not
+ * on the dialog itself (it takes it when nothing in it does), and never on the button that writes.
+ */
+watch(() => state.confirm, (request) => {
+    if (!request) return;
+    const start = document.querySelector<HTMLElement>(request.requireName === undefined ? "[data-testid=confirm-cancel]" : "[data-testid=confirm-name]");
+    start?.focus();
+}, { flush: "post" });
 const confirmFree = computed(() => state.confirm?.requireName === undefined || typedName.value === state.confirm.requireName);
 
 const { copied: scriptCopied, copy: copyScriptText } = useCopy();
@@ -294,7 +303,10 @@ function copyText() {
                             />
                         </ButtonContent>
                     </ButtonRoot>
-                    <DialogClose class="btn-ghost">
+                    <DialogClose
+                        class="btn-ghost"
+                        data-testid="confirm-cancel"
+                    >
                         {{ $t("action.cancel") }}
                     </DialogClose>
                     <ButtonRoot

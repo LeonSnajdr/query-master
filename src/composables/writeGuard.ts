@@ -99,7 +99,9 @@ export function useWriteGuard() {
     async function previewOf(connectionId: string, database: string, info: WriteInfo): Promise<ConfirmChange[] | undefined> {
         if (info.collection === undefined || info.filter === undefined) return undefined;
         try {
-            const page = await backend.runCursorCommand(connectionId, database, { find: info.collection, filter: info.filter, limit: PREVIEWED }, PREVIEWED);
+            // `updateOne`, `deleteOne`: the one document it touches, though the filter finds more.
+            const limit = info.many ? PREVIEWED : 1;
+            const page = await backend.runCursorCommand(connectionId, database, { find: info.collection, filter: info.filter, limit }, limit);
             return page.documents.map((document) => {
                 const id = preview(document._id ?? null, 60);
                 if (removes(info)) return { id, fields: [], removed: preview(document, 160) };
@@ -130,7 +132,7 @@ export function useWriteGuard() {
             environment: { kind: environment, name: nameOf(connectionId) },
             summary: summaryOf(info, target, count),
             changes,
-            more: count === undefined || !changes?.length ? undefined : count - changes.length,
+            more: count === undefined || !changes?.length ? undefined : Math.max(0, count - changes.length),
             deleting: removes(info) || info.dropping,
             requireName: needsName(environment, info, count) ? info.collection ?? database : undefined,
             script: options.statement ?? `db.getSiblingDB(${JSON.stringify(database)}).runCommand(${toShell(command)})`,
