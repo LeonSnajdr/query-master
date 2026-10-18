@@ -12,6 +12,7 @@ import { Decoration, EditorView, ViewPlugin, crosshairCursor, drawSelection, hig
 import { tags } from "@lezer/highlight";
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { preferences } from "@/composables/appearance";
 import { useMessages } from "@/composables/messages";
 import { codeMirrorKey } from "@/keys/hotkey";
 import { useKeymap } from "@/keys/keymap";
@@ -479,7 +480,9 @@ function extensions(): Extension[] {
     const base: Extension[] = [
         drawSelection(),
         bracketMatching(),
-        indentUnit.of("    "),
+        // Tab width and closing brackets as the settings say (new editors take a change).
+        indentUnit.of(" ".repeat(preferences.tabWidth)),
+        EditorState.tabSize.of(preferences.tabWidth),
         language.of(languageExtension()),
         syntaxHighlighting(highlight),
         EditorView.contentAttributes.of({ "aria-label": props.label, ...(props.testid ? { "data-testid": props.testid } : {}) }),
@@ -492,7 +495,7 @@ function extensions(): Extension[] {
         ...base,
         history(),
         indentOnInput(),
-        closeBrackets(),
+        ...(preferences.autoClose ? [closeBrackets()] : []),
         //: several cursors (Ctrl+Alt+Up/Down, Alt+click), block selection
         // (Alt+drag), the other places of the selected text marked; find and replace on top.
         EditorState.allowMultipleSelections.of(true),

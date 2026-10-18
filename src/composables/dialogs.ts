@@ -84,7 +84,7 @@ export interface IndexRequest {
 }
 
 /** The tabs of the settings dialog. */
-export type SettingsPage = "general" | "keys";
+export type SettingsPage = "general" | "display" | "keys";
 
 /** What the Help dialog shows: the keyboard shortcuts (F12) or "About QueryMaster". */
 export type HelpPage = "shortcuts" | "about";

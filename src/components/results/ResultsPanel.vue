@@ -8,6 +8,7 @@ import ContextMenu from "@/components/ContextMenu.vue";
 import DropMenu from "@/components/DropMenu.vue";
 import ErrorState from "@/components/ErrorState.vue";
 import IconButton from "@/components/IconButton.vue";
+import { preferences } from "@/composables/appearance";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import { useExportWizard } from "@/composables/exportWizard";
@@ -18,6 +19,7 @@ import { useKeymap, useShortcut } from "@/keys/keymap";
 import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { isDoc, scalar, toShell } from "@/shell/ejson";
+import { toRelaxed } from "@/shell/display";
 import { filterPath, valueAtPath } from "@/shell/values";
 import type { ValueField } from "@/shell/values";
 import { useValueSearch, useValueSources } from "@/composables/values";
@@ -82,7 +84,12 @@ const rows = computed(() => {
     const needle = tab.value.search.trim().toLowerCase();
     return needle ? all.filter(row => toShell(row.item).toLowerCase().includes(needle)) : all;
 });
-const jsonText = computed(() => rows.value.map(row => toShell(row.item, "", true)).join("\n"));
+/** The view Json in the notation of the settings: the shell's, or Extended JSON relaxed or canonical. */
+const jsonText = computed(() => rows.value.map((row) => {
+    if (preferences.jsonView === "canonical") return JSON.stringify(row.item, null, 4);
+    if (preferences.jsonView === "relaxed") return JSON.stringify(toRelaxed(row.item), null, 4);
+    return toShell(row.item, "", true);
+}).join("\n"));
 /** The documents of the page; while searching, how many of them match. */
 const rangeText = computed(() => {
     const shown = result.value;
@@ -863,7 +870,7 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
                 <TreeRow
                     v-for="row in rows"
                     :key="`${result.offset}-${row.index}`"
-                    :expanded="row.index === 0"
+                    :expanded="preferences.autoExpand === 'all' || preferences.autoExpand === 'first' && row.index === 0"
                     :index="row.index"
                     :number="result.offset + row.index + 1"
                     :value="row.item"

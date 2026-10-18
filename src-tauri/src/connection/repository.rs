@@ -233,7 +233,15 @@ mod tests {
         set_group(&pool, atlas.id, "Kunden").await.unwrap();
         assert_eq!(list(&pool).await.unwrap()[0].group_name, "Kunden");
         // Saving the connection again keeps what the dialog sends.
-        upsert(&pool, &Connection { group_name: "Intern".into(), ..atlas.clone() }).await.unwrap();
+        upsert(
+            &pool,
+            &Connection {
+                group_name: "Intern".into(),
+                ..atlas.clone()
+            },
+        )
+        .await
+        .unwrap();
         assert_eq!(list(&pool).await.unwrap()[0].group_name, "Intern");
     }
 

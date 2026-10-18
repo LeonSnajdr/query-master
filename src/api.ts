@@ -64,6 +64,22 @@ export interface Setting {
     editorFontSize: number | null;
     /** `ask`, `restore` or `empty`: what the start does with the tabs of the last session. */
     startup: string | null;
+    /** What a double click on a collection opens: `browse`, `shell`, `aggregate`, `sql`. */
+    defaultTab?: string | null;
+    /** Dates in `local` time or `utc`. */
+    timeZone?: string | null;
+    /** `local`, `iso`, `dmy` or `mdy`. */
+    dateFormat?: string | null;
+    /** Binary subtype 3 as `raw`, or the UUID of `dotnet`, `java`, `python`. */
+    legacyUuid?: string | null;
+    /** Documents unfolded at first: `none`, `first`, `all`. */
+    autoExpand?: string | null;
+    /** The view Json: `shell`, `relaxed` or `canonical`. */
+    jsonView?: string | null;
+    numberGrouping?: boolean | null;
+    typeColors?: boolean | null;
+    tabWidth?: number | null;
+    autoClose?: boolean | null;
 }
 
 /** A query saved with a name (stage 20): of a collection, or (`collection` absent) of a database. */

@@ -12,6 +12,7 @@ import { useActions } from "@/composables/actions";
 import { useCopy } from "@/composables/copy";
 import { useDialogs } from "@/composables/dialogs";
 import { useExportWizard } from "@/composables/exportWizard";
+import { preferences } from "@/composables/appearance";
 import { useMessages } from "@/composables/messages";
 import { useKeymap } from "@/keys/keymap";
 import type { MenuEntry } from "@/menu";
@@ -216,11 +217,21 @@ function bucketAt(database: DatabaseNode, collection: string): string | undefine
     return bucketOf(collection, database.collections ?? []);
 }
 
+/** What a double click opens on a collection *Default tab* in the settings. */
+function openWithDefault(at: TreeSelection) {
+    switch (preferences.defaultTab) {
+        case "shell": return actions.openShell(at);
+        case "aggregate": return actions.aggregation(at);
+        case "sql": return actions.openSql(at);
+        default: return actions.browse(at);
+    }
+}
+
 /** Double click: the documents of a collection, the files of a bucket. */
 function openRow(profile: Profile, database: DatabaseNode, collection: string) {
     const at = { connectionId: profile.id, database: database.name, collection };
     const bucket = bucketAt(database, collection);
-    if (bucket === undefined) actions.browse(at);
+    if (bucket === undefined) openWithDefault(at);
     else actions.openGridFs(at, bucket);
 }
 

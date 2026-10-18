@@ -1,6 +1,8 @@
 import { createContext } from "@vuetify/v0";
 import type { Ref } from "vue";
-import { isDoc, scalar } from "@/shell/ejson";
+import { preferences } from "@/composables/appearance";
+import { formatDate, groupDigits, legacyUuidText } from "@/shell/display";
+import { isDoc, scalar, typeOf } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
 import type { MenuEntry } from "@/menu";
 import type { ValueField } from "@/shell/values";
@@ -75,17 +77,24 @@ export function displayText(value: Json): string {
     return scalar(value)?.text ?? "";
 }
 
-/** Date and time as the language of the app writes them; the tree and the table show dates so. */
-export function dateFormat(locale: string): Intl.DateTimeFormat {
-    return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
 /**
- * A date as `format` writes it: date and time side by side, without the comma
- * some locales put between. `undefined` for a value that is no date, or one out of range.
+ * A value as the display settings want it (the preferences): dates in their zone and
+ * format, numbers with thousands separators, binary subtype 3 as the UUID of a driver.
+ * `undefined` where the settings change nothing, so the caller shows the value as before.
  */
-export function dateText(value: Json, format: Intl.DateTimeFormat): string | undefined {
-    if (!isDoc(value) || scalar(value)?.type !== "date") return undefined;
-    const milliseconds = Number((value.$date as { $numberLong?: string } | undefined)?.$numberLong ?? value.$date);
-    return Number.isNaN(milliseconds) ? undefined : format.format(milliseconds).replace(", ", " ");
+export function settingText(value: Json, locale: string): string | undefined {
+    const type = typeOf(value);
+    if (type === "date" && isDoc(value)) {
+        const milliseconds = Number((value.$date as { $numberLong?: string } | undefined)?.$numberLong ?? Date.parse(String(value.$date)));
+        return Number.isNaN(milliseconds) ? undefined : formatDate(milliseconds, preferences.dateFormat, preferences.timeZone, locale);
+    }
+    if (preferences.numberGrouping && (type === "int" || type === "long" || type === "double" || type === "decimal")) {
+        const digits = typeof value === "number" ? String(value) : isDoc(value) ? String(value.$numberInt ?? value.$numberLong ?? value.$numberDouble ?? value.$numberDecimal ?? "") : "";
+        return groupDigits(digits, locale);
+    }
+    if (type === "binary" && isDoc(value)) {
+        const binary = value.$binary as { base64?: string; subType?: string } | undefined;
+        if (binary?.subType === "03" && binary.base64) return legacyUuidText(binary.base64, preferences.legacyUuid);
+    }
+    return undefined;
 }

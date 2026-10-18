@@ -2,12 +2,13 @@
 import { ButtonContent, ButtonRoot } from "@vuetify/v0";
 import { computed, ref, shallowRef, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
+import { preferences } from "@/composables/appearance";
 import { useKeymap } from "@/keys/keymap";
 import type { MenuEntry } from "@/menu";
 import { isDoc, preview, scalar, typeOf } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
 import { isLink, openLink } from "@/links";
-import { dateFormat, dateText, displayText, useResultContext } from "./result-context";
+import { displayText, settingText, useResultContext } from "./result-context";
 import ValueEditor from "./ValueEditor.vue";
 
 /**
@@ -92,8 +93,6 @@ function label(column: string): string {
     return stack.value.length === 0 ? column : `${column} - ${fullPath(column)}`;
 }
 
-const dates = computed(() => dateFormat(locale.value));
-
 function typeLabel(column: string): string {
     const value = levels.value.map(level => cell(level.value, column)).find(item => item !== undefined);
     if (value === undefined) return "";
@@ -104,7 +103,9 @@ function typeLabel(column: string): string {
 function cellText(value: Json | undefined): string {
     if (value === undefined) return t("result.notSet");
     const type = typeOf(value);
-    if (type === "date") return dateText(value, dates.value) ?? displayText(value);
+    const shown = settingText(value, locale.value);
+    if (shown !== undefined) return shown;
+    if (type === "date") return displayText(value);
     // Numbers as digits; the type stands in the column head.
     if ((type === "long" || type === "decimal") && isDoc(value)) return String(value.$numberLong ?? value.$numberDecimal);
     if (type === "array" || type === "object") {
@@ -117,6 +118,8 @@ function cellText(value: Json | undefined): string {
 
 function cellClass(value: Json | undefined): string {
     if (value === undefined) return "italic text-on-surface-variant/60";
+    // Colours by type can be switched off in the settings.
+    if (!preferences.typeColors) return "";
     switch (typeOf(value)) {
         case "int":
         case "long":
