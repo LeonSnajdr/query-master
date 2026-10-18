@@ -24,6 +24,12 @@ export interface IndexForm {
     partialFilter?: Doc;
     /** Collation locale; empty for none. */
     locale: string;
+    /**
+     * Options of an existing index the dialog has no field for (`weights`, `default_language`,
+     * `2dsphereIndexVersion`, `bits`, `wildcardProjection`, the collation besides its locale …):
+     * they go into the index again unchanged, so re-creating or duplicating loses nothing.
+     */
+    kept?: Doc;
 }
 
 export function emptyIndexForm(): IndexForm {
@@ -67,13 +73,15 @@ export function indexFormErrors(form: IndexForm): string[] {
 /** The index specification for `createIndexes`. */
 export function indexSpec(form: IndexForm): Doc {
     const key = indexKey(form.fields);
-    const spec: Doc = { key, name: form.name.trim() || defaultIndexName(key) };
+    const { collation: keptCollation, ...kept } = form.kept ?? {};
+    const spec: Doc = { key, name: form.name.trim() || defaultIndexName(key), ...kept };
     if (form.unique) spec.unique = true;
     if (form.sparse) spec.sparse = true;
     if (form.hidden) spec.hidden = true;
     if (form.ttl.trim() !== "") spec.expireAfterSeconds = Number(form.ttl);
     if (form.partialFilter && Object.keys(form.partialFilter).length > 0) spec.partialFilterExpression = form.partialFilter;
-    if (form.locale) spec.collation = { locale: form.locale };
+    // The other settings of a collation stay with it; without a locale there is none.
+    if (form.locale) spec.collation = { ...(isDoc(keptCollation) ? keptCollation : {}), locale: form.locale };
     return spec;
 }
 
@@ -97,12 +105,31 @@ export function storedSpec(index: Doc): Doc {
     return spec;
 }
 
-/** The form for an index as `listIndexes` gives it, to duplicate it. */
+/** What the form has a field for; the rest of a stored index is `kept`. */
+const FORM_OPTIONS = new Set(["v", "ns", "key", "name", "unique", "sparse", "hidden", "expireAfterSeconds", "partialFilterExpression"]);
+
+/**
+ * The fields of a stored key. A text index is stored as `{ _fts: "text", _ftsx: 1 }` with its
+ * fields in `weights`: they come back as text fields, in place of the two.
+ */
+function keyFields(key: Doc, weights: Json | undefined): IndexField[] {
+    const fields: IndexField[] = [];
+    for (const [field, value] of Object.entries(key)) {
+        if (field === "_ftsx") continue;
+        if (field === "_fts") fields.push(...Object.keys(isDoc(weights) ? weights : {}).map(name => ({ field: name, kind: "text" as const })));
+        else fields.push({ field, kind: kindOf(value) });
+    }
+    return fields;
+}
+
+/** The form for an index as `listIndexes` gives it, to duplicate or re-create it. */
 export function indexFormOf(index: Doc): IndexForm {
     const key = isDoc(index.key) ? index.key : {};
     const collation = isDoc(index.collation) ? index.collation : {};
+    const kept = Object.fromEntries(Object.entries(index).filter(([option]) => !FORM_OPTIONS.has(option)));
     return {
-        fields: Object.entries(key).map(([field, value]) => ({ field, kind: kindOf(value) })),
+        kept,
+        fields: keyFields(key, index.weights),
         name: typeof index.name === "string" ? index.name : "",
         unique: index.unique === true,
         sparse: index.sparse === true,

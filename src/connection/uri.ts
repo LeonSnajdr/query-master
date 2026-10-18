@@ -121,9 +121,14 @@ export function parseUri(uri: string): ConnectionFields {
                 break;
             case "authmechanism": {
                 const found = (Object.entries(AUTH_MECHANISMS) as [AuthMode, string][]).find(([, mechanism]) => mechanism === value.toUpperCase());
-                // SCRAM-SHA-1 is SCRAM too; the mechanism stays in the string as written.
-                if (found) fields.auth = found[0];
-                else fields.extra.push([name, value]);
+                // SCRAM-SHA-1, GSSAPI and the like have no choice of their own: read as SCRAM, the
+                // mechanism stays in `extra` and is written back as it was.
+                if (found) {
+                    fields.auth = found[0];
+                } else {
+                    fields.auth = "scram";
+                    fields.extra.push([name, value]);
+                }
                 break;
             }
             case "tls":
@@ -158,6 +163,24 @@ export function parseUri(uri: string): ConnectionFields {
     return fields;
 }
 
+/** The string without the password (the user stays), to show or pass on; unchanged without one. */
+export function withoutPassword(uri: string): string {
+    // Credentials end at the last `@` before the path, as in `parseUri`.
+    return uri.replace(/^(mongodb(?:\+srv)?:\/\/)([^/?]*)@/, (whole, scheme: string, credentials: string) => {
+        const colon = credentials.indexOf(":");
+        return colon === -1 ? whole : `${scheme}${credentials.slice(0, colon)}@`;
+    });
+}
+
+/**
+ * A string to show, first without its password (as the *Include passwords*, off at
+ * first); with one, the full string as the second variant. `say` gives the labels their text.
+ */
+export function uriVariants(uri: string, say: (key: string) => string): { label: string; text: string }[] | undefined {
+    const shown = withoutPassword(uri);
+    return shown === uri ? undefined : [{ label: say("connection.uri.withoutPassword"), text: shown }, { label: say("connection.uri.withPassword"), text: uri }];
+}
+
 /** Writes the fields as a connection string. */
 export function buildUri(fields: ConnectionFields): string {
     const srv = fields.mode === "srv";
@@ -169,10 +192,13 @@ export function buildUri(fields: ConnectionFields): string {
         ? `${encodeURIComponent(fields.username)}${fields.password ? `:${encodeURIComponent(fields.password)}` : ""}@`
         : "";
 
+    // A mechanism without a choice of its own (SCRAM-SHA-1, GSSAPI …) was read as SCRAM; it stays
+    // while SCRAM is chosen, and gives way to any other choice.
+    const otherMechanism = fields.auth === "scram" ? fields.extra.find(([name]) => name.toLowerCase() === "authmechanism")?.[1] : undefined;
     const options: [string, string | undefined][] = [
         ["replicaSet", fields.mode === "replicaSet" && fields.replicaSet ? fields.replicaSet : undefined],
         ["authSource", fields.auth !== "none" && fields.authSource ? fields.authSource : undefined],
-        ["authMechanism", fields.auth === "none" || fields.auth === "scram" ? undefined : AUTH_MECHANISMS[fields.auth]],
+        ["authMechanism", fields.auth === "none" || fields.auth === "scram" ? otherMechanism : AUTH_MECHANISMS[fields.auth]],
         // SRV turns TLS on by itself; it is written only where it differs from that.
         ["tls", fields.tls !== srv ? String(fields.tls) : undefined],
         ["tlsAllowInvalidCertificates", fields.tls && fields.tlsAllowInvalidCertificates ? "true" : undefined],

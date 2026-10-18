@@ -101,7 +101,8 @@ function typing(): boolean {
 }
 
 function onKeydown(event: KeyboardEvent): void {
-    if (recording.value) return;
+    // A key the focused part used already (the editor's `Ctrl+I`, a row's own keys) acts only there.
+    if (recording.value || event.defaultPrevented) return;
     const inText = typing();
     for (const [id, list] of handlers) {
         const command = commandOf(id)!;

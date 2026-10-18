@@ -52,6 +52,8 @@ const busy = shallowRef(false);
 const error = shallowRef<string>();
 
 const mode = computed(() => props.request?.mode ?? "collection");
+/** Level and action apply to a validator; on a new collection without one they would be dropped. */
+const levelsApply = computed(() => mode.value === "validator" || validator.value.replace(/\s/g, "") !== "{}");
 const tabs = computed(() => (mode.value === "view" ? ["view", "collation"] : mode.value === "validator" ? ["validator"] : ["options", "validator", "collation"]));
 const collections = computed(() => (props.request ? connections.collectionsOf(props.request.connectionId, props.request.database) : []));
 const option = <T extends string>(values: readonly T[], prefix: string) => values.map(value => ({ value, label: t(`${prefix}.${value}`) }));
@@ -201,8 +203,11 @@ async function save() {
                             value="options"
                         >
                             <span>{{ $t("collectionDialog.capped") }}:</span>
+                            <!-- A time series cannot be capped (the server refuses both): each greys the other. -->
                             <SwitchRoot
                                 v-model="capped"
+                                :class="timeSeries ? 'opacity-40' : ''"
+                                :disabled="timeSeries"
                                 :label="$t('collectionDialog.capped')"
                             >
                                 <SwitchTrack class="switch-track">
@@ -229,6 +234,8 @@ async function save() {
                             <span class="pt-3 border-t border-divider">
                                 <SwitchRoot
                                     v-model="timeSeries"
+                                    :class="capped ? 'opacity-40' : ''"
+                                    :disabled="capped"
                                     :label="$t('collectionDialog.timeSeries')"
                                 >
                                     <SwitchTrack class="switch-track">
@@ -266,12 +273,14 @@ async function save() {
                                 <span>{{ $t("collectionDialog.level") }}:</span>
                                 <ChoiceField
                                     v-model="level"
+                                    :disabled="!levelsApply"
                                     :label="$t('collectionDialog.level')"
                                     :options="option(LEVELS, 'collectionDialog.level')"
                                 />
                                 <span>{{ $t("collectionDialog.action") }}:</span>
                                 <ChoiceField
                                     v-model="action"
+                                    :disabled="!levelsApply"
                                     :label="$t('collectionDialog.action')"
                                     :options="option(ACTIONS, 'collectionDialog.action')"
                                 />

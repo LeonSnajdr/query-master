@@ -52,7 +52,9 @@ const environment = computed<Environment | undefined>(() => {
     };
 });
 const placeholderName = computed(() => defaultIndexName(indexKey(form.value.fields)));
-const problems = computed(() => indexFormErrors(form.value));
+/** A partial filter takes the place of sparse: the server refuses both together. */
+const hasPartialFilter = computed(() => partialFilter.value.replace(/\s/g, "") !== "" && partialFilter.value.replace(/\s/g, "") !== "{}");
+const problems = computed(() => [...indexFormErrors(form.value), ...(form.value.sparse && hasPartialFilter.value ? ["indexDialog.error.sparsePartial"] : [])]);
 // A form without a field yet is how it starts, not a mistake to point out; saving waits for one.
 /** Field names given more than once: their rows are framed red. */
 const duplicates = computed(() => {
@@ -212,7 +214,9 @@ async function save() {
                         <span>{{ $t(`indexDialog.${option}`) }}:</span>
                         <SwitchRoot
                             v-model="form[option]"
+                            :class="option === 'sparse' && hasPartialFilter && !form.sparse ? 'opacity-40' : ''"
                             :data-testid="`index-${option}`"
+                            :disabled="option === 'sparse' && hasPartialFilter && !form.sparse"
                             :label="$t(`indexDialog.${option}`)"
                         >
                             <SwitchTrack class="switch-track">

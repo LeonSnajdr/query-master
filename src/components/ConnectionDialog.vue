@@ -9,7 +9,7 @@ import ChoiceField from "@/components/ChoiceField.vue";
 import { useActions } from "@/composables/actions";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
-import { DEFAULT_PORT, buildUri, emptyFields, parseUri } from "@/connection/uri";
+import { DEFAULT_PORT, buildUri, emptyFields, parseUri, uriVariants } from "@/connection/uri";
 import type { AuthMode, ConnectMode, ConnectionFields } from "@/connection/uri";
 import { pickFilePath } from "@/files";
 import { ENVIRONMENTS } from "@/shell/guard";
@@ -112,7 +112,7 @@ async function fromUri() {
 }
 
 function toUri() {
-    dialogs.showText({ title: t("connection.toUri"), text: uri.value });
+    dialogs.showText({ title: t("connection.toUri"), text: uri.value, variants: uriVariants(uri.value, t) });
 }
 
 async function pick(field: "tlsCAFile" | "tlsCertificateKeyFile") {

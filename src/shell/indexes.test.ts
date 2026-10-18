@@ -74,7 +74,35 @@ describe("indexFormOf", () => {
             hidden: false,
             ttl: "60",
             partialFilter: undefined,
-            locale: "de"
+            locale: "de",
+            kept: { collation: { locale: "de", strength: { $numberInt: "3" } } }
         });
+    });
+
+    it("keeps what the dialog has no field for, so re-creating loses nothing", () => {
+        const index = {
+            v: 2,
+            key: { shop: 1, _fts: "text", _ftsx: 1 },
+            name: "text",
+            weights: { title: 10, body: 1 },
+            default_language: "german",
+            language_override: "lang",
+            textIndexVersion: 3,
+            collation: { locale: "de", strength: 2, numericOrdering: true }
+        };
+        const form = indexFormOf(index);
+        expect(form.fields).toEqual([{ field: "shop", kind: "1" }, { field: "title", kind: "text" }, { field: "body", kind: "text" }]);
+        expect(indexSpec(form)).toEqual({
+            key: { shop: 1, title: "text", body: "text" },
+            name: "text",
+            weights: { title: 10, body: 1 },
+            default_language: "german",
+            language_override: "lang",
+            textIndexVersion: 3,
+            collation: { locale: "de", strength: 2, numericOrdering: true }
+        });
+        // Another locale keeps the other settings; none drops the collation.
+        expect(indexSpec({ ...form, locale: "fr" }).collation).toEqual({ locale: "fr", strength: 2, numericOrdering: true });
+        expect(indexSpec({ ...form, locale: "" }).collation).toBeUndefined();
     });
 });

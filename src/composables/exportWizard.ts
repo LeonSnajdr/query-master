@@ -52,10 +52,10 @@ export function useExportWizard() {
     const busy = shallowRef(false);
 
     /**
-     * The collections a selection stands for: of the connection, the database, or the one. Of a
-     * connection or database, the server's own `system.*` collections are left out (the profiler's
-     * entries, the definitions of views), silently as mongodump: they are written by the server and
-     * cannot be imported. Chosen on its own, such a collection is exported.
+     * The collections a selection stands for: of the connection, the database, or the one. The
+     * server's own `system.*` collections come along (`admin.system.users` and
+     * `roles` belong to a full backup); they can be removed from the rows. Into a database they
+     * cannot be written: the tile Database leaves them out (`withoutSystem`).
      */
     async function collectionsOf(at: TreeSelection): Promise<{ database: string; collection: string }[]> {
         const session = connections.sessions[at.connectionId];
@@ -68,9 +68,7 @@ export function useExportWizard() {
                 continue;
             }
             await connections.loadCollections(at.connectionId, database).catch(() => undefined);
-            for (const collection of connections.collectionsOf(at.connectionId, database)) {
-                if (!isSystemCollection(collection)) found.push({ database, collection });
-            }
+            for (const collection of connections.collectionsOf(at.connectionId, database)) found.push({ database, collection });
         }
         return found;
     }
@@ -126,6 +124,15 @@ export function useExportWizard() {
         wizard.state.rows = switchFormat(wizard.state.rows, wizard.state.format, format);
         wizard.state.format = format;
         wizard.step = "rows";
+        if (format === "database") withoutSystem();
+    }
+
+    /** Into a database the server's own collections cannot be written: their rows go, with a notice. */
+    function withoutSystem() {
+        const system = wizard.state.rows.filter(row => isSystemCollection(row.collection));
+        if (system.length === 0) return;
+        wizard.state.rows = wizard.state.rows.filter(row => !isSystemCollection(row.collection));
+        notices.notify({ kind: "info", title: t("export.skippedSystem", system.length), detail: system.map(row => `${row.database}.${row.collection}`).join(", ") });
     }
 
     function addRows(rows: ExportRow[]) {

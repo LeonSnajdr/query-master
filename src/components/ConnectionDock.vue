@@ -220,6 +220,17 @@ function select(at: TreeSelection) {
     connections.selected = at;
 }
 
+/**
+ * A click on a folder opens or closes it and selects the level it belongs to (its connection or
+ * database): toolbar, menus and keys no longer act on a row
+ * chosen before.
+ */
+function clickFolder(at: TreeSelection, folder: string) {
+    setMarked([], at);
+    anchor = at;
+    notes.toggleFolder(at.connectionId, at.database ?? "", folder);
+}
+
 /** One selected row is framed; rows selected together are filled, the focused one framed too. */
 function rowClass(at: TreeSelection): string {
     if (connections.marked.length === 0) return sameRow(connections.selected, at) ? "tree-row-on" : "";
@@ -526,6 +537,17 @@ function onArrowKey(event: KeyboardEvent): boolean {
 /** Keys on a focused row act on the selected one: Del drops, Ctrl+C copies, Ctrl+V pastes. */
 function onTreeKey(event: KeyboardEvent) {
     if (onArrowKey(event)) return;
+    // A focused folder is not the selected row: Del deletes the folder (after a question), other
+    // keys leave the selection alone instead of dropping or copying it.
+    const folderRow = (event.target as HTMLElement).closest<HTMLElement>("[data-drop-folder]");
+    if (folderRow) {
+        if (keymap.matches(event, "tree.drop")) {
+            event.preventDefault();
+            const scope = folderRow.dataset.dropScope;
+            void actions.deleteFolder({ connectionId: folderRow.dataset.dropConnection!, database: scope || undefined }, folderRow.dataset.dropFolder!);
+        }
+        return;
+    }
     const at = connections.selected;
     if (!at) return;
     const many = connections.marked;
@@ -554,6 +576,10 @@ function onTreeKey(event: KeyboardEvent) {
         copying.copy({ connectionId: at.connectionId, database: at.database, collection: at.collection });
     } else if (keymap.matches(event, "tree.paste") && at.database !== undefined) {
         void copying.paste(at.connectionId, at.database);
+    } else if (keymap.matches(event, "tab.refresh")) {
+        // In the tree the key refreshes the tree, as its menu says; elsewhere it refreshes the tab.
+        event.stopPropagation();
+        void (many.length > 0 ? actions.refreshMany(many) : actions.refresh(at));
     } else {
         return;
     }
@@ -1102,7 +1128,7 @@ defineExpose({
                         <!-- A folder of the connection, with its databases below while open. -->
                         <div
                             v-if="databaseRow.kind === 'folder'"
-                            @click="notes.toggleFolder(profile.id, '', databaseRow.name)"
+                            @click="clickFolder({ connectionId: profile.id }, databaseRow.name)"
                             @contextmenu.prevent="openFolderMenu($event, profile, undefined, databaseRow.name)"
                             @keydown.enter.self="notes.toggleFolder(profile.id, '', databaseRow.name)"
                             @keydown.left.self="fold($event, notes.isOpen(profile.id, '', databaseRow.name), () => notes.toggleFolder(profile.id, '', databaseRow.name))"
@@ -1188,7 +1214,7 @@ defineExpose({
                                         <!-- A folder of the database, with its collections below while open. -->
                                         <div
                                             v-if="row.kind === 'folder'"
-                                            @click="notes.toggleFolder(profile.id, database.name, row.name)"
+                                            @click="clickFolder({ connectionId: profile.id, database: database.name }, row.name)"
                                             @contextmenu.prevent="openFolderMenu($event, profile, database, row.name)"
                                             @keydown.enter.self="notes.toggleFolder(profile.id, database.name, row.name)"
                                             @keydown.left.self="fold($event, notes.isOpen(profile.id, database.name, row.name), () => notes.toggleFolder(profile.id, database.name, row.name))"

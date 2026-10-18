@@ -37,6 +37,12 @@ describe("importProblems", () => {
         const rows = [{ path: "a.json", database: " ", collection: "system.users", mode: "overwrite" as const }];
         expect(importProblems(state({ rows }))).toEqual([{ key: "import.problem.noDatabase", row: 0 }, { key: "import.problem.badCollection", row: 0 }]);
     });
+
+    it("refuses a file of the other format, as after switching the tile", () => {
+        expect(importProblems(state({ format: "csv" }))).toEqual([{ key: "import.problem.otherFormat", row: 0 }]);
+        const unknown = [{ path: "C:\\in\\shop.orders.txt", database: "shop", collection: "orders", mode: "overwrite" as const }];
+        expect(importProblems(state({ format: "csv", rows: unknown }))).toEqual([]);
+    });
 });
 
 describe("readImportPreset", () => {

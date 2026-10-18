@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildUri, emptyFields, parseUri } from "./uri";
+import { buildUri, emptyFields, parseUri, withoutPassword } from "./uri";
 
 describe("connection string and fields", () => {
     it("reads hosts, credentials, database and the options with a field", () => {
@@ -32,11 +32,32 @@ describe("connection string and fields", () => {
         for (const uri of uris) expect(buildUri(parseUri(uri))).toBe(uri);
     });
 
+    it("keeps a mechanism without a choice of its own while SCRAM stays chosen", () => {
+        for (const uri of [
+            "mongodb://user:secret@h/?authSource=admin&authMechanism=SCRAM-SHA-1",
+            "mongodb://user%40REALM@h/?authSource=%24external&authMechanism=GSSAPI",
+            "mongodb://h/?authMechanism=GSSAPI"
+        ]) {
+            expect(parseUri(uri).auth).toBe("scram");
+            expect(buildUri(parseUri(uri))).toBe(uri);
+        }
+        const fields = parseUri("mongodb://user@h/?authMechanism=GSSAPI");
+        expect(buildUri({ ...fields, auth: "ldap" })).toBe("mongodb://user@h/?authMechanism=PLAIN");
+        expect(buildUri({ ...fields, auth: "none" })).toBe("mongodb://h");
+    });
+
     it("leaves out what the mode does not use", () => {
         const fields = { ...emptyFields(), hosts: [{ host: "a", port: 27017 }, { host: "b", port: 1 }], replicaSet: "rs0" };
         expect(buildUri(fields)).toBe("mongodb://a");
         expect(buildUri({ ...fields, mode: "srv", tls: true })).toBe("mongodb+srv://a,b");
         expect(buildUri({ ...fields, auth: "x509", username: "CN=me", tls: true })).toBe("mongodb://a/?authMechanism=MONGODB-X509&tls=true");
+    });
+
+    it("leaves out the password to show a string", () => {
+        expect(withoutPassword("mongodb://us%40er:p%3As%40s@a,b/shop?authSource=admin")).toBe("mongodb://us%40er@a,b/shop?authSource=admin");
+        expect(withoutPassword("mongodb+srv://me:x@cluster0.example.net")).toBe("mongodb+srv://me@cluster0.example.net");
+        expect(withoutPassword("mongodb://user@h/?authMechanism=GSSAPI")).toBe("mongodb://user@h/?authMechanism=GSSAPI");
+        expect(withoutPassword("mongodb://localhost")).toBe("mongodb://localhost");
     });
 
     it("refuses what is not a connection string", () => {

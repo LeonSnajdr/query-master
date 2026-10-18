@@ -18,6 +18,7 @@ import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
 import { folderLabel, parentFolder } from "@/tree/folders";
+import { uriVariants } from "@/connection/uri";
 import { isQueryTab, useTabsStore } from "@/stores/tabs";
 
 /** The script behind "Collections statistics"; views have no storage and are left out. */
@@ -494,7 +495,8 @@ export function useActions() {
     async function viewUri(at = target.value) {
         if (!at) return;
         try {
-            dialogs.showText({ title: t("connection.uri.title"), text: await backend.connectionUri(at.connectionId) });
+            const uri = await backend.connectionUri(at.connectionId);
+            dialogs.showText({ title: t("connection.uri.title"), text: uri, variants: uriVariants(uri, t) });
         } catch (error) {
             report(error);
         }

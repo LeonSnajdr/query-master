@@ -79,6 +79,13 @@ const rows = computed(() => {
     return needle ? all.filter(row => toShell(row.item).toLowerCase().includes(needle)) : all;
 });
 const jsonText = computed(() => rows.value.map(row => toShell(row.item, "", true)).join("\n"));
+/** The documents of the page; while searching, how many of them match. */
+const rangeText = computed(() => {
+    const shown = result.value;
+    if (!shown || rows.value.length === 0) return t("result.empty");
+    const range = t("result.range", { from: shown.offset + 1, to: shown.offset + shown.items.length });
+    return rows.value.length === shown.items.length ? range : t("result.rangeMatches", { matches: rows.value.length, range });
+});
 const page = computed(() => (result.value ? Math.floor(result.value.offset / tab.value.pageSize) + 1 : 1));
 const pageSizes = computed<MenuEntry[]>(() => PAGE_SIZES.map(size => ({
     label: String(size),
@@ -710,7 +717,7 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
                 v-if="result && !failure"
                 class="pr-3 shrink-0 whitespace-nowrap text-xs text-on-surface-variant tabular-nums"
                 data-testid="result-range"
-            >{{ rows.length === 0 ? $t("result.empty") : $t("result.range", { from: result.offset + 1, to: result.offset + result.items.length }) }}</span>
+            >{{ rangeText }}</span>
             <ToggleGroup
                 v-model="tab.view"
                 :label="$t('view.label')"
