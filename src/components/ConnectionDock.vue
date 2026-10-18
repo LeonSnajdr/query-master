@@ -766,6 +766,8 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at), disabled: ro || isView(at) },
             "separator",
             { label: t("collection.rename"), action: () => void actions.renameCollection(at), disabled: ro },
+            { label: `${t("collection.duplicate")} …`, icon: "i-lucide-copy-plus", action: () => actions.duplicateCollection(at), disabled: roDatabase },
+            { label: `${t("collection.clear")} …`, icon: "i-lucide-eraser", danger: true, action: () => void actions.clearCollection(at), disabled: ro || isView(at) },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", command: "tree.drop", danger: true, action: () => void actions.dropCollection(at), disabled: ro },
             "separator",
             // A view has neither indexes nor a validator of its own.

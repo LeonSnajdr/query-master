@@ -71,6 +71,8 @@ const menus = computed<{ name: string; entries: MenuEntry[] }[]>(() => [
             { label: t("view.create"), icon: "i-lucide-file-search", command: "view.create", action: () => actions.createView(), disabled: !actions.hasDatabase.value },
             { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(), disabled: !actions.hasDatabase.value },
             { label: t("collection.rename"), action: () => void actions.renameCollection(), disabled: !actions.hasCollection.value },
+            { label: `${t("collection.duplicate")} …`, action: () => actions.duplicateCollection(), disabled: !actions.hasCollection.value },
+            { label: `${t("collection.clear")} …`, danger: true, action: () => void actions.clearCollection(), disabled: !actions.hasCollection.value || actions.onView.value },
             { label: t("validator.edit"), command: "validator.edit", action: () => actions.editValidator(), disabled: !actions.hasCollection.value || actions.onView.value },
             { label: t("collection.drop"), icon: "i-lucide-file-x-2", danger: true, action: () => void actions.dropCollection(), disabled: !actions.hasCollection.value },
             "separator",

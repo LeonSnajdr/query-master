@@ -13,7 +13,9 @@ export type FileTarget = typeof FILE_TARGETS[number];
 
 export type JsonNotation = "shell" | "relaxed" | "canonical";
 export type JsonLayout = "lines" | "comma" | "array";
-export type InsertMode = "overwrite" | "newId";
+/** How documents go into a collection; paste: overwrite, always a new `_id`, a new one only when taken, or leave out what is taken. */
+export const INSERT_MODES = ["overwrite", "newId", "newIdOnConflict", "skipExisting"] as const;
+export type InsertMode = typeof INSERT_MODES[number];
 
 /** The settings of the CSV page. */
 export interface CsvSettings {
@@ -60,6 +62,8 @@ export interface ExportRow {
     output: string;
     /** Shell text: a `find` filter or a pipeline; empty for all documents. */
     filter: string;
+    /** Into a database: the target collection is replaced instead of added to. */
+    replace?: boolean;
 }
 
 /** What the wizard holds. */
@@ -199,7 +203,7 @@ export function readExportPreset(value: unknown): ExportPreset {
             createTable: flag(field(sql, "createTable"), DEFAULT_SQL.createTable),
             dropTable: flag(field(sql, "dropTable"), DEFAULT_SQL.dropTable)
         },
-        insertMode: oneOf(field(value, "insertMode"), ["overwrite", "newId"] as const, "overwrite"),
+        insertMode: oneOf(field(value, "insertMode"), INSERT_MODES, "overwrite"),
         copyIndexes: flag(field(value, "copyIndexes"), true)
     };
 }
@@ -265,7 +269,8 @@ export function exportJob(state: ExportState): Doc {
             output: row.output.trim(),
             filter: filterValue(row.filter) ?? null,
             columns: hasColumns(state.format) ? state.columns[columnsKey(row)] ?? null : null,
-            names: hasColumns(state.format) ? columnNames(state, row) : null
+            names: hasColumns(state.format) ? columnNames(state, row) : null,
+            replace: state.format === "database" && row.replace === true
         }))
     };
 }

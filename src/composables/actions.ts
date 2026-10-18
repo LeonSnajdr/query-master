@@ -255,6 +255,23 @@ export function useActions() {
         await notes.remove(at.connectionId, `${at.database}/${at.collection}`).catch(report);
     }
 
+    /** *Clear collection*: every document goes, the collection with its indexes stays. */
+    async function clearCollection(at = target.value) {
+        if (at?.database === undefined || at.collection === undefined || isView(at) || !writable(at)) return;
+        const confirmed = writeGuard.guards(at.connectionId) || await dialogs.confirm({
+            title: t("collection.clear.title"),
+            text: t("collection.clear.text", { name: at.collection, database: at.database }),
+            action: t("collection.clear")
+        });
+        if (confirmed) await command(at.connectionId, at.database, { delete: at.collection, deletes: [{ q: {}, limit: 0 }] });
+    }
+
+    /** *Duplicate collection*: the wizard copies it into its database under `<name>_copy`, with options and indexes. */
+    function duplicateCollection(at = target.value) {
+        if (at?.database === undefined || at.collection === undefined) return;
+        void wizardOf.openExport(at, undefined, undefined, { connectionId: at.connectionId, database: at.database });
+    }
+
     async function dropDatabase(at = target.value) {
         if (at?.database === undefined || !writable({ connectionId: at.connectionId, database: at.database })) return;
         const confirmed = writeGuard.guards(at.connectionId) || await dialogs.confirm({ title: t("database.drop.title"), text: t("database.drop.text", { name: at.database }), action: t("action.drop") });
@@ -538,7 +555,7 @@ export function useActions() {
     return {
         target, hasConnection, hasDatabase, hasCollection, onView, anyOpen,
         openShell, browse, schema, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
-        createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
+        createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, clearCollection, duplicateCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,
         dropMany, browseMany, setColorMany, toggleReadonlyMany, moveManyToFolder, toggleIndexesHidden, refreshMany, disconnectMany,
         refresh, connect, reconnect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,

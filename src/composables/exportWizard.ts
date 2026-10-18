@@ -5,6 +5,7 @@ import type { ExportOutcome } from "@/api";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
 import { useWriteGuard } from "@/composables/writeGuard";
+import { useDialogs } from "@/composables/dialogs";
 import { ShellError } from "@/shell/message";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
@@ -52,6 +53,7 @@ export function useExportWizard() {
     const connections = useConnectionsStore();
     const notes = useNotesStore();
     const writeGuard = useWriteGuard();
+    const dialogs = useDialogs();
     const busy = shallowRef(false);
 
     /**
@@ -160,6 +162,9 @@ export function useExportWizard() {
             return;
         }
         if (state.format === "database" && !await writeGuard.confirmJob(state.database.connectionId, state.database.database, t("export.menu"))) return;
+        // *Replace* drops collections: said once, with their names, before anything happens.
+        const replaced = state.format === "database" ? state.rows.filter(row => row.replace).map(row => `${state.database.database}.${row.output}`) : [];
+        if (replaced.length > 0 && !await dialogs.confirm({ title: t("export.replace.title"), text: t("export.replace.text", { names: replaced.join(", ") }, replaced.length), action: t("export.target.mode.replace") })) return;
         let job;
         try {
             job = exportJob(state);

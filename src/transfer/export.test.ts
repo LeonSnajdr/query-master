@@ -63,8 +63,8 @@ describe("exportJob", () => {
         const copy = exportJob(state({ format: "database", database: { connectionId: "c2", database: "backup", insertMode: "newId", copyIndexes: false } }));
         expect(copy.destination).toEqual({ kind: "database", connectionId: "c2", database: "backup", insertMode: "newId", copyIndexes: false });
         expect(copy.items).toEqual([
-            { database: "shop", collection: "orders", output: "shop.orders.json", filter: null, columns: null, names: null },
-            { database: "shop", collection: "people", output: "shop.people.json", filter: null, columns: null, names: null }
+            { database: "shop", collection: "orders", output: "shop.orders.json", filter: null, columns: null, names: null, replace: false },
+            { database: "shop", collection: "people", output: "shop.people.json", filter: null, columns: null, names: null, replace: false }
         ]);
     });
 

@@ -47,6 +47,10 @@ pub struct ExportItem {
     /// Names of the columns in the file or table, one per column; none for the paths themselves.
     #[serde(default)]
     pub names: Option<Vec<String>>,
+    /// Into a database: the target collection is dropped first and made anew (*Replace*); else
+    /// the documents are added to what is there (*Append*).
+    #[serde(default)]
+    pub replace: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -56,6 +60,10 @@ pub enum InsertMode {
     Overwrite,
     /// Every document is inserted with a new `_id`.
     NewId,
+    /// A document keeps its `_id`; one whose `_id` is taken goes in with a new one.
+    NewIdOnConflict,
+    /// A document keeps its `_id`; one whose `_id` is taken is left out.
+    SkipExisting,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -394,7 +402,8 @@ fn is_namespace_exists(error: &mongodb::error::Error) -> bool {
 }
 
 /// A batch into a collection: with `Overwrite` a document replaces the one with its `_id` (or is
-/// inserted, one command per batch); with `NewId` every document goes in with an `_id` of the server.
+/// inserted, one command per batch); with `NewId` every document goes in with an `_id` of the server;
+/// `NewIdOnConflict` and `SkipExisting` keep the `_id` and treat the ones that are taken as named.
 pub(super) async fn write_batch(
     database: &Database,
     collection: &str,
@@ -414,6 +423,37 @@ pub(super) async fn write_batch(
                 .collection::<Document>(collection)
                 .insert_many(fresh)
                 .await?;
+        }
+        InsertMode::NewIdOnConflict | InsertMode::SkipExisting => {
+            // Inserted as they are, unordered: the ones whose `_id` is taken fail alone.
+            for documents in by_size(batch.into_iter())? {
+                let reply = database
+                    .run_command(
+                        doc! { "insert": collection, "documents": &documents, "ordered": false },
+                    )
+                    .await?;
+                let mut taken = Vec::new();
+                for error in reply.get_array("writeErrors").into_iter().flatten() {
+                    let Bson::Document(error) = error else {
+                        continue;
+                    };
+                    if error.get_i32("code") != Ok(DUPLICATE_KEY) {
+                        return Err(Error::Script(
+                            error.get_str("errmsg").unwrap_or("write error").to_owned(),
+                        ));
+                    }
+                    if let Some(document) = error
+                        .get_i32("index")
+                        .ok()
+                        .and_then(|index| documents.get(usize::try_from(index).ok()?))
+                    {
+                        taken.push(document.clone());
+                    }
+                }
+                if mode == InsertMode::NewIdOnConflict && !taken.is_empty() {
+                    Box::pin(write_batch(database, collection, taken, InsertMode::NewId)).await?;
+                }
+            }
         }
         InsertMode::Overwrite => {
             let updates = batch.into_iter().map(|document| {
@@ -441,6 +481,9 @@ pub(super) async fn write_batch(
     }
     Ok(())
 }
+
+/// The server's code for a key that is taken (`E11000 duplicate key`).
+const DUPLICATE_KEY: i32 = 11000;
 
 /// A command may be 16 MB; this leaves room for the rest of it.
 const COMMAND_BYTES: usize = 15 * 1024 * 1024;
@@ -478,6 +521,13 @@ async fn export_database(
     progress: &mut impl FnMut(u64),
 ) -> Result<u64> {
     let target_database = target.database(database);
+    // *Replace*: the target goes first, so it is made anew with the source's options and indexes.
+    if item.replace {
+        target_database
+            .collection::<Document>(&item.output)
+            .drop()
+            .await?;
+    }
     if copy_indexes {
         let info = describe(source, &item.database, &item.collection).await?;
         if let Err(error) = target_database
@@ -686,6 +736,7 @@ mod tests {
             filter,
             columns: None,
             names: None,
+            replace: false,
         }
     }
 
@@ -854,6 +905,103 @@ mod tests {
         source.drop().await.unwrap();
         copy.drop().await.unwrap();
         client.shutdown().await;
+    }
+
+    /// The paste modes against a server, in `querymaster_test` only: keep the
+    /// target's documents whose `_id` is taken, give them a new one, or replace the target.
+    #[tokio::test]
+    #[ignore]
+    async fn pastes_with_every_mode() {
+        let uri = std::env::var("QUERYMASTER_TEST_URI")
+            .unwrap_or_else(|_| "mongodb://localhost:27017".into());
+        let client = Client::with_uri_str(&uri).await.unwrap();
+        let database = client.database("querymaster_test");
+        let source = database.collection::<Document>("paste_source");
+        let target = database.collection::<Document>("paste_target");
+        source.drop().await.unwrap();
+        source
+            .insert_many((1..=3).map(|n| doc! { "_id": n, "from": "source" }))
+            .await
+            .unwrap();
+        let paste = |insert_mode, replace| ExportJob {
+            connection_id: "a".into(),
+            items: vec![ExportItem {
+                replace,
+                ..item("paste_source", "paste_target", None)
+            }],
+            destination: Destination::Database {
+                connection_id: "b".into(),
+                database: "querymaster_test".into(),
+                insert_mode,
+                copy_indexes: false,
+            },
+            format: FileFormat::Json {
+                notation: Notation::Shell,
+                layout: Layout::Lines,
+            },
+        };
+        let reset = || async {
+            target.drop().await.unwrap();
+            target
+                .insert_one(doc! { "_id": 2, "from": "target" })
+                .await
+                .unwrap();
+        };
+        let froms = || async {
+            let mut list: Vec<String> = target
+                .find(doc! {})
+                .await
+                .unwrap()
+                .try_collect::<Vec<Document>>()
+                .await
+                .unwrap()
+                .iter()
+                .map(|document| document.get_str("from").unwrap().to_owned())
+                .collect();
+            list.sort();
+            list
+        };
+        let stop = AtomicBool::new(false);
+
+        reset().await;
+        let outcome = run(
+            &client,
+            Some(&client),
+            &paste(InsertMode::SkipExisting, false),
+            &stop,
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome.failed, 0);
+        assert_eq!(froms().await, ["source", "source", "target"]);
+
+        reset().await;
+        run(
+            &client,
+            Some(&client),
+            &paste(InsertMode::NewIdOnConflict, false),
+            &stop,
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(froms().await, ["source", "source", "source", "target"]);
+
+        reset().await;
+        run(
+            &client,
+            Some(&client),
+            &paste(InsertMode::NewId, true),
+            &stop,
+            |_| {},
+        )
+        .await
+        .unwrap();
+        assert_eq!(froms().await, ["source", "source", "source"]);
+
+        source.drop().await.unwrap();
+        target.drop().await.unwrap();
     }
 
     /// Batches larger than a command may be: 1200 documents of 20 KB, 24 MB in one batch.

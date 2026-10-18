@@ -248,10 +248,7 @@ mod tests {
             .write(&[doc! { "_id": 1, "customer": { "city": "Ulm" } }])
             .unwrap();
         let bytes = writer.into_inner().unwrap();
-        assert_eq!(
-            String::from_utf8(bytes).unwrap(),
-            "id,Stadt\r\n1,Ulm\r\n"
-        );
+        assert_eq!(String::from_utf8(bytes).unwrap(), "id,Stadt\r\n1,Ulm\r\n");
     }
 
     #[test]

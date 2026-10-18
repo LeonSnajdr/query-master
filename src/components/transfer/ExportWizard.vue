@@ -12,7 +12,7 @@ import { CSV_FILES, JSON_FILES, pickFolder, pickSavePath, SQL_FILES } from "@/fi
 import type { FileKind } from "@/files";
 import { useConnectionsStore } from "@/stores/connections";
 import type { Environment } from "@/shell/complete";
-import { defaultOutput, exportProblems, FILE_TARGETS, hasColumns, SQL_DIALECTS } from "@/transfer/export";
+import { defaultOutput, exportProblems, FILE_TARGETS, hasColumns, INSERT_MODES, SQL_DIALECTS } from "@/transfer/export";
 import type { CsvSettings, ExportFormat, ExportRow, FileTarget, InsertMode, JsonLayout, JsonNotation, SqlDialect } from "@/transfer/export";
 import ColumnSchema from "./ColumnSchema.vue";
 import TransferFailure from "./TransferFailure.vue";
@@ -47,7 +47,7 @@ const dialectOptions = computed(() => SQL_DIALECTS.map(value => ({ value, label:
 const SQL_FLAGS = ["createTable", "dropTable"] as const;
 const targetOptions = computed(() => FILE_TARGETS.map(value => ({ value, label: t(`export.target.${value}`) })));
 const serverOptions = computed(() => connections.saved.map(profile => ({ value: profile.id, label: profile.name })));
-const insertOptions = computed(() => (["overwrite", "newId"] as InsertMode[]).map(value => ({ value, label: t(`export.insert.${value}`) })));
+const insertOptions = computed(() => INSERT_MODES.map(value => ({ value, label: t(`export.insert.${value}`) })));
 const notationOptions = computed(() => (["shell", "relaxed", "canonical"] as JsonNotation[]).map(value => ({ value, label: t(`export.json.notation.${value}`) })));
 const layoutOptions = computed(() => (["lines", "comma", "array"] as JsonLayout[]).map(value => ({ value, label: t(`export.json.layout.${value}`) })));
 
@@ -160,6 +160,16 @@ function next() {
     if (problems.value.length > 0) return;
     if (state.value.format === "database") void start();
     else wizard.step = "settings";
+}
+
+/** The columns of the rows; into a database also what happens to the target. */
+const columns = computed(() => ["database", "collection", "output", "filter", ...(state.value.format === "database" ? ["target"] : [])]);
+const targetModes = computed(() => (["append", "replace"] as const).map(value => ({ value, label: t(`export.target.mode.${value}`) })));
+
+/** *Replace* or *Append* for a row; for all selected rows when it is one of them (as the "Do same for others"). */
+function setReplace(index: number, replace: boolean) {
+    const rows = marked.value.has(index) ? marked.value : new Set([index]);
+    state.value.rows = state.value.rows.map((row, position) => (rows.has(position) ? { ...row, replace } : row));
 }
 
 const progressRows = computed(() => state.value.rows.map(row => ({
@@ -398,7 +408,7 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                             <thead>
                                 <tr class="text-left">
                                     <th
-                                        v-for="column in ['database', 'collection', 'output', 'filter']"
+                                        v-for="column in columns"
                                         :key="column"
                                         class="sticky top-0 z-1 bg-background px-2.5 pt-2 pb-1 font-normal"
                                     >
@@ -447,12 +457,25 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                                             />
                                         </div>
                                     </td>
+                                    <!-- Into a database paste: add to the target, or replace it. -->
+                                    <td
+                                        v-if="state.format === 'database'"
+                                        class="px-1 py-0.5 border-t border-divider w-36"
+                                    >
+                                        <ChoiceField
+                                            @update:modelValue="(value: string) => setReplace(index, value === 'replace')"
+                                            :label="$t('export.column.target')"
+                                            :modelValue="row.replace ? 'replace' : 'append'"
+                                            :options="targetModes"
+                                            data-testid="export-target-mode"
+                                        />
+                                    </td>
                                 </tr>
                                 <!-- While the collections are read; with none, a note saying so. -->
                                 <tr v-if="wizard.loading || state.rows.length === 0">
                                     <td
+                                        :colspan="columns.length"
                                         class="px-2.5 py-3 border-t border-divider text-on-surface-variant"
-                                        colspan="4"
                                         data-testid="export-rows-state"
                                     >
                                         <span
