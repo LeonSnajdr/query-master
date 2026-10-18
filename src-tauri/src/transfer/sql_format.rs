@@ -1,7 +1,8 @@
 //! SQL: one `INSERT` per document for MySQL, SQL Server, Oracle or PostgreSQL, optionally after a
 //! `DROP TABLE IF EXISTS` and a `CREATE TABLE`. The columns are the chosen field paths, or the
 //! fields of the first level of the first batch; their types come from the values of that batch.
-//! Nested values and the rarer BSON types go in as relaxed extended JSON text.
+//! `_id` is the key of the table, binary data goes into binary columns;
+//! nested values and the rarer BSON types go in as relaxed extended JSON text.
 
 use chrono::DateTime;
 use mongodb::bson::{Bson, Document};
@@ -44,6 +45,8 @@ enum Kind {
     Bool,
     Date,
     ObjectId,
+    /// Binary data (also UUIDs): a binary column.
+    Binary,
     Text,
 }
 
@@ -58,6 +61,7 @@ impl Kind {
             Bson::Boolean(_) => Self::Bool,
             Bson::DateTime(_) => Self::Date,
             Bson::ObjectId(_) => Self::ObjectId,
+            Bson::Binary(_) => Self::Binary,
             _ => Self::Text,
         }
     }
@@ -168,18 +172,27 @@ impl SqlWriter {
         }
         if self.options.create_table && !columns.is_empty() {
             let dialect = self.options.dialect;
-            let lines = columns
+            //: `_id` is the key of the table, not null.
+            let keyed = columns.iter().any(|column| column == "_id");
+            let mut lines = columns
                 .iter()
                 .zip(&self.kinds)
                 .map(|(column, kind)| {
-                    format!(
-                        "\t{} {}",
-                        quote_identifier(dialect, &column_name(column)),
-                        type_name(dialect, *kind)
-                    )
+                    let name = quote_identifier(dialect, &column_name(column));
+                    if column == "_id" {
+                        format!("\t{name} {} NOT NULL", key_type_name(dialect, *kind))
+                    } else {
+                        format!("\t{name} {}", type_name(dialect, *kind))
+                    }
                 })
-                .collect::<Vec<_>>()
-                .join(&format!(",{EOL}"));
+                .collect::<Vec<_>>();
+            if keyed {
+                lines.push(format!(
+                    "\tPRIMARY KEY ({})",
+                    quote_identifier(dialect, "_id")
+                ));
+            }
+            let lines = lines.join(&format!(",{EOL}"));
             out.push_str(&format!(
                 "CREATE TABLE {} ({EOL}{lines}{EOL});{EOL}{EOL}",
                 self.table
@@ -229,6 +242,7 @@ impl SqlWriter {
             },
             Bson::DateTime(date) => date_literal(dialect, date.timestamp_millis())
                 .unwrap_or_else(|| string_literal(dialect, &plain_text(value))),
+            Bson::Binary(binary) => binary_literal(dialect, &binary.bytes),
             Bson::String(text) => string_literal(dialect, text),
             other => string_literal(dialect, &plain_text(other)),
         }
@@ -255,6 +269,17 @@ fn string_literal(dialect: Dialect, text: &str) -> String {
         // Unicode literal, or anything outside the code page is lost.
         Dialect::MsSql => format!("N'{}'", text.replace('\'', "''")),
         Dialect::Oracle | Dialect::PostgreSql => format!("'{}'", text.replace('\'', "''")),
+    }
+}
+
+/// Bytes as the dialect writes binary data.
+fn binary_literal(dialect: Dialect, bytes: &[u8]) -> String {
+    let hex: String = bytes.iter().map(|byte| format!("{byte:02X}")).collect();
+    match dialect {
+        Dialect::MySql => format!("X'{hex}'"),
+        Dialect::MsSql => format!("0x{hex}"),
+        Dialect::Oracle => format!("HEXTORAW('{hex}')"),
+        Dialect::PostgreSql => format!("'\\x{hex}'::bytea"),
     }
 }
 
@@ -286,6 +311,18 @@ fn plain_text(value: &Bson) -> String {
     }
 }
 
+/// The type of the key column: a text or binary key gets a length, as a key column needs one
+/// (MySQL, SQL Server and Oracle refuse a key on their unbounded text types).
+fn key_type_name(dialect: Dialect, kind: Kind) -> &'static str {
+    match (kind, dialect) {
+        (Kind::Text | Kind::Unknown | Kind::Binary, Dialect::MySql) => "VARCHAR(255)",
+        (Kind::Text | Kind::Unknown | Kind::Binary, Dialect::MsSql) => "NVARCHAR(450)",
+        (Kind::Text | Kind::Unknown | Kind::Binary, Dialect::Oracle) => "NVARCHAR2(1000)",
+        (Kind::Text | Kind::Unknown | Kind::Binary, Dialect::PostgreSql) => "TEXT",
+        _ => type_name(dialect, kind),
+    }
+}
+
 fn type_name(dialect: Dialect, kind: Kind) -> &'static str {
     use Dialect::*;
     use Kind::*;
@@ -310,6 +347,10 @@ fn type_name(dialect: Dialect, kind: Kind) -> &'static str {
         (Date, _) => "TIMESTAMP(3)",
         (ObjectId, Oracle) => "VARCHAR2(24)",
         (ObjectId, _) => "VARCHAR(24)",
+        (Binary, MySql) => "LONGBLOB",
+        (Binary, MsSql) => "VARBINARY(MAX)",
+        (Binary, Oracle) => "BLOB",
+        (Binary, PostgreSql) => "BYTEA",
         (Text | Unknown, MySql) => "LONGTEXT",
         (Text | Unknown, MsSql) => "NVARCHAR(MAX)",
         (Text | Unknown, Oracle) => "NCLOB",
@@ -360,16 +401,49 @@ mod tests {
             text,
             "DROP TABLE IF EXISTS \"shop\".\"orders\";\r\n\r\n\
              CREATE TABLE \"shop\".\"orders\" (\r\n\
-             \t\"_id\" TEXT,\r\n\
+             \t\"_id\" TEXT NOT NULL,\r\n\
              \t\"name\" TEXT,\r\n\
              \t\"n\" DOUBLE PRECISION,\r\n\
              \t\"at\" TIMESTAMP(3),\r\n\
              \t\"ok\" BOOLEAN,\r\n\
-             \t\"tags\" TEXT\r\n\
+             \t\"tags\" TEXT,\r\n\
+             \tPRIMARY KEY (\"_id\")\r\n\
              );\r\n\r\n\
              INSERT INTO \"shop\".\"orders\" (\"_id\", \"name\", \"n\", \"at\", \"ok\", \"tags\") VALUES ('64b7f0c2a1b2c3d4e5f60718', 'O''Brien \\ Co', 1, '2024-05-01 00:00:00.000', TRUE, '[\"a\"]');\r\n\
              INSERT INTO \"shop\".\"orders\" (\"_id\", \"name\", \"n\", \"at\", \"ok\", \"tags\") VALUES ('2', NULL, 2.5, NULL, NULL, NULL);\r\n"
         );
+    }
+
+    #[test]
+    fn writes_binary_data_and_a_key_each_dialect_takes() {
+        use mongodb::bson::{spec::BinarySubtype, Binary};
+        let documents = [doc! {
+            "_id": ObjectId::parse_str("64b7f0c2a1b2c3d4e5f60718").unwrap(),
+            "bin": Binary { subtype: BinarySubtype::Generic, bytes: b"hi".to_vec() },
+        }];
+        let text = |dialect| {
+            let mut writer = SqlWriter::new(options(dialect, true, false), "t", None);
+            writer.batch(&documents)
+        };
+        let mysql = text(Dialect::MySql);
+        assert!(
+            mysql.contains(
+                "\t`_id` VARCHAR(24) NOT NULL,\r\n\t`bin` LONGBLOB,\r\n\tPRIMARY KEY (`_id`)\r\n"
+            ),
+            "{mysql}"
+        );
+        assert!(
+            mysql.ends_with("VALUES ('64b7f0c2a1b2c3d4e5f60718', X'6869');\r\n"),
+            "{mysql}"
+        );
+        assert!(text(Dialect::MsSql).contains("0x6869);"));
+        assert!(text(Dialect::Oracle).contains("HEXTORAW('6869'));"));
+        assert!(text(Dialect::PostgreSql).contains("'\\x6869'::bytea);"));
+        // A key of mixed values is text with a length a key column takes.
+        let mut mixed = SqlWriter::new(options(Dialect::MySql, true, false), "t", None);
+        assert!(mixed
+            .batch(&[doc! { "_id": 1 }, doc! { "_id": "a" }])
+            .contains("\t`_id` VARCHAR(255) NOT NULL,\r\n"));
     }
 
     #[test]

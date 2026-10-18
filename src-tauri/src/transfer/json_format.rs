@@ -195,11 +195,14 @@ fn uuid_text(bytes: &[u8]) -> String {
     )
 }
 
-/// One value in the shell's notation, as `toShell` in `src/shell/ejson.ts` writes it.
+/// One value in the shell's notation export writes it (`toShell` in
+/// `src/shell/ejson.ts` shows an int32 bare, as mongosh does).
 fn shell_scalar(value: &Bson) -> String {
     match value {
-        Bson::String(text) | Bson::Symbol(text) => quoted(text),
-        Bson::Int32(number) => number.to_string(),
+        Bson::String(text) => quoted(text),
+        //: the type stays, so the shell read it back as it was.
+        Bson::Symbol(text) => format!("Symbol({})", quoted(text)),
+        Bson::Int32(number) => format!("NumberInt({number})"),
         Bson::Int64(number) => format!("NumberLong({number})"),
         Bson::Double(number) => shell_double(*number),
         Bson::Decimal128(number) => format!("NumberDecimal(\"{number}\")"),
@@ -263,7 +266,7 @@ mod tests {
             "\t\"DateStarted\": ISODate(\"2026-07-22T07:26:00.000+00:00\"),",
             "\t\"Attributes\": {",
             "\t\t\"siteUrl\": \"https://example.net\",",
-            "\t\t\"count\": 3",
+            "\t\t\"count\": NumberInt(3)",
             "\t},",
             "\t\"Sources\": [",
             "\t\t{",
@@ -274,7 +277,7 @@ mod tests {
             "\t\"Empty\": []",
             "}",
             "{",
-            "\t\"_id\": 2",
+            "\t\"_id\": NumberInt(2)",
             "}",
             "",
         ]

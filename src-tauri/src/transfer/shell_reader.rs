@@ -556,12 +556,33 @@ fn construct(name: &str, arguments: &[Bson]) -> Option<Bson> {
             })
         }
         "Code" => Bson::JavaScriptCode(text_of(first)?.to_owned()),
+        // What the export writes besides the shell's own helpers.
+        "Symbol" => Bson::Symbol(text_of(first)?.to_owned()),
+        "LUUID" => Bson::Binary(Binary {
+            subtype: BinarySubtype::UuidOld,
+            bytes: hex_bytes(text_of(first)?, 16)?,
+        }),
+        "MD5" => Bson::Binary(Binary {
+            subtype: BinarySubtype::Md5,
+            bytes: hex_bytes(text_of(first)?, 16)?,
+        }),
         "RegExp" => regex(
             text_of(first)?,
             text_of(arguments.get(1)).unwrap_or_default(),
         ),
         _ => return None,
     })
+}
+
+/// Bytes from hex digits (dashes left out), exactly `length` of them.
+fn hex_bytes(text: &str, length: usize) -> Option<Vec<u8>> {
+    let hex: String = text.chars().filter(|c| *c != '-').collect();
+    if hex.len() != length * 2 {
+        return None;
+    }
+    (0..length)
+        .map(|index| u8::from_str_radix(hex.get(index * 2..index * 2 + 2)?, 16).ok())
+        .collect()
 }
 
 /// A regular expression with its options in alphabetical order, as BSON keeps them.
@@ -610,6 +631,7 @@ mod tests {
             "stamp": Timestamp { time: 7, increment: 1 },
             "min": Bson::MinKey,
             "max": Bson::MaxKey,
+            "sym": Bson::Symbol("s".into()),
             "nested": { "list": [1, "two", { "deep": [] }], "empty": {} },
         }
     }
@@ -665,6 +687,29 @@ mod tests {
                 },
                 doc! { "x": 7_i64, "d": DateTime::from_millis(0) },
             ]
+        );
+    }
+
+    /// Lines of an export (`querymaster_test.export_types`, 18.10.2026).
+    #[test]
+    fn reads_an_export_in_shell_notation() {
+        let text = "{
+	\"n\": NumberInt(42),
+	\"legacy\": LUUID(\"30313233-3435-3637-3839-616263646566\"),
+	\"md5\": MD5(\"66656463626139383736353433323130\"),
+	\"min\": MinKey,
+	\"symbol\": Symbol(\"sym\")
+}";
+        let read = read_all(text).unwrap();
+        assert_eq!(
+            read,
+            [doc! {
+                "n": 42,
+                "legacy": Binary { subtype: BinarySubtype::UuidOld, bytes: b"0123456789abcdef".to_vec() },
+                "md5": Binary { subtype: BinarySubtype::Md5, bytes: b"fedcba9876543210".to_vec() },
+                "min": Bson::MinKey,
+                "symbol": Bson::Symbol("sym".into()),
+            }]
         );
     }
 
