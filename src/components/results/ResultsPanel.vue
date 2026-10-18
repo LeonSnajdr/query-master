@@ -880,6 +880,7 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
                 :key="`${result.offset}-${result.milliseconds}-${rows.length}`"
                 :label="$t('view.json')"
                 :modelValue="jsonText"
+                findBar
                 readonly
             />
         </div>

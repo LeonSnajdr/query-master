@@ -7,9 +7,11 @@ import { sql } from "@codemirror/lang-sql";
 import { HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
 import type { Extension, Range } from "@codemirror/state";
-import { Decoration, EditorView, ViewPlugin, drawSelection, highlightActiveLine, keymap, lineNumbers, showTooltip } from "@codemirror/view";
+import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
+import { Decoration, EditorView, ViewPlugin, crosshairCursor, drawSelection, highlightActiveLine, keymap, lineNumbers, rectangularSelection, showTooltip } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
+import { useI18n } from "vue-i18n";
 import { useMessages } from "@/composables/messages";
 import { codeMirrorKey } from "@/keys/hotkey";
 import { useKeymap } from "@/keys/keymap";
@@ -49,6 +51,8 @@ const props = defineProps<{
     valueField?: ValueField;
     /** Without room above and below the line, to fit a row of the result. */
     compact?: boolean;
+    /** The find and replace bar (Ctrl+F) and go to line: for editors with room for it (shell, SQL, text). */
+    findBar?: boolean;
     /** Test id of the editable text. */
     testid?: string;
     /**
@@ -118,6 +122,13 @@ function languageExtension(): Extension {
     return props.sqlSchema ? sql({ schema: props.sqlSchema, upperCaseKeywords: true }) : javascript();
 }
 const { say, report } = useMessages();
+const { t } = useI18n();
+
+/** The words of the find bar and of go to line, in the language of the app. */
+function searchPhrases(): Record<string, string> {
+    const keys = ["Find", "Replace", "next", "previous", "all", "match case", "regexp", "by word", "replace", "replace all", "close", "Go to line", "go", "current match", "on line", "replaced match on line $", "replaced $ matches"];
+    return Object.fromEntries(keys.map(key => [key, t(`editor.search.${key.replace(/[^a-z]+/gi, "_")}`)]));
+}
 const host = useTemplateRef<HTMLDivElement>("host");
 let view: EditorView | undefined;
 
@@ -374,6 +385,12 @@ const highlight = HighlightStyle.define([
     { tag: tags.comment, color: "var(--v0-code-comment)", fontStyle: "italic" }
 ]);
 
+/**
+ * Find (Ctrl+F), find again (F3), replace, go to line (Ctrl+Alt+G), all matches (Ctrl+Shift+L).
+ * Without Ctrl+D, which saves the query (your decision of 18.10.2026).
+ */
+const EDITOR_SEARCH_KEYS = searchKeymap.filter(binding => binding.key !== "Mod-d");
+
 const theme = EditorView.theme({
     "&": { height: "100%", fontSize: "var(--editor-font-size, 13px)", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
     "&.cm-focused": { outline: "none" },
@@ -396,6 +413,26 @@ const theme = EditorView.theme({
         boxShadow: "0 8px 24px rgb(0 0 0 / 0.35)",
         overflow: "hidden"
     },
+    // Find and replace (Ctrl+F, Ctrl+H) and "go to line" (Ctrl+Alt+G), as panels above the text.
+    ".cm-panels": { backgroundColor: "var(--v0-dock)", color: "var(--v0-on-surface)", fontFamily: "\"Open Sans\", system-ui, sans-serif", fontSize: "12.5px" },
+    ".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--v0-divider)" },
+    ".cm-panel input[type=text], .cm-panel .cm-textfield": {
+        backgroundColor: "var(--v0-background)",
+        color: "var(--v0-on-surface-strong)",
+        border: "1px solid var(--v0-divider)",
+        borderRadius: "3px",
+        padding: "2px 6px"
+    },
+    ".cm-panel button, .cm-panel .cm-button": {
+        backgroundImage: "none",
+        backgroundColor: "color-mix(in srgb, var(--v0-on-surface) 8%, transparent)",
+        color: "var(--v0-on-surface)",
+        border: "1px solid var(--v0-divider)",
+        borderRadius: "3px"
+    },
+    ".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--v0-warning) 30%, transparent)" },
+    ".cm-searchMatch-selected": { backgroundColor: "color-mix(in srgb, var(--v0-primary) 40%, transparent)" },
+    ".cm-selectionMatch": { backgroundColor: "color-mix(in srgb, var(--v0-on-surface) 12%, transparent)" },
     ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: "inherit", maxHeight: "18em" },
     ".cm-tooltip-autocomplete ul li": { padding: "2px 8px 2px 4px" },
     ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "var(--v0-primary)", color: "var(--v0-on-primary)" },
@@ -450,6 +487,13 @@ function extensions(): Extension[] {
         history(),
         indentOnInput(),
         closeBrackets(),
+        //: several cursors (Ctrl+Alt+Up/Down, Alt+click), block selection
+        // (Alt+drag), the other places of the selected text marked; find and replace on top.
+        EditorState.allowMultipleSelections.of(true),
+        rectangularSelection(),
+        crosshairCursor(),
+        ...(props.singleLine ? [] : [highlightSelectionMatches()]),
+        ...(props.findBar ? [search({ top: true }), EditorState.phrases.of(searchPhrases())] : []),
         // Ctrl+Space again, with the list open at a value: search all data. Ahead of the list's own
         // keys (also of the highest precedence, so the order decides), which take it to open the list.
         // Esc closes the footer shown alone.
@@ -473,6 +517,7 @@ function extensions(): Extension[] {
             ...completionKeymap,
             ...historyKeymap,
             ...(props.singleLine ? [] : [indentWithTab]),
+            ...(props.findBar ? EDITOR_SEARCH_KEYS : []),
             ...defaultKeymap
         ]),
         // A single line stays one: pasted line breaks become spaces.

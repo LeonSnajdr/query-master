@@ -224,7 +224,8 @@ onMounted(async () => {
 </script>
 
 <template>
-    <div class="h-full overflow-hidden flex flex-col bg-background text-on-surface text-[13px]">
+    <!-- `clip`, not `hidden`: focusing something wider than the window must not scroll the whole app sideways. -->
+    <div class="h-full overflow-clip flex flex-col bg-background text-on-surface text-[13px]">
         <SplitterRoot
             class="grow min-h-0"
             orientation="horizontal"

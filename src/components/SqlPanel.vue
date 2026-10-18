@@ -144,6 +144,7 @@ function copyStatement() {
                         :label="$t('sql.editor')"
                         :sqlSchema="schema"
                         formatAs="sql"
+                        findBar
                     />
                 </div>
                 <p

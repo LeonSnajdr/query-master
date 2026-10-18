@@ -359,6 +359,7 @@ function copyText() {
                         @run="submitText()"
                         :label="state.text.title"
                         :readonly="!state.text.action"
+                        findBar
                     />
                 </div>
                 <div class="flex justify-end gap-2">

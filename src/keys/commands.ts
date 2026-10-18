@@ -106,6 +106,13 @@ const LIST = [
     command({ id: "editor.indent", label: "shortcut.indent", group: "editor", scope: "editor", keys: ["ctrl+]"], fixed: true }),
     command({ id: "editor.outdent", label: "shortcut.outdent", group: "editor", scope: "editor", keys: ["ctrl+["], fixed: true }),
     command({ id: "editor.undo", label: "shortcut.undo", group: "editor", scope: "editor", keys: ["ctrl+z"], fixed: true }),
+    // The editor's own keys (CodeMirror), listed so the help and the start page show them.
+    command({ id: "editor.find", label: "shortcut.find", group: "editor", scope: "editor", keys: ["ctrl+f"], fixed: true }),
+    command({ id: "editor.findNext", label: "shortcut.findNext", group: "editor", scope: "editor", keys: ["f3"], fixed: true }),
+    command({ id: "editor.gotoLine", label: "shortcut.gotoLine", group: "editor", scope: "editor", keys: ["ctrl+alt+g"], fixed: true }),
+    command({ id: "editor.selectMatches", label: "shortcut.selectMatches", group: "editor", scope: "editor", keys: ["ctrl+shift+l"], fixed: true }),
+    command({ id: "editor.cursorAbove", label: "shortcut.cursorAbove", group: "editor", scope: "editor", keys: ["ctrl+alt+up"], fixed: true }),
+    command({ id: "editor.cursorBelow", label: "shortcut.cursorBelow", group: "editor", scope: "editor", keys: ["ctrl+alt+down"], fixed: true }),
 
     command({ id: "result.export", label: "result.export", group: "results", scope: "results", keys: ["ctrl+s"] }),
     command({ id: "result.import", label: "result.import", group: "results", scope: "results", keys: ["ctrl+o"] }),

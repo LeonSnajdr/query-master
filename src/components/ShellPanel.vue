@@ -275,6 +275,7 @@ function openInBuilder() {
                     :environment
                     :errorPosition="tab.errorPosition"
                     :label="$t('query.editor')"
+                    findBar
                 />
             </SplitterPanel>
             <SplitterHandle
