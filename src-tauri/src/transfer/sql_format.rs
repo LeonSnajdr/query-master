@@ -84,6 +84,8 @@ pub struct SqlWriter {
     options: SqlOptions,
     table: String,
     columns: Option<Vec<String>>,
+    /// Names of the columns in the table, when they differ from the paths.
+    names: Option<Vec<String>>,
     kinds: Vec<Kind>,
     started: bool,
 }
@@ -105,8 +107,25 @@ impl SqlWriter {
             table,
             columns: columns.filter(|columns| !columns.is_empty()),
             kinds: Vec::new(),
+            names: None,
             started: false,
         }
+    }
+
+    /// Names of the table's columns, one per chosen column (renamed on the schema page).
+    pub fn with_names(mut self, names: Option<Vec<String>>) -> Self {
+        self.names = names;
+        self
+    }
+
+    /// The name of the column at `index`: renamed, or the path with `_` for `.`.
+    fn name_at(&self, index: usize, path: &str) -> String {
+        let renamed = self
+            .names
+            .as_ref()
+            .filter(|names| Some(names.len()) == self.columns.as_ref().map(Vec::len))
+            .and_then(|names| names.get(index));
+        renamed.cloned().unwrap_or_else(|| column_name(path))
     }
 
     /// The statements for a batch; the first one also gets the `DROP` and `CREATE` asked for.
@@ -121,7 +140,10 @@ impl SqlWriter {
         }
         let names = columns
             .iter()
-            .map(|column| quote_identifier(self.options.dialect, &column_name(column)))
+            .enumerate()
+            .map(|(index, column)| {
+                quote_identifier(self.options.dialect, &self.name_at(index, column))
+            })
             .collect::<Vec<_>>()
             .join(", ");
         for document in documents {
@@ -173,12 +195,13 @@ impl SqlWriter {
         if self.options.create_table && !columns.is_empty() {
             let dialect = self.options.dialect;
             //: `_id` is the key of the table, not null.
-            let keyed = columns.iter().any(|column| column == "_id");
+            let keyed = columns.iter().position(|column| column == "_id");
             let mut lines = columns
                 .iter()
                 .zip(&self.kinds)
-                .map(|(column, kind)| {
-                    let name = quote_identifier(dialect, &column_name(column));
+                .enumerate()
+                .map(|(index, (column, kind))| {
+                    let name = quote_identifier(dialect, &self.name_at(index, column));
                     if column == "_id" {
                         format!("\t{name} {} NOT NULL", key_type_name(dialect, *kind))
                     } else {
@@ -186,10 +209,10 @@ impl SqlWriter {
                     }
                 })
                 .collect::<Vec<_>>();
-            if keyed {
+            if let Some(index) = keyed {
                 lines.push(format!(
                     "\tPRIMARY KEY ({})",
-                    quote_identifier(dialect, "_id")
+                    quote_identifier(dialect, &self.name_at(index, "_id"))
                 ));
             }
             let lines = lines.join(&format!(",{EOL}"));
@@ -444,6 +467,27 @@ mod tests {
         assert!(mixed
             .batch(&[doc! { "_id": 1 }, doc! { "_id": "a" }])
             .contains("\t`_id` VARCHAR(255) NOT NULL,\r\n"));
+    }
+
+    #[test]
+    fn names_the_columns_as_renamed() {
+        let mut writer = SqlWriter::new(
+            options(Dialect::PostgreSql, true, false),
+            "t",
+            Some(vec!["_id".into(), "customer.city".into()]),
+        )
+        .with_names(Some(vec!["id".into(), "Stadt".into()]));
+        let text = writer.batch(&[doc! { "_id": 1, "customer": { "city": "Ulm" } }]);
+        assert!(
+            text.contains(
+                "\t\"id\" INTEGER NOT NULL,\r\n\t\"Stadt\" TEXT,\r\n\tPRIMARY KEY (\"id\")"
+            ),
+            "{text}"
+        );
+        assert!(
+            text.contains("(\"id\", \"Stadt\") VALUES (1, 'Ulm');"),
+            "{text}"
+        );
     }
 
     #[test]

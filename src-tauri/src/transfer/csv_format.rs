@@ -40,6 +40,8 @@ pub struct CsvWriter<W: Write> {
     writer: csv::Writer<W>,
     options: CsvOptions,
     columns: Option<Vec<String>>,
+    /// The header's names of the columns, when they differ from the paths.
+    names: Option<Vec<String>>,
     /// The columns were chosen: fields outside them are left out, not reported.
     chosen: bool,
     skipped: BTreeSet<String>,
@@ -60,6 +62,7 @@ impl<W: Write> CsvWriter<W> {
             options,
             columns: columns.filter(|columns| !columns.is_empty()),
             chosen,
+            names: None,
             skipped: BTreeSet::new(),
         }
     }
@@ -70,7 +73,15 @@ impl<W: Write> CsvWriter<W> {
         }
         let columns = self.columns.as_ref().expect("set above");
         if self.options.header {
-            self.writer.write_record(columns).map_err(csv_error)?;
+            match self
+                .names
+                .as_ref()
+                .filter(|names| names.len() == columns.len())
+            {
+                Some(names) => self.writer.write_record(names),
+                None => self.writer.write_record(columns),
+            }
+            .map_err(csv_error)?;
             // Once, before the first row.
             self.options.header = false;
         }
@@ -90,6 +101,12 @@ impl<W: Write> CsvWriter<W> {
             self.writer.write_record(record).map_err(csv_error)?;
         }
         Ok(())
+    }
+
+    /// Names for the header, one per chosen column (renamed on the schema page).
+    pub fn with_names(mut self, names: Option<Vec<String>>) -> Self {
+        self.names = names;
+        self
     }
 
     pub fn finish(mut self) -> Result<Vec<String>> {
@@ -217,6 +234,24 @@ mod tests {
             "name;customer.city;tags.1;gone\r\n'a;b';Ulm;y;\r\nline\\nbreak;;;\r\n"
         );
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn writes_the_names_given_in_the_header() {
+        let mut writer = CsvWriter::with_options(
+            Vec::new(),
+            CsvOptions::default(),
+            Some(vec!["_id".into(), "customer.city".into()]),
+        )
+        .with_names(Some(vec!["id".into(), "Stadt".into()]));
+        writer
+            .write(&[doc! { "_id": 1, "customer": { "city": "Ulm" } }])
+            .unwrap();
+        let bytes = writer.into_inner().unwrap();
+        assert_eq!(
+            String::from_utf8(bytes).unwrap(),
+            "id,Stadt\r\n1,Ulm\r\n"
+        );
     }
 
     #[test]

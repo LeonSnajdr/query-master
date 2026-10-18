@@ -44,6 +44,9 @@ pub struct ExportItem {
     /// CSV and SQL: the columns, as dotted paths; none for the fields of the first level.
     #[serde(default)]
     pub columns: Option<Vec<String>>,
+    /// Names of the columns in the file or table, one per column; none for the paths themselves.
+    #[serde(default)]
+    pub names: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -307,13 +310,15 @@ async fn export_text(
             let mut file = BufWriter::new(File::create(folder.join(&item.output))?);
             // With a byte order mark: Excel reads the text as UTF-8 only with it.
             file.write_all(BOM)?;
-            let mut writer = CsvWriter::with_options(file, options, item.columns.clone());
+            let mut writer = CsvWriter::with_options(file, options, item.columns.clone())
+                .with_names(item.names.clone());
             let done = write_csv(&mut cursor, &mut writer, stop, progress).await?;
             writer.finish()?;
             Ok(done)
         }
         (FileFormat::Csv { options }, None) => {
-            let mut writer = CsvWriter::with_options(Vec::new(), options, item.columns.clone());
+            let mut writer = CsvWriter::with_options(Vec::new(), options, item.columns.clone())
+                .with_names(item.names.clone());
             let done = write_csv(&mut cursor, &mut writer, stop, progress).await?;
             let bytes = writer.into_inner()?;
             if clipboard.len() + bytes.len() > CLIPBOARD_LIMIT {
@@ -327,7 +332,8 @@ async fn export_text(
             check_output(&item.output)?;
             let file = BufWriter::new(File::create(folder.join(&item.output))?);
             let mut sink = Sink::File(file);
-            let writer = SqlWriter::new(options, &item.collection, item.columns.clone());
+            let writer = SqlWriter::new(options, &item.collection, item.columns.clone())
+                .with_names(item.names.clone());
             let done = write_sql(&mut cursor, &mut sink, writer, stop, progress).await?;
             if let Sink::File(mut file) = sink {
                 file.flush()?;
@@ -336,7 +342,8 @@ async fn export_text(
         }
         (FileFormat::Sql { options }, None) => {
             let mut sink = Sink::Text(clipboard);
-            let writer = SqlWriter::new(options, &item.collection, item.columns.clone());
+            let writer = SqlWriter::new(options, &item.collection, item.columns.clone())
+                .with_names(item.names.clone());
             write_sql(&mut cursor, &mut sink, writer, stop, progress).await
         }
     }
@@ -678,6 +685,7 @@ mod tests {
             output: output.into(),
             filter,
             columns: None,
+            names: None,
         }
     }
 

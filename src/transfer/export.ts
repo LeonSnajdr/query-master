@@ -75,6 +75,8 @@ export interface ExportState {
     sql: SqlSettings;
     /** CSV and SQL columns (dotted paths) per collection, as `database.collection`; none: the fields of the first level. */
     columns: Record<string, string[]>;
+    /** Names of renamed columns per collection (`database.collection` → path → name). */
+    names: Record<string, Record<string, string>>;
     database: { connectionId: string; database: string; insertMode: InsertMode; copyIndexes: boolean };
 }
 
@@ -223,6 +225,15 @@ export function splitPath(path: string): { folder: string; name: string } {
     return cut === -1 ? { folder: "", name: path } : { folder: path.slice(0, cut), name: path.slice(cut + 1) };
 }
 
+/** The names of the chosen columns of a row's collection, when one of them was renamed; else none. */
+export function columnNames(state: ExportState, row: { database: string; collection: string }): string[] | null {
+    const key = columnsKey(row);
+    const columns = state.columns[key];
+    const renamed = state.names[key] ?? {};
+    if (!columns || !columns.some(path => renamed[path]?.trim())) return null;
+    return columns.map(path => renamed[path]?.trim() || (state.format === "sql" ? path.replaceAll(".", "_") : path));
+}
+
 /** The job as the Rust side takes it (`src-tauri/src/transfer/job.rs`). */
 export function exportJob(state: ExportState): Doc {
     let rows = state.rows;
@@ -253,7 +264,8 @@ export function exportJob(state: ExportState): Doc {
             collection: row.collection,
             output: row.output.trim(),
             filter: filterValue(row.filter) ?? null,
-            columns: hasColumns(state.format) ? state.columns[columnsKey(row)] ?? null : null
+            columns: hasColumns(state.format) ? state.columns[columnsKey(row)] ?? null : null,
+            names: hasColumns(state.format) ? columnNames(state, row) : null
         }))
     };
 }

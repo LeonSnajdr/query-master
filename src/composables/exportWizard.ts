@@ -34,6 +34,7 @@ const wizard = reactive({
         csv: { ...DEFAULT_CSV },
         sql: { ...DEFAULT_SQL },
         columns: {},
+        names: {},
         database: { connectionId: "", database: "", insertMode: "overwrite", copyIndexes: true }
     } as ExportState,
     progress: [] as RowProgress[],
@@ -99,7 +100,8 @@ export function useExportWizard() {
                 json: { ...preset.json },
                 csv: { ...preset.csv },
                 sql: { ...preset.sql },
-                columns: {}
+                columns: {},
+                names: {}
             });
             wizard.state.database = { connectionId: at.connectionId, database: "", insertMode: preset.insertMode, copyIndexes: preset.copyIndexes };
             if (target) {
