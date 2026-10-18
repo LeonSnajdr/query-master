@@ -39,7 +39,8 @@ export interface SqlSettings {
     dropTable: boolean;
 }
 
-export const DEFAULT_SQL: SqlSettings = { dialect: "mySql", schema: "", createTable: true, dropTable: false };
+//: CREATE and DROP TABLE both on.
+export const DEFAULT_SQL: SqlSettings = { dialect: "mySql", schema: "", createTable: true, dropTable: true };
 
 /** The formats whose columns are chosen on the schema page. */
 export function hasColumns(format: ExportFormat): boolean {
