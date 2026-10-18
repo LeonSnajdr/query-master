@@ -6,10 +6,12 @@ import { namesAsChoices } from "@/choice";
 import FormError from "@/components/FormError.vue";
 import IconButton from "@/components/IconButton.vue";
 import ChoiceField from "@/components/ChoiceField.vue";
+import CodeEditor from "@/components/CodeEditor.vue";
 import { useExportWizard } from "@/composables/exportWizard";
 import { CSV_FILES, JSON_FILES, pickFolder, pickSavePath, SQL_FILES } from "@/files";
 import type { FileKind } from "@/files";
 import { useConnectionsStore } from "@/stores/connections";
+import type { Environment } from "@/shell/complete";
 import { defaultOutput, exportProblems, FILE_TARGETS, hasColumns, SQL_DIALECTS } from "@/transfer/export";
 import type { CsvSettings, ExportFormat, ExportRow, FileTarget, InsertMode, JsonLayout, JsonNotation, SqlDialect } from "@/transfer/export";
 import ColumnSchema from "./ColumnSchema.vue";
@@ -49,6 +51,17 @@ const insertOptions = computed(() => (["overwrite", "newId"] as InsertMode[]).ma
 const notationOptions = computed(() => (["shell", "relaxed", "canonical"] as JsonNotation[]).map(value => ({ value, label: t(`export.json.notation.${value}`) })));
 const layoutOptions = computed(() => (["lines", "comma", "array"] as JsonLayout[]).map(value => ({ value, label: t(`export.json.layout.${value}`) })));
 
+/** Completion for the filter of a row: fields and operators as in the filter of the document browser. */
+function environmentFor(database: string): Environment {
+    const id = state.value.connectionId;
+    return {
+        serverVersion: connections.sessions[id]?.version,
+        databases: sourceDatabases.value,
+        collections: connections.collectionsOf(id, database),
+        fields: name => connections.fieldsOf(id, database, name)
+    };
+}
+
 const sourceDatabases = computed(() => connections.sessions[state.value.connectionId]?.databases.map(database => database.name) ?? []);
 const sourceChoices = computed(() => namesAsChoices(sourceDatabases.value));
 const targetChoices = computed(() => namesAsChoices(connections.sessions[state.value.database.connectionId]?.databases.map(database => database.name) ?? []));
@@ -68,8 +81,31 @@ const delimiter = computed({ get: () => state.value.csv.delimiter, set: (value: 
 const dialect = computed({ get: () => state.value.sql.dialect, set: (value: SqlDialect) => (state.value.sql.dialect = value) });
 const quote = computed({ get: () => state.value.csv.quote, set: (value: CsvSettings["quote"]) => (state.value.csv.quote = value) });
 
-/** The row clicked last; edit and remove act on it. */
+/** The row clicked last: edit acts on it. */
 const selected = shallowRef<number>();
+/** The rows selected (Ctrl and Shift add to them): remove acts on all. */
+const marked = shallowRef(new Set<number>());
+//: the first row is selected once the rows are there, so edit and remove work at once.
+watch(() => wizard.loading, (loading) => {
+    if (loading) return;
+    selected.value = state.value.rows.length > 0 ? 0 : undefined;
+    marked.value = new Set(selected.value === undefined ? [] : [0]);
+});
+
+function clickRow(event: MouseEvent, index: number) {
+    if (event.shiftKey && selected.value !== undefined) {
+        const [from, to] = [Math.min(selected.value, index), Math.max(selected.value, index)];
+        marked.value = new Set(Array.from({ length: to - from + 1 }, (_, step) => from + step));
+    } else if (event.ctrlKey || event.metaKey) {
+        const next = new Set(marked.value);
+        if (next.has(index)) next.delete(index);
+        else next.add(index);
+        marked.value = next;
+    } else {
+        marked.value = new Set([index]);
+    }
+    selected.value = index;
+}
 /** The form of "Add collection", also for editing a row (`editing` is its index). */
 const form = ref<{ database: string; collection: string; output: string; filter: string; editing?: number }>();
 const formDatabase = computed(() => connections.sessions[state.value.connectionId]?.databases.find(database => database.name === form.value?.database));
@@ -100,9 +136,10 @@ function saveForm() {
 }
 
 function removeRow() {
-    if (selected.value === undefined) return;
-    state.value.rows = state.value.rows.filter((_, index) => index !== selected.value);
+    if (marked.value.size === 0) return;
+    state.value.rows = state.value.rows.filter((_, index) => !marked.value.has(index));
     selected.value = undefined;
+    marked.value = new Set();
 }
 
 const KINDS: Partial<Record<ExportFormat, FileKind>> = { json: JSON_FILES, csv: CSV_FILES, sql: SQL_FILES };
@@ -283,7 +320,7 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                         />
                         <IconButton
                             @click="removeRow"
-                            :disabled="selected === undefined"
+                            :disabled="marked.size === 0"
                             :label="$t('export.removeRow')"
                             data-testid="export-remove"
                             icon="i-lucide-file-x-2"
@@ -321,13 +358,16 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                             class="field"
                             spellcheck="false"
                         />
-                        <input
-                            v-model="form.filter"
-                            :aria-label="$t('export.column.filter')"
-                            :placeholder="$t('export.allDocuments')"
-                            class="field font-mono"
-                            spellcheck="false"
-                        />
+                        <div class="field p-0! min-w-0">
+                            <CodeEditor
+                                v-model="form.filter"
+                                :environment="environmentFor(form.database)"
+                                :label="$t('export.column.filter')"
+                                :placeholder="$t('export.allDocuments')"
+                                :prefix="`db.getCollection(${JSON.stringify(form.collection)}).find(`"
+                                singleLine
+                            />
+                        </div>
                         <div class="flex gap-1">
                             <ButtonRoot
                                 @click="saveForm"
@@ -345,7 +385,12 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                         </div>
                     </div>
 
-                    <div class="grow min-h-0 overflow-auto rounded-sm bg-background border border-divider">
+                    <!-- Del removes the selected rows Remove. -->
+                    <div
+                        @keydown.delete.self="removeRow"
+                        class="grow min-h-0 overflow-auto rounded-sm bg-background border border-divider focus-visible:outline-1 focus-visible:outline-primary"
+                        tabindex="0"
+                    >
                         <table
                             class="w-full border-collapse text-[13px]"
                             data-testid="export-rows"
@@ -366,8 +411,9 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                                 <tr
                                     v-for="(row, index) in state.rows"
                                     :key="`${row.database}.${row.collection}.${index}`"
-                                    @click="selected = index"
-                                    :class="selected === index ? 'bg-primary/15' : 'hover:bg-on-surface/4'"
+                                    @click="clickRow($event, index)"
+                                    :class="marked.has(index) ? 'bg-primary/15' : 'hover:bg-on-surface/4'"
+                                    class="select-none"
                                     data-testid="export-row"
                                 >
                                     <td class="px-2.5 py-1 border-t border-divider max-w-40 truncate">
@@ -385,15 +431,35 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                                             spellcheck="false"
                                         />
                                     </td>
-                                    <td class="px-1 py-0.5 border-t border-divider">
-                                        <input
-                                            v-model="row.filter"
-                                            :aria-label="$t('export.column.filter')"
-                                            :placeholder="$t('export.allDocuments')"
-                                            class="w-full h-7 px-1.5 bg-transparent border border-transparent rounded-sm focus:border-primary outline-none font-mono placeholder:italic placeholder:font-sans"
-                                            data-testid="export-filter"
-                                            spellcheck="false"
-                                        />
+                                    <!-- A one-line editor with completion, as the filter of the document browser. -->
+                                    <td class="px-1 py-0.5 border-t border-divider max-w-0 w-[34%]">
+                                        <div class="h-7 px-1 flex items-center overflow-hidden rounded-sm border border-transparent focus-within:border-primary">
+                                            <CodeEditor
+                                                v-model="row.filter"
+                                                :environment="environmentFor(row.database)"
+                                                :label="$t('export.column.filter')"
+                                                :placeholder="$t('export.allDocuments')"
+                                                :prefix="`db.getCollection(${JSON.stringify(row.collection)}).find(`"
+                                                class="w-full"
+                                                testid="export-filter"
+                                                compact
+                                                singleLine
+                                            />
+                                        </div>
+                                    </td>
+                                </tr>
+                                <!-- While the collections are read; with none, a note saying so. -->
+                                <tr v-if="wizard.loading || state.rows.length === 0">
+                                    <td
+                                        class="px-2.5 py-3 border-t border-divider text-on-surface-variant"
+                                        colspan="4"
+                                        data-testid="export-rows-state"
+                                    >
+                                        <span
+                                            v-if="wizard.loading"
+                                            class="inline-flex items-center gap-2"
+                                        ><span class="i-lucide-loader-circle size-4 animate-spin" />{{ $t("export.loadingCollections") }}</span>
+                                        <span v-else>{{ $t("export.nothingToExport") }}</span>
                                     </td>
                                 </tr>
                             </tbody>
@@ -517,7 +583,7 @@ watch(() => wizard.runId, () => (failure.value = undefined));
 
                 <footer class="shrink-0 flex items-center gap-2 px-6 py-5">
                     <FormError
-                        v-if="wizard.step === 'rows' && problemText"
+                        v-if="wizard.step === 'rows' && problemText && !wizard.loading"
                         :text="problemText"
                         data-testid="export-problem"
                     />

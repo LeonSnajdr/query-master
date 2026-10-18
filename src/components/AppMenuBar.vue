@@ -53,7 +53,7 @@ const menus = computed<{ name: string; entries: MenuEntry[] }[]>(() => [
             { label: t("tab.aggregation"), icon: "i-lucide-network", command: "tab.aggregation", action: () => actions.aggregation(), disabled: !actions.hasCollection.value },
             { label: t("tab.sql"), icon: "i-lucide-file-code-2", command: "tab.sql", action: () => actions.openSql(), disabled: !actions.hasConnection.value },
             "separator",
-            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(), disabled: !actions.hasConnection.value },
+            { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(), disabled: !actions.hasConnection.value && !actions.anyOpen.value },
             { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(), disabled: actions.onView.value },
             "separator",
             { label: t("connection.disconnect"), command: "connection.disconnect", action: () => void actions.disconnect(), disabled: !actions.hasConnection.value },

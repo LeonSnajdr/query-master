@@ -8,7 +8,7 @@ import { HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxHighl
 import { Compartment, EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
 import type { Extension, Range } from "@codemirror/state";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { Decoration, EditorView, ViewPlugin, crosshairCursor, drawSelection, highlightActiveLine, keymap, lineNumbers, rectangularSelection, showTooltip } from "@codemirror/view";
+import { Decoration, EditorView, ViewPlugin, crosshairCursor, drawSelection, highlightActiveLine, keymap, lineNumbers, placeholder as placeholderText, rectangularSelection, showTooltip } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
@@ -53,6 +53,8 @@ const props = defineProps<{
     compact?: boolean;
     /** The find and replace bar (Ctrl+F) and go to line: for editors with room for it (shell, SQL, text). */
     findBar?: boolean;
+    /** Text shown grey while the editor is empty. */
+    placeholder?: string;
     /** Test id of the editable text. */
     testid?: string;
     /**
@@ -394,9 +396,12 @@ const EDITOR_SEARCH_KEYS = searchKeymap.filter(binding => binding.key !== "Mod-d
 const theme = EditorView.theme({
     "&": { height: "100%", fontSize: "var(--editor-font-size, 13px)", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
     "&.cm-focused": { outline: "none" },
+    // One line never scrolls up and down; a pixel of rounding would show a scroll bar otherwise.
+    ".cm-scroller": props.singleLine ? { overflowY: "hidden" } : {},
     ".cm-content": { caretColor: "var(--v0-primary)", padding: props.compact ? "0" : props.singleLine ? "5px 0" : "8px 0" },
     ".cm-line": { padding: props.singleLine ? "0 2px" : "0 6px" },
     ".cm-cursor": { borderLeftColor: "var(--v0-primary)" },
+    ".cm-placeholder": { color: "var(--v0-on-surface-variant)", fontStyle: "italic", fontFamily: "\"Open Sans\", system-ui, sans-serif" },
     ".cm-errorMark": { textDecoration: "underline wavy var(--v0-error)", textUnderlineOffset: "3px", textDecorationSkipInk: "none" },
     ".cm-gutters": { backgroundColor: "transparent", color: "var(--v0-on-surface-variant)", border: "none", paddingLeft: "8px" },
     ".cm-activeLine": { backgroundColor: props.readonly || props.singleLine ? "transparent" : "color-mix(in srgb, var(--v0-on-surface) 5%, transparent)" },
@@ -478,6 +483,7 @@ function extensions(): Extension[] {
         language.of(languageExtension()),
         syntaxHighlighting(highlight),
         EditorView.contentAttributes.of({ "aria-label": props.label, ...(props.testid ? { "data-testid": props.testid } : {}) }),
+        ...(props.placeholder ? [placeholderText(props.placeholder)] : []),
         theme
     ];
     if (!props.singleLine) base.push(lineNumbers(), highlightActiveLine());

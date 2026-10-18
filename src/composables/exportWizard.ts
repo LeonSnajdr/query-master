@@ -39,7 +39,9 @@ const wizard = reactive({
     } as ExportState,
     progress: [] as RowProgress[],
     runId: undefined as string | undefined,
-    outcome: undefined as ExportOutcome | undefined
+    outcome: undefined as ExportOutcome | undefined,
+    /** The collections of the selection are still being read (the rows follow). */
+    loading: false
 });
 
 /** The export wizard: shared by the menus, the tree and the results. */
@@ -86,17 +88,16 @@ export function useExportWizard() {
         if (!at || busy.value || wizard.runId) return;
         busy.value = true;
         try {
-            const collections: { database: string; collection: string }[] = [];
-            for (const item of all) collections.push(...await collectionsOf(item));
             preset ??= readExportPreset(await backend.getPreset("export").catch(() => null));
-            Object.assign(wizard, { open: true, step: "rows", progress: [], outcome: undefined });
+            // Open at once: the rows follow while the collections are read.
+            Object.assign(wizard, { open: true, step: "rows", progress: [], outcome: undefined, loading: true });
             // Always JSON into a folder first; the options are those of the last run.
             Object.assign(wizard.state, {
                 connectionId: at.connectionId,
                 format: "json",
                 target: "directory",
                 path: preset.folder,
-                rows: rowsFor("json", collections.map(item => ({ ...item, filter }))),
+                rows: [],
                 json: { ...preset.json },
                 csv: { ...preset.csv },
                 sql: { ...preset.sql },
@@ -104,6 +105,10 @@ export function useExportWizard() {
                 names: {}
             });
             wizard.state.database = { connectionId: at.connectionId, database: "", insertMode: preset.insertMode, copyIndexes: preset.copyIndexes };
+            const collections: { database: string; collection: string }[] = [];
+            for (const item of all) collections.push(...await collectionsOf(item));
+            wizard.state.rows = rowsFor("json", collections.map(item => ({ ...item, filter })));
+            wizard.loading = false;
             if (target) {
                 setFormat("database");
                 // Into the database it comes from, a copy needs another name.
@@ -119,6 +124,7 @@ export function useExportWizard() {
             report(error);
         } finally {
             busy.value = false;
+            wizard.loading = false;
         }
     }
 

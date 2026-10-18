@@ -67,6 +67,8 @@ export function useActions() {
         return at?.collection !== undefined && database?.types[at.collection] === "view";
     }
     const onView = computed(() => isView(target.value));
+    /** Some connection is open: the wizards can start without a selection. */
+    const anyOpen = computed(() => Object.keys(connections.sessions).length > 0);
 
     /**
      * Whether the row may be changed; a row marked read-only in the tree, or one below such a row,
@@ -124,15 +126,23 @@ export function useActions() {
         tabs.openSql({ connectionId: at.connectionId, database, collection: at.collection });
     }
 
+    /** The first open connection, for the wizards when nothing is selected. */
+    function firstOpen(): TreeSelection | undefined {
+        const id = connections.profiles.find(profile => connections.sessions[profile.id])?.id;
+        return id === undefined ? undefined : { connectionId: id };
+    }
+
     /** The export wizard with the rows of the selection: the server's, a database's, one collection or several. */
     async function exportWizard(at: TreeSelection | TreeSelection[] | undefined = target.value, filter?: string, format?: ExportFormat) {
-        if (at) await wizardOf.openExport(at, filter, format);
+        // Without a selection: the first open connection.
+        const chosen = at ?? firstOpen();
+        if (chosen) await wizardOf.openExport(chosen, filter, format);
     }
 
     /** The import wizard on the server of the selection; a collection chosen there takes every file. */
     function importWizard(at = target.value) {
         if (isView(at)) return;
-        void importOf.openImport(at);
+        void importOf.openImport(at ?? firstOpen());
     }
 
     /** A shell that runs one statement right away (statistics, server status …). */
@@ -526,7 +536,7 @@ export function useActions() {
     }
 
     return {
-        target, hasConnection, hasDatabase, hasCollection, onView,
+        target, hasConnection, hasDatabase, hasCollection, onView, anyOpen,
         openShell, browse, schema, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,
