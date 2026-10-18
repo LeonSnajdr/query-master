@@ -166,7 +166,19 @@ function openFolderMenu(event: MouseEvent, profile: Profile, database: DatabaseN
         .filter(other => !folderWithin(other, folder) && other !== parent)
         .map(other => ({ label: t("folder.moveFolderTo", { name: other }), icon: "i-lucide-folder-input", action: () => void actions.moveFolder(at, folder, other) }));
     if (parent !== undefined) targets.push({ label: t("folder.moveFolderOut"), icon: "i-lucide-folder-output", action: () => void actions.moveFolder(at, folder, undefined) });
+    //: what lies in the folder (and the folders in it) goes into the export at once.
+    const inFolder = (place: TreeSelection) => {
+        const own = notes.noteOf(place)?.folder;
+        return typeof own === "string" && folderWithin(own, folder);
+    };
+    const rows: TreeSelection[] = database
+        ? (database.collections ?? []).map(collection => ({ connectionId: profile.id, database: database.name, collection }))
+        : (connections.sessions[profile.id]?.databases ?? []).map(item => ({ connectionId: profile.id, database: item.name }));
+    const members = rows.filter(inFolder);
     void menu.value?.open(event, [
+        { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(members), disabled: members.length === 0 },
+        { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at), disabled: notes.isReadonly(at) },
+        "separator",
         { label: t("folder.add"), icon: "i-lucide-folder-plus", command: "folder.add", action: () => void actions.addFolder(at) },
         { label: t("folder.addInside"), icon: "i-lucide-folder-tree", action: () => void actions.addFolder(at, folder) },
         { label: t("folder.rename"), icon: "i-lucide-pencil", action: () => void actions.renameFolder(at, folder) },
