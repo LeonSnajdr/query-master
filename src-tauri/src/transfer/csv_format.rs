@@ -51,6 +51,8 @@ impl<W: Write> CsvWriter<W> {
         let writer = csv::WriterBuilder::new()
             .delimiter(u8::try_from(options.delimiter).unwrap_or(b','))
             .quote(u8::try_from(options.quote).unwrap_or(b'"'))
+            // CRLF and Excel expect.
+            .terminator(csv::Terminator::CRLF)
             .from_writer(file);
         let chosen = columns.as_ref().is_some_and(|columns| !columns.is_empty());
         Self {
@@ -154,6 +156,13 @@ fn cell(value: &Bson) -> String {
         Bson::String(text) => text.clone(),
         Bson::Int32(number) => number.to_string(),
         Bson::Int64(number) => number.to_string(),
+        // `inf` is Rust's spelling; the shell write `Infinity`.
+        Bson::Double(number) if number.is_infinite() => if number.is_sign_positive() {
+            "Infinity"
+        } else {
+            "-Infinity"
+        }
+        .into(),
         Bson::Double(number) => number.to_string(),
         Bson::Decimal128(number) => number.to_string(),
         Bson::Boolean(flag) => flag.to_string(),
@@ -205,7 +214,7 @@ mod tests {
         assert!(writer.finish().unwrap().is_empty());
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            "name;customer.city;tags.1;gone\n'a;b';Ulm;y;\nline\\nbreak;;;\n"
+            "name;customer.city;tags.1;gone\r\n'a;b';Ulm;y;\r\nline\\nbreak;;;\r\n"
         );
         std::fs::remove_file(path).unwrap();
     }
@@ -232,7 +241,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             text,
-            "_id,name,at,tags\n64b7f0c2a1b2c3d4e5f60718,\"Anna, \"\"A\"\"\",1970-01-01T00:00:00Z,\n2,\"line\nbreak\",,\"[\"\"a\"\",1]\"\n3,,,\n"
+            "_id,name,at,tags\r\n64b7f0c2a1b2c3d4e5f60718,\"Anna, \"\"A\"\"\",1970-01-01T00:00:00Z,\r\n2,\"line\nbreak\",,\"[\"\"a\"\",1]\"\r\n3,,,\r\n"
         );
         std::fs::remove_file(path).unwrap();
     }

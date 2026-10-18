@@ -304,7 +304,9 @@ async fn export_text(
         }
         (FileFormat::Csv { options }, Some(folder)) => {
             check_output(&item.output)?;
-            let file = BufWriter::new(File::create(folder.join(&item.output))?);
+            let mut file = BufWriter::new(File::create(folder.join(&item.output))?);
+            // With a byte order mark: Excel reads the text as UTF-8 only with it.
+            file.write_all(BOM)?;
             let mut writer = CsvWriter::with_options(file, options, item.columns.clone());
             let done = write_csv(&mut cursor, &mut writer, stop, progress).await?;
             writer.finish()?;

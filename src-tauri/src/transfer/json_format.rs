@@ -64,6 +64,16 @@ impl JsonWriter {
             text.push_str(LINE);
         }
         self.first = false;
+        // Extended JSON one after the other is what `mongoexport` writes:
+        // one document per line (JSON Lines), so line-based tools read it.
+        if self.notation != Notation::Shell && self.layout == Layout::Lines {
+            let json = match self.notation {
+                Notation::Canonical => Bson::Document(document.clone()).into_canonical_extjson(),
+                _ => Bson::Document(document.clone()).into_relaxed_extjson(),
+            };
+            text.push_str(&serde_json::to_string(&json).unwrap_or_default());
+            return text;
+        }
         let indent = if self.layout == Layout::Array {
             "\t"
         } else {
@@ -330,11 +340,26 @@ mod tests {
 
     #[test]
     fn keeps_types_in_canonical_and_simplifies_in_relaxed() {
-        let mut canonical = JsonWriter::new(Notation::Canonical, Layout::Lines);
+        let mut canonical = JsonWriter::new(Notation::Canonical, Layout::Array);
         assert!(canonical
             .document(&doc! { "n": 5_i64 })
             .contains("\"n\": {\"$numberLong\":\"5\"}"));
-        let mut relaxed = JsonWriter::new(Notation::Relaxed, Layout::Lines);
+        let mut relaxed = JsonWriter::new(Notation::Relaxed, Layout::Array);
         assert!(relaxed.document(&doc! { "n": 5_i64 }).contains("\"n\": 5"));
+    }
+
+    #[test]
+    fn writes_extended_json_one_document_per_line_as_mongoexport() {
+        let mut relaxed = JsonWriter::new(Notation::Relaxed, Layout::Lines);
+        let first = relaxed.document(&doc! { "_id": 1, "sub": { "a": [1, 2] } });
+        let second = relaxed.document(&doc! { "_id": 2 });
+        assert_eq!(first, r#"{"_id":1,"sub":{"a":[1,2]}}"#);
+        assert_eq!(second, "\r\n{\"_id\":2}");
+        assert_eq!(relaxed.finish(), LINE);
+        let mut canonical = JsonWriter::new(Notation::Canonical, Layout::Lines);
+        assert_eq!(
+            canonical.document(&doc! { "n": 5_i64 }),
+            r#"{"n":{"$numberLong":"5"}}"#
+        );
     }
 }
