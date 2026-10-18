@@ -158,6 +158,7 @@ function withActive(action: (tab: WorkTab) => void) {
 const SHORTCUTS: Partial<Record<CommandId, () => void>> = {
     "connection.list": () => dock.value?.openList(),
     "connection.add": () => actions.newConnection(),
+    "connection.addUri": () => void actions.addFromUri(),
     "connection.uri": () => void actions.viewUri(),
     "connection.disconnect": () => void actions.disconnect(),
     "tab.browse": () => actions.browse(),

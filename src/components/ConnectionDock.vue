@@ -365,12 +365,34 @@ async function choose(profile: Profile) {
 
 /** The list of saved connections: a toolbar, a search and one folder of them. */
 const listSearch = shallowRef("");
-const listFolderOpen = shallowRef(true);
+/** Groups of the list closed by a click; all are open at first. */
+const closedGroups = shallowRef(new Set<string>());
 const picked = shallowRef<string>();
 const listed = computed(() => {
     const term = listSearch.value.trim().toLowerCase();
     return connections.saved.filter(profile => !term || profile.name.toLowerCase().includes(term) || profile.address.toLowerCase().includes(term));
 });
+/**
+ * The groups of the list shows them: each named group, then *My connections*
+ * with those in none. While searching a group without matches is left out.
+ */
+const listGroups = computed(() => {
+    const groupOf = (profile: Profile) => profile.groupName?.trim() ?? "";
+    const named = connections.groups.map(name => ({ name, label: name, profiles: listed.value.filter(profile => groupOf(profile) === name) }));
+    return [
+        ...named.filter(group => group.profiles.length > 0 || !listSearch.value.trim()),
+        { name: "", label: t("connection.mine"), profiles: listed.value.filter(profile => !groupOf(profile)) }
+    ];
+});
+/** The connections as the list shows them, for the arrow keys. */
+const shownProfiles = computed(() => listGroups.value.flatMap(group => (closedGroups.value.has(group.name) ? [] : group.profiles)));
+
+function toggleGroup(name: string) {
+    const next = new Set(closedGroups.value);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    closedGroups.value = next;
+}
 const pickedProfile = computed(() => connections.saved.find(profile => profile.id === picked.value));
 
 // Color and read-only of a connection show in the list before it is connected.
@@ -408,7 +430,7 @@ function uriOf(profile: Profile) {
  * The menu of the list: on a connection everything for it, on the folder
  * only what adds one. Groups of connections and moving between them are not built (one folder).
  */
-function openListMenu(event: MouseEvent, profile?: Profile) {
+function openListMenu(event: MouseEvent, profile?: Profile, group?: string) {
     event.stopPropagation();
     const close = (action: () => void) => () => {
         listOpen.value = false;
@@ -418,18 +440,27 @@ function openListMenu(event: MouseEvent, profile?: Profile) {
         { label: t("connection.connect"), icon: "i-lucide-plug", hotkey: "Enter", action: () => profile && void choose(profile), disabled: !profile },
         "separator",
         { label: t("connection.add"), icon: "i-lucide-plus", command: "connection.add", action: close(() => actions.newConnection()) },
-        { label: t("connection.addFromUri"), icon: "i-lucide-link", action: close(() => void actions.connectFromUri()) }
+        { label: t("connection.addFromUri"), icon: "i-lucide-link", command: "connection.addUri", action: close(() => void actions.addFromUri()) }
     ];
     const find: MenuEntry = { label: t("connection.find"), icon: "i-lucide-search", hotkey: "Ctrl + F", action: () => listSearchInput.value?.focus() };
     if (!profile) {
-        void listMenu.value?.open(event, [...head, "separator", find]);
+        // On a group of the list: renaming it moves all of its connections.
+        const rename: MenuEntry[] = group ? [{ label: `${t("connection.group.rename")} …`, icon: "i-lucide-pencil", action: () => void renameGroup(group) }] : [];
+        void listMenu.value?.open(event, [...head, "separator", ...rename, find]);
         return;
     }
+    const own = profile.groupName?.trim() ?? "";
+    const moves: MenuEntry[] = [
+        ...connections.groups.filter(name => name !== own).map(name => ({ label: name, icon: "i-lucide-folder-input", action: () => void moveToGroup(profile, name) })),
+        { label: `${t("connection.group.new")} …`, icon: "i-lucide-folder-plus", action: () => void moveToNewGroup(profile) },
+        ...(own ? [{ label: t("connection.group.out"), icon: "i-lucide-folder-output", action: () => void moveToGroup(profile, "") }] : [])
+    ];
     picked.value = profile.id;
     const at = { connectionId: profile.id };
     void listMenu.value?.open(event, [
         ...head,
         { label: t("connection.clone"), icon: "i-lucide-copy", action: close(() => dialogs.cloneConnection(profile)) },
+        { label: t("connection.group.move"), icon: "i-lucide-folder", children: moves },
         "separator",
         { label: t("connection.edit"), icon: "i-lucide-pencil", hotkey: "Ctrl + E", action: () => editPicked() },
         { label: t("action.delete"), icon: "i-lucide-x", hotkey: "Del", danger: true, action: () => deletePicked() },
@@ -441,9 +472,24 @@ function openListMenu(event: MouseEvent, profile?: Profile) {
     ]);
 }
 
+async function moveToGroup(profile: Profile, group: string) {
+    await connections.setGroup(profile.id, group).catch(report);
+}
+
+async function moveToNewGroup(profile: Profile) {
+    const name = await dialogs.ask({ title: t("connection.group.new"), label: t("connection.group"), action: t("action.apply") });
+    if (name?.trim()) await moveToGroup(profile, name.trim());
+}
+
+async function renameGroup(group: string) {
+    const name = await dialogs.ask({ title: t("connection.group.rename"), label: t("connection.group"), value: group, action: t("action.apply") });
+    if (!name?.trim() || name.trim() === group) return;
+    for (const profile of connections.saved.filter(item => item.groupName?.trim() === group)) await moveToGroup(profile, name.trim());
+}
+
 /** Up and down pick, Enter connects, Del deletes, Ctrl+E edits, Ctrl+F searches, the key of "View connection URI" shows it. */
 function onListKey(event: KeyboardEvent) {
-    const at = listed.value.findIndex(profile => profile.id === picked.value);
+    const at = shownProfiles.value.findIndex(profile => profile.id === picked.value);
     const control = event.ctrlKey || event.metaKey;
     const key = event.key.toLowerCase();
     if (control && !event.altKey && key === "e") {
@@ -455,7 +501,7 @@ function onListKey(event: KeyboardEvent) {
         event.stopPropagation();
         if (pickedProfile.value) uriOf(pickedProfile.value);
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-        const next = listed.value[Math.min(listed.value.length - 1, Math.max(0, at + (event.key === "ArrowDown" ? 1 : -1)))];
+        const next = shownProfiles.value[Math.min(shownProfiles.value.length - 1, Math.max(0, at + (event.key === "ArrowDown" ? 1 : -1)))];
         if (next) picked.value = next.id;
     } else if (event.key === "Enter" && pickedProfile.value) {
         void choose(pickedProfile.value);
@@ -919,62 +965,69 @@ defineExpose({
                         class="grow min-h-0 overflow-auto pb-2 text-[13px]"
                         role="tree"
                     >
-                        <div
-                            @click="listFolderOpen = !listFolderOpen"
-                            @contextmenu="openListMenu($event)"
-                            @keydown.enter.self.stop="listFolderOpen = !listFolderOpen"
-                            class="tree-row pl-5"
-                            role="treeitem"
-                            tabindex="0"
+                        <!--: a folder for each group, then *My connections* for the rest. -->
+                        <template
+                            v-for="group in listGroups"
+                            :key="group.name"
                         >
-                            <span
-                                :class="listFolderOpen ? 'rotate-90' : ''"
-                                class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
-                            />
-                            <span
-                                :class="listFolderOpen ? 'i-lucide-folder-open' : 'i-lucide-folder'"
-                                class="size-4 shrink-0 text-on-surface"
-                            />
-                            <span class="truncate font-bold text-on-surface-strong">{{ $t("connection.mine") }}</span>
-                        </div>
-                        <template v-if="listFolderOpen">
-                            <p
-                                v-if="connections.saved.length === 0"
-                                class="m-0 pl-14 py-1 text-on-surface-variant"
-                            >
-                                {{ $t("connection.empty") }}
-                            </p>
                             <div
-                                v-for="profile in listed"
-                                :key="profile.id"
-                                @click="picked = profile.id"
-                                @contextmenu="openListMenu($event, profile)"
-                                @dblclick="choose(profile)"
-                                :class="picked === profile.id ? 'tree-row-on' : ''"
-                                :title="profile.address"
-                                class="tree-row relative h-[21px] pl-11"
-                                data-testid="connection-item"
+                                @click="toggleGroup(group.name)"
+                                @contextmenu="openListMenu($event, undefined, group.name)"
+                                @keydown.enter.self.stop="toggleGroup(group.name)"
+                                class="tree-row pl-5"
+                                data-testid="connection-group-row"
                                 role="treeitem"
                                 tabindex="0"
                             >
-                                <!-- The color of the connection, as in the tree: a bar at the left edge, over the frame of the row. -->
                                 <span
-                                    v-if="connectionColor(profile)"
-                                    :class="`note-${connectionColor(profile)}`"
-                                    class="absolute z-1 -left-px -inset-y-px w-[5px] rounded-r-sm pointer-events-none"
+                                    :class="closedGroups.has(group.name) ? '' : 'rotate-90'"
+                                    class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
                                 />
-                                <span class="relative size-4 shrink-0">
-                                    <span class="i-lucide-server size-4 block text-on-surface" />
-                                    <!-- Read-only: a lock over the lower left of the icon. -->
-                                    <span
-                                        v-if="notes.noteOf({ connectionId: profile.id })?.readonly"
-                                        :title="$t('note.readonly')"
-                                        class="i-lucide-lock absolute -left-0.5 -bottom-0.5 size-2.5 text-warning"
-                                    />
-                                </span>
-                                <span class="shrink-0 text-on-surface-strong">{{ profile.name }}</span>
-                                <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>
+                                <span
+                                    :class="closedGroups.has(group.name) ? 'i-lucide-folder' : 'i-lucide-folder-open'"
+                                    class="size-4 shrink-0 text-on-surface"
+                                />
+                                <span class="truncate font-bold text-on-surface-strong">{{ group.label }}</span>
                             </div>
+                            <template v-if="!closedGroups.has(group.name)">
+                                <p
+                                    v-if="!group.name && connections.saved.length === 0"
+                                    class="m-0 pl-14 py-1 text-on-surface-variant"
+                                >
+                                    {{ $t("connection.empty") }}
+                                </p>
+                                <div
+                                    v-for="profile in group.profiles"
+                                    :key="profile.id"
+                                    @click="picked = profile.id"
+                                    @contextmenu="openListMenu($event, profile)"
+                                    @dblclick="choose(profile)"
+                                    :class="picked === profile.id ? 'tree-row-on' : ''"
+                                    :title="profile.address"
+                                    class="tree-row relative h-[21px] pl-11"
+                                    data-testid="connection-item"
+                                    role="treeitem"
+                                    tabindex="0"
+                                >
+                                    <!-- The color of the connection, as in the tree: a bar at the left edge, over the frame of the row. -->
+                                    <span
+                                        v-if="connectionColor(profile)"
+                                        :class="`note-${connectionColor(profile)}`"
+                                        class="absolute z-1 -left-px -inset-y-px w-[5px] rounded-r-sm pointer-events-none"
+                                    />
+                                    <span class="relative size-4 shrink-0">
+                                        <span class="i-lucide-server size-4 block text-on-surface" />
+                                        <!-- Read-only: a lock over the lower left of the icon. -->
+                                        <span
+                                            v-if="notes.noteOf({ connectionId: profile.id })?.readonly"
+                                            :title="$t('note.readonly')"
+                                            class="i-lucide-lock absolute -left-0.5 -bottom-0.5 size-2.5 text-warning"
+                                        />
+                                    </span>
+                                    <span class="shrink-0 text-on-surface-strong">{{ profile.name }}</span>
+                                    <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>
+                                </div>
+                            </template>
                         </template>
                     </div>
                     <!-- Inside the panel, so that opening it leaves the panel open. -->

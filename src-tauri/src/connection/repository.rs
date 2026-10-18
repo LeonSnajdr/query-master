@@ -16,6 +16,8 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Connection>> {
                 name,
                 address,
                 environment,
+                visible_databases,
+                group_name,
                 date_created as "date_created: DateTime<Utc>",
                 date_last_used as "date_last_used: DateTime<Utc>"
             from connection
@@ -31,17 +33,21 @@ pub async fn list(pool: &SqlitePool) -> Result<Vec<Connection>> {
 pub async fn upsert(pool: &SqlitePool, connection: &Connection) -> Result<()> {
     sqlx::query!(
         r#"
-            insert into connection (id, name, address, environment, date_created, date_last_used)
-            values ($1, $2, $3, $4, $5, $6)
+            insert into connection (id, name, address, environment, visible_databases, group_name, date_created, date_last_used)
+            values ($1, $2, $3, $4, $5, $6, $7, $8)
             on conflict (id) do update set
                 name = excluded.name,
                 address = excluded.address,
-                environment = excluded.environment
+                environment = excluded.environment,
+                visible_databases = excluded.visible_databases,
+                group_name = excluded.group_name
         "#,
         connection.id,
         connection.name,
         connection.address,
         connection.environment,
+        connection.visible_databases,
+        connection.group_name,
         connection.date_created,
         connection.date_last_used
     )
@@ -59,6 +65,17 @@ pub async fn set_last_used(
         "update connection set date_last_used = $2 where id = $1",
         id,
         date_last_used
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn set_group(pool: &SqlitePool, id: Uuid, group: &str) -> Result<()> {
+    sqlx::query!(
+        "update connection set group_name = $2 where id = $1",
+        id,
+        group
     )
     .execute(pool)
     .await?;
@@ -148,6 +165,8 @@ mod tests {
             name: name.to_owned(),
             address: "mongodb://localhost:27017".to_owned(),
             environment: None,
+            visible_databases: String::new(),
+            group_name: String::new(),
             date_created: Utc::now(),
             date_last_used: None,
         }
@@ -203,6 +222,19 @@ mod tests {
             .is_err());
         set_environment(&pool, atlas.id, None).await.unwrap();
         assert_eq!(list(&pool).await.unwrap()[0].environment, None);
+    }
+
+    #[tokio::test]
+    async fn keeps_the_group_until_moved() {
+        let pool = db::memory_pool().await;
+        let atlas = connection("Atlas");
+        upsert(&pool, &atlas).await.unwrap();
+        assert_eq!(list(&pool).await.unwrap()[0].group_name, "");
+        set_group(&pool, atlas.id, "Kunden").await.unwrap();
+        assert_eq!(list(&pool).await.unwrap()[0].group_name, "Kunden");
+        // Saving the connection again keeps what the dialog sends.
+        upsert(&pool, &Connection { group_name: "Intern".into(), ..atlas.clone() }).await.unwrap();
+        assert_eq!(list(&pool).await.unwrap()[0].group_name, "Intern");
     }
 
     #[tokio::test]

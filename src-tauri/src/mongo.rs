@@ -96,7 +96,14 @@ async fn open_through(
     uri: &str,
     ssh: Option<&SshSettings>,
 ) -> Result<(Client, ServerInfo, Option<Tunnel>)> {
-    let mut options = ClientOptions::parse(uri).await?;
+    open_options(ClientOptions::parse(uri).await?, ssh).await
+}
+
+/// As `open_through`, with options read already.
+async fn open_options(
+    mut options: ClientOptions,
+    ssh: Option<&SshSettings>,
+) -> Result<(Client, ServerInfo, Option<Tunnel>)> {
     options
         .app_name
         .get_or_insert_with(|| "QueryMaster".to_string());
@@ -138,6 +145,49 @@ pub(crate) fn to_document(command: Value) -> Result<Document> {
 
 pub(crate) fn to_json(document: Document) -> Value {
     Bson::Document(document).into_canonical_extjson()
+}
+
+/// The members of a replica set as one of them names them.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplicaMembers {
+    /// The name of the set; empty when the server is no member of one.
+    pub set_name: String,
+    /// `host:port` of every member that holds data (hosts and passives), as the set knows them.
+    pub hosts: Vec<String>,
+}
+
+/// *Discover replica set members*: asks the first host of the string (directly)
+/// which members its set has.
+#[tauri::command]
+pub async fn discover_members(uri: String, ssh: Option<SshSettings>) -> Result<ReplicaMembers> {
+    let mut options = ClientOptions::parse(uri.trim()).await?;
+    options.hosts.truncate(1);
+    options.direct_connection = Some(true);
+    options.repl_set_name = None;
+    let (client, _, _tunnel) = open_options(options, ssh.as_ref()).await?;
+    let hello = client
+        .database("admin")
+        .run_command(doc! { "hello": 1 })
+        .await;
+    client.shutdown().immediate(true).await;
+    let hello = hello?;
+    let names = |key: &str| -> Vec<String> {
+        hello
+            .get_array(key)
+            .map(|list| {
+                list.iter()
+                    .filter_map(|host| host.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut hosts = names("hosts");
+    hosts.extend(names("passives"));
+    Ok(ReplicaMembers {
+        set_name: hello.get_str("setName").unwrap_or_default().to_owned(),
+        hosts,
+    })
 }
 
 /// Tries a connection from the dialog, through its SSH server when it has one.

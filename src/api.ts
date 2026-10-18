@@ -15,6 +15,12 @@ export interface Profile {
     address: string;
     /** What the connection is used for; decides how the app asks before writing (stage 21). */
     environment?: Environment | null;
+    /** When it was last connected (ISO time); absent or null when never. */
+    dateLastUsed?: string | null;
+    /** Databases the tree shows besides those the server lists, separated by commas. */
+    visibleDatabases?: string;
+    /** The group of the connection list it lies in; empty or absent for none. */
+    groupName?: string;
 }
 
 export type SshMethod = "password" | "key";
@@ -37,6 +43,8 @@ export interface ProfileInput {
     environment?: Environment | null;
     /** Through an SSH server; absent or null for a direct connection. */
     ssh?: SshSettings | null;
+    visibleDatabases?: string;
+    groupName?: string;
 }
 
 export interface KeybindingChange {
@@ -156,11 +164,15 @@ export interface Backend {
     connectionUri: (id: string) => Promise<string>;
     /** The SSH part of a saved connection with its secret; null for a direct one. */
     connectionSsh: (id: string) => Promise<SshSettings | null>;
+    /** Moves a saved connection into a group of the list; empty for none. */
+    setConnectionGroup: (id: string, group: string) => Promise<void>;
     saveConnection: (input: ProfileInput) => Promise<Profile>;
     /** Marks a saved connection as development, test or production; `null` takes the mark away. */
     setConnectionEnvironment: (id: string, environment: Environment | null) => Promise<void>;
     deleteConnection: (id: string) => Promise<void>;
     testConnection: (uri: string, ssh?: SshSettings | null) => Promise<ServerInfo>;
+    /** The members of the replica set the first host of the string belongs to (`hello`). */
+    discoverMembers: (uri: string, ssh?: SshSettings | null) => Promise<{ setName: string; hosts: string[] }>;
     connect: (id: string) => Promise<ServerInfo>;
     /** Connects with a string that is not saved; the session lives under `id` until `disconnect`. */
     connectUri: (id: string, uri: string) => Promise<ServerInfo & { address: string }>;
@@ -232,10 +244,12 @@ const tauriBackend: Backend = {
     listConnections: () => invoke("connection_list"),
     connectionUri: id => invoke("connection_uri", { id }),
     connectionSsh: id => invoke("connection_ssh", { id }),
+    setConnectionGroup: (id, group) => invoke("connection_set_group", { id, group }),
     saveConnection: input => invoke("connection_save", { input }),
     setConnectionEnvironment: (id, environment) => invoke("connection_set_environment", { id, environment }),
     deleteConnection: id => invoke("connection_delete", { id }),
     testConnection: (uri, ssh) => invoke("test_connection", { uri, ssh: ssh ?? null }),
+    discoverMembers: (uri, ssh) => invoke("discover_members", { uri, ssh: ssh ?? null }),
     connect: id => invoke("connect", { id }),
     connectUri: (id, uri) => invoke("connect_uri", { id, uri }),
     disconnect: id => invoke("disconnect", { id }),

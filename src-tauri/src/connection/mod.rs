@@ -23,9 +23,13 @@ pub struct Connection {
     pub address: String,
     /// `development`, `test` or `production`; how the app asks before writing on it.
     pub environment: Option<String>,
+    /// Databases shown besides those the server lists, separated by commas.
+    pub visible_databases: String,
+    /// The group of the connection list it lies in; empty for none.
+    pub group_name: String,
     #[serde(skip)]
     pub date_created: DateTime<Utc>,
-    #[serde(skip)]
+    /// For the start page's *Recent connections*, the last used first.
     pub date_last_used: Option<DateTime<Utc>>,
 }
 
@@ -42,6 +46,10 @@ pub struct SaveConnection {
     /// Through an SSH server; absent for a direct connection.
     #[serde(default)]
     pub ssh: Option<SshSettings>,
+    #[serde(default)]
+    pub visible_databases: String,
+    #[serde(default)]
+    pub group_name: String,
 }
 
 /// The kinds of use a connection can be marked with.
@@ -83,6 +91,8 @@ pub async fn save(pool: &SqlitePool, input: SaveConnection) -> Result<Connection
         name: input.name.trim().to_owned(),
         address: address_of(uri),
         environment: checked_environment(input.environment)?,
+        visible_databases: input.visible_databases.trim().to_owned(),
+        group_name: input.group_name.trim().to_owned(),
         date_created: Utc::now(),
         date_last_used: None,
     };
@@ -134,6 +144,11 @@ pub async fn set_environment(
     environment: Option<String>,
 ) -> Result<()> {
     repository::set_environment(pool, id, checked_environment(environment)?.as_deref()).await
+}
+
+/// Puts a connection into a group of the list (empty: none), as moving it there.
+pub async fn set_group(pool: &SqlitePool, id: Uuid, group: &str) -> Result<()> {
+    repository::set_group(pool, id, group.trim()).await
 }
 
 pub async fn mark_used(pool: &SqlitePool, id: Uuid) -> Result<()> {

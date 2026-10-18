@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            insert into connection (id, name, address, environment, visible_databases, group_name, date_created, date_last_used)\n            values ($1, $2, $3, $4, $5, $6, $7, $8)\n            on conflict (id) do update set\n                name = excluded.name,\n                address = excluded.address,\n                environment = excluded.environment,\n                visible_databases = excluded.visible_databases,\n                group_name = excluded.group_name\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 8
+    },
+    "nullable": []
+  },
+  "hash": "8c3b83f9ef420dcb64e5bd3b061001c24c17a88e0b8cded774b061f3aaeb0217"
+}

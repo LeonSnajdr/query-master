@@ -91,8 +91,19 @@ export const mockBackend: Backend = {
     listConnections: async () => [...profiles],
     connectionUri: async () => "mongodb://localhost:27017",
     connectionSsh: async () => null,
+    setConnectionGroup: async (id, group) => {
+        const profile = profiles.find(item => item.id === id);
+        if (profile) profile.groupName = group;
+    },
     saveConnection: async (input) => {
-        const profile = { id: input.id ?? `mock-${profiles.length}`, name: input.name, address: input.uri.replace(/\/\/[^@/]*@/, "//"), environment: input.environment ?? null };
+        const profile = {
+            id: input.id ?? `mock-${profiles.length}`,
+            name: input.name,
+            address: input.uri.replace(/\/\/[^@/]*@/, "//"),
+            environment: input.environment ?? null,
+            groupName: input.groupName ?? "",
+            visibleDatabases: input.visibleDatabases ?? ""
+        };
         const index = profiles.findIndex(item => item.id === profile.id);
         if (index === -1) profiles.push(profile);
         else profiles[index] = profile;
@@ -106,6 +117,7 @@ export const mockBackend: Backend = {
         profiles.splice(profiles.findIndex(item => item.id === id), 1);
     },
     testConnection: async () => ({ version: "8.0.4" }),
+    discoverMembers: async () => ({ setName: "rs0", hosts: ["db1.example.net:27017", "db2.example.net:27017", "db3.example.net:27018"] }),
     connect: async (id) => {
         if (id !== "offline") return { version: "8.0.4" };
         await new Promise(resolve => setTimeout(resolve, 1500));

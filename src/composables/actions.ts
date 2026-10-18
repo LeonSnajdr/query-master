@@ -18,7 +18,7 @@ import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
 import { folderLabel, parentFolder } from "@/tree/folders";
-import { uriVariants } from "@/connection/uri";
+import { parseUri, uriVariants } from "@/connection/uri";
 import { isQueryTab, useTabsStore } from "@/stores/tabs";
 
 /** The script behind "Collections statistics"; views have no storage and are left out. */
@@ -520,6 +520,22 @@ export function useActions() {
         await connections.connectUri(uri).catch(report);
     }
 
+    /**
+     * *Add connection from URI* (`Ctrl+Shift+F2`): the string becomes a saved
+     * connection, named after its first host, and is opened.
+     */
+    async function addFromUri() {
+        const uri = await dialogs.ask({ title: t("connection.addFromUri"), label: t("connection.fromUri.label"), value: "mongodb://", action: t("connection.saveConnect"), code: true });
+        if (!uri) return;
+        try {
+            const host = parseUri(uri).hosts[0]?.host ?? "";
+            const profile = await connections.save({ name: host || t("connection.unnamed"), uri: uri.trim() });
+            await connect(profile);
+        } catch (error) {
+            report(error);
+        }
+    }
+
     async function disconnect(at = target.value) {
         if (!at) return;
         tabs.closeConnection(at.connectionId);
@@ -558,7 +574,7 @@ export function useActions() {
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, clearCollection, duplicateCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,
         dropMany, browseMany, setColorMany, toggleReadonlyMany, moveManyToFolder, toggleIndexesHidden, refreshMany, disconnectMany,
-        refresh, connect, reconnect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
+        refresh, connect, reconnect, connectFromUri, addFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };
 }

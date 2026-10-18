@@ -50,6 +50,7 @@ const command = <const T extends Command>(value: T) => value;
 const LIST = [
     command({ id: "connection.list", label: "connection.list.hint", group: "connection", scope: "global", keys: ["f2"] }),
     command({ id: "connection.add", label: "connection.add", group: "connection", scope: "global", keys: ["ctrl+f2"] }),
+    command({ id: "connection.addUri", label: "connection.addFromUri", group: "connection", scope: "global", keys: ["ctrl+shift+f2"] }),
     command({ id: "connection.uri", label: "connection.uri", group: "connection", scope: "global", keys: ["ctrl+alt+f2"] }),
     command({ id: "connection.disconnect", label: "connection.disconnect", group: "connection", scope: "global", keys: ["ctrl+alt+d"] }),
 

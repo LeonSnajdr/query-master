@@ -113,6 +113,8 @@ export const useConnectionsStore = defineStore("connections", () => {
 
     /** The saved connections, without those from a typed string. */
     const saved = computed(() => profiles.value.filter(profile => !isTransient(profile.id)));
+    /** *Recent connections*: the last used first, then the others by name. */
+    const recent = computed(() => [...saved.value].sort((a, b) => (b.dateLastUsed ?? "").localeCompare(a.dateLastUsed ?? "")));
 
     function isTransient(id: string): boolean {
         return transient.some(profile => profile.id === id);
@@ -177,6 +179,15 @@ export const useConnectionsStore = defineStore("connections", () => {
      * Marks a connection as development, test or production. Production paints it red, unless it
      * has a color already.
      */
+    /** Moves a saved connection into a group of the list (empty: none). */
+    async function setGroup(id: string, group: string): Promise<void> {
+        await backend.setConnectionGroup(id, group.trim());
+        await load();
+    }
+
+    /** The groups of the saved connections, by name. */
+    const groups = computed(() => [...new Set(saved.value.map(profile => profile.groupName?.trim() ?? "").filter(Boolean))].sort((a, b) => a.localeCompare(b)));
+
     async function setEnvironment(id: string, environment: Environment | null): Promise<void> {
         await backend.setConnectionEnvironment(id, environment);
         await paintProduction(id, environment);
@@ -197,16 +208,21 @@ export const useConnectionsStore = defineStore("connections", () => {
     async function loadDatabases(id: string): Promise<void> {
         const session = sessions[id];
         if (!session) return;
+        const profile = profiles.value.find(item => item.id === id);
+        // *Visible databases*: those named for the connection come along.
+        const visible = (profile?.visibleDatabases ?? "").split(",").map(name => name.trim()).filter(Boolean);
         let names: string[];
         try {
-            const reply = await backend.runCommand(id, "admin", { listDatabases: 1, nameOnly: true });
-            names = (reply.databases as Doc[]).map(database => String(database.name)).sort((a, b) => a.localeCompare(b));
+            // `authorizedDatabases`: a user without the right to list all gets those they may use.
+            const reply = await backend.runCommand(id, "admin", { listDatabases: 1, nameOnly: true, authorizedDatabases: true });
+            names = (reply.databases as Doc[]).map(database => String(database.name));
         } catch (error) {
             // A user who may not list databases still sees the one their connection string names.
-            const named = /^[^/]+\/\/[^/]+\/([^/?]+)/.exec(profiles.value.find(profile => profile.id === id)?.address ?? "")?.[1];
-            if (!named) throw error;
-            names = [decodeURIComponent(named)];
+            const named = /^[^/]+\/\/[^/]+\/([^/?]+)/.exec(profile?.address ?? "")?.[1];
+            if (!named && visible.length === 0) throw error;
+            names = named ? [decodeURIComponent(named)] : [];
         }
+        names = [...new Set([...names, ...visible])].sort((a, b) => a.localeCompare(b));
         session.databases = names.map(name => session.databases.find(database => database.name === name) ?? { name, open: false, loading: false, details: {}, types: {} });
         await Promise.all(session.databases.filter(database => database.open).map(database => loadCollections(id, database.name)));
     }
@@ -240,6 +256,9 @@ export const useConnectionsStore = defineStore("connections", () => {
 
     async function connect(id: string): Promise<void> {
         await open(id, () => backend.connect(id));
+        // The Rust side noted the time too; the start page sorts by it at once.
+        const profile = profiles.value.find(item => item.id === id);
+        if (profile && sessions[id]) profile.dateLastUsed = new Date().toISOString();
     }
 
     /** Tries a connection again that is open, failed or still being opened. */
@@ -401,5 +420,5 @@ export const useConnectionsStore = defineStore("connections", () => {
         return sampleValues.get(`${id}/${database}/${collection}`)?.get(field);
     }
 
-    return { profiles, saved, sessions, connecting, failed, selected, marked, inTree, load, save, setEnvironment, environmentOf, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, rememberSample, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
+    return { profiles, saved, recent, groups, setGroup, sessions, connecting, failed, selected, marked, inTree, load, save, setEnvironment, environmentOf, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, rememberSample, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
 });

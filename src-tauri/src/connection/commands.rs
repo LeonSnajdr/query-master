@@ -47,3 +47,12 @@ pub async fn connection_ssh(
 ) -> Result<Option<crate::ssh::SshSettings>> {
     super::ssh(&pool, id).await
 }
+
+#[tauri::command]
+pub async fn connection_set_group(
+    pool: State<'_, SqlitePool>,
+    id: Uuid,
+    group: String,
+) -> Result<()> {
+    super::set_group(&pool, id, &group).await
+}

@@ -27,7 +27,8 @@ describe("connection string and fields", () => {
             "mongodb://a,b:27018/?replicaSet=rs0&tls=true&tlsAllowInvalidCertificates=true",
             "mongodb+srv://me:p%40ss@cluster0.example.net/?appName=QueryMaster",
             "mongodb://h/?authMechanism=MONGODB-X509&tls=true&tlsCertificateKeyFile=C%3A%5Ccert.pem",
-            "mongodb://h/?serverSelectionTimeoutMS=7000&maxIdleTimeMS=1500&retryWrites=false&readPreference=secondary"
+            "mongodb://h/?serverSelectionTimeoutMS=7000&maxIdleTimeMS=1500&retryWrites=false&readPreference=secondary",
+            "mongodb://h/?tls=true&tlsCertificateKeyFile=k.pem&tlsCertificateKeyFilePassword=p&tlsAllowInvalidHostnames=true"
         ];
         for (const uri of uris) expect(buildUri(parseUri(uri))).toBe(uri);
     });
@@ -58,6 +59,8 @@ describe("connection string and fields", () => {
         expect(withoutPassword("mongodb+srv://me:x@cluster0.example.net")).toBe("mongodb+srv://me@cluster0.example.net");
         expect(withoutPassword("mongodb://user@h/?authMechanism=GSSAPI")).toBe("mongodb://user@h/?authMechanism=GSSAPI");
         expect(withoutPassword("mongodb://localhost")).toBe("mongodb://localhost");
+        expect(withoutPassword("mongodb://h/?tls=true&tlsCertificateKeyFile=k.pem&tlsCertificateKeyFilePassword=s3cret&appName=x")).toBe("mongodb://h/?tls=true&tlsCertificateKeyFile=k.pem&appName=x");
+        expect(withoutPassword("mongodb://h/?tls=true&tlsCertificateKeyFilePassword=s3cret")).toBe("mongodb://h/?tls=true");
     });
 
     it("refuses what is not a connection string", () => {

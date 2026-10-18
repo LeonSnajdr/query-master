@@ -31,6 +31,11 @@ export interface ConnectionFields {
     tlsAllowInvalidCertificates: boolean;
     tlsCAFile: string;
     tlsCertificateKeyFile: string;
+    /** Passphrase of the key file; it lies in the keychain with the rest of the string. */
+    tlsCertificateKeyFilePassword: string;
+    tlsAllowInvalidHostnames: boolean;
+    /** `primary`, `secondary` …; empty for the driver's default (primary). */
+    readPreference: string;
     /** In seconds, as the dialog shows them; empty means the driver's default. */
     connectTimeout: string;
     serverSelectionTimeout: string;
@@ -56,6 +61,9 @@ export function emptyFields(): ConnectionFields {
         tlsAllowInvalidCertificates: false,
         tlsCAFile: "",
         tlsCertificateKeyFile: "",
+        tlsCertificateKeyFilePassword: "",
+        tlsAllowInvalidHostnames: false,
+        readPreference: "",
         connectTimeout: "",
         serverSelectionTimeout: "",
         maxIdleTime: "",
@@ -65,7 +73,7 @@ export function emptyFields(): ConnectionFields {
 }
 
 /** Options with a field of their own; matched without regard to case, as the driver does. */
-const KNOWN = ["replicaset", "authsource", "authmechanism", "tls", "ssl", "tlsallowinvalidcertificates", "tlscafile", "tlscertificatekeyfile", "connecttimeoutms", "serverselectiontimeoutms", "maxidletimems", "retrywrites"];
+const KNOWN = ["replicaset", "authsource", "authmechanism", "tls", "ssl", "tlsallowinvalidcertificates", "tlsallowinvalidhostnames", "tlscafile", "tlscertificatekeyfile", "tlscertificatekeyfilepassword", "readpreference", "connecttimeoutms", "serverselectiontimeoutms", "maxidletimems", "retrywrites"];
 
 function seconds(milliseconds: string | undefined): string {
     if (milliseconds === undefined || milliseconds === "") return "";
@@ -144,6 +152,15 @@ export function parseUri(uri: string): ConnectionFields {
             case "tlscertificatekeyfile":
                 fields.tlsCertificateKeyFile = value;
                 break;
+            case "tlscertificatekeyfilepassword":
+                fields.tlsCertificateKeyFilePassword = value;
+                break;
+            case "tlsallowinvalidhostnames":
+                fields.tlsAllowInvalidHostnames = value === "true";
+                break;
+            case "readpreference":
+                fields.readPreference = value;
+                break;
             case "connecttimeoutms":
                 fields.connectTimeout = seconds(value);
                 break;
@@ -165,8 +182,9 @@ export function parseUri(uri: string): ConnectionFields {
 
 /** The string without the password (the user stays), to show or pass on; unchanged without one. */
 export function withoutPassword(uri: string): string {
-    // Credentials end at the last `@` before the path, as in `parseUri`.
-    return uri.replace(/^(mongodb(?:\+srv)?:\/\/)([^/?]*)@/, (whole, scheme: string, credentials: string) => {
+    // Credentials end at the last `@` before the path, as in `parseUri`; the key's passphrase is one too.
+    const withoutKey = uri.replace(/([?&])tlsCertificateKeyFilePassword=[^&]*(&?)/i, (_whole, before: string, after: string) => (after ? before : ""));
+    return withoutKey.replace(/^(mongodb(?:\+srv)?:\/\/)([^/?]*)@/, (whole, scheme: string, credentials: string) => {
         const colon = credentials.indexOf(":");
         return colon === -1 ? whole : `${scheme}${credentials.slice(0, colon)}@`;
     });
@@ -204,10 +222,13 @@ export function buildUri(fields: ConnectionFields): string {
         ["tlsAllowInvalidCertificates", fields.tls && fields.tlsAllowInvalidCertificates ? "true" : undefined],
         ["tlsCAFile", fields.tls && fields.tlsCAFile ? fields.tlsCAFile : undefined],
         ["tlsCertificateKeyFile", fields.tls && fields.tlsCertificateKeyFile ? fields.tlsCertificateKeyFile : undefined],
+        ["tlsCertificateKeyFilePassword", fields.tls && fields.tlsCertificateKeyFile && fields.tlsCertificateKeyFilePassword ? fields.tlsCertificateKeyFilePassword : undefined],
+        ["tlsAllowInvalidHostnames", fields.tls && fields.tlsAllowInvalidHostnames ? "true" : undefined],
         ["connectTimeoutMS", milliseconds(fields.connectTimeout)],
         ["serverSelectionTimeoutMS", milliseconds(fields.serverSelectionTimeout)],
         ["maxIdleTimeMS", milliseconds(fields.maxIdleTime)],
         ["retryWrites", fields.retryWrites ? undefined : "false"],
+        ["readPreference", fields.readPreference || undefined],
         ...fields.extra.filter(([name]) => !KNOWN.includes(name.toLowerCase()))
     ];
     const query = options
