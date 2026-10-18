@@ -27,7 +27,7 @@ impl Runs {
     }
 
     /// Asks the run to stop; it does at its next step.
-    fn stop(&self, run_id: &str) {
+    pub(crate) fn stop(&self, run_id: &str) {
         if let Some(stop) = self.lock().get(run_id) {
             stop.store(true, Ordering::Relaxed);
         }

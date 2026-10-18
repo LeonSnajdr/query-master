@@ -149,16 +149,17 @@ export interface Backend {
     /** Connects with a string that is not saved; the session lives under `id` until `disconnect`. */
     connectUri: (id: string, uri: string) => Promise<ServerInfo & { address: string }>;
     disconnect: (id: string) => Promise<void>;
-    runCommand: (id: string, database: string, command: Doc) => Promise<Doc>;
+    /** With `runId` the command can be stopped (`stopRun`). */
+    runCommand: (id: string, database: string, command: Doc, runId?: string) => Promise<Doc>;
     /** Reads at most `limit` documents from the cursor the command opens. */
-    runCursorCommand: (id: string, database: string, command: Doc, limit: number) => Promise<CursorPage>;
+    runCursorCommand: (id: string, database: string, command: Doc, limit: number, runId?: string) => Promise<CursorPage>;
     /** Files the user picked in a file dialog. */
     readTextFile: (path: string) => Promise<string>;
     writeTextFile: (path: string, text: string) => Promise<void>;
     /** Runs a script in the engine of the Rust side; `runId` names the run for `stopRun`. */
     /** `output` gets what the script prints while it runs. */
     runScript: (id: string, runId: string, database: string, source: string, readonly: boolean, output: (text: string) => void) => Promise<ScriptResult>;
-    /** Asks a script or a copy to stop. */
+    /** Asks a script, a copy or a command with a run id to stop. */
     stopRun: (runId: string) => Promise<void>;
     getSetting: () => Promise<Setting>;
     saveSetting: (setting: Setting) => Promise<void>;
@@ -221,8 +222,8 @@ const tauriBackend: Backend = {
     connect: id => invoke("connect", { id }),
     connectUri: (id, uri) => invoke("connect_uri", { id, uri }),
     disconnect: id => invoke("disconnect", { id }),
-    runCommand: (id, database, command) => invoke("run_command", { id, database, command }),
-    runCursorCommand: (id, database, command, limit) => invoke("run_cursor_command", { id, database, command, limit }),
+    runCommand: (id, database, command, runId) => invoke("run_command", { id, database, command, runId }),
+    runCursorCommand: (id, database, command, limit, runId) => invoke("run_cursor_command", { id, database, command, limit, runId }),
     readTextFile: path => invoke("read_text_file", { path }),
     writeTextFile: (path, text) => invoke("write_text_file", { path, text }),
     runScript: (id, runId, database, source, readonly, output) => {

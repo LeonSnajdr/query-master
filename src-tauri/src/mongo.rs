@@ -2,7 +2,11 @@
 //! statement becomes is decided in the frontend (`src/shell/plan.ts`); here they are sent as they
 //! come, so options the server knows work without this app knowing them.
 
-use std::{collections::HashMap, sync::Mutex, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{atomic::Ordering, Mutex},
+    time::Duration,
+};
 
 use futures_util::TryStreamExt;
 use mongodb::{
@@ -17,6 +21,7 @@ use tauri::State;
 use crate::{
     connection,
     error::{Error, Result},
+    runs::Runs,
 };
 
 /// Without a timeout in the connection string a wrong address would block for 30 seconds.
@@ -147,36 +152,105 @@ pub async fn disconnect(clients: State<'_, Clients>, id: String) -> Result<()> {
     Ok(())
 }
 
-/// Runs a command with a single reply document.
+/// Runs a command with a single reply document. With `run_id` it can be stopped (`run_stop`).
 #[tauri::command]
 pub async fn run_command(
     clients: State<'_, Clients>,
+    runs: State<'_, Runs>,
     id: String,
     database: String,
     command: Value,
+    run_id: Option<String>,
 ) -> Result<Value> {
-    let reply = clients
-        .get(&id)?
-        .database(&database)
-        .run_command(to_document(command)?)
-        .await?;
-    Ok(to_json(reply))
+    let client = clients.get(&id)?;
+    let command = to_document(command)?;
+    let work = async {
+        Ok(to_json(
+            client.database(&database).run_command(command).await?,
+        ))
+    };
+    stoppable(&client, &runs, run_id.as_deref(), work).await
 }
 
 /// Runs a command that opens a cursor (`find`, `aggregate`, `listIndexes` …) and reads at most
-/// `limit` documents from it. The cursor is closed afterwards.
+/// `limit` documents from it. The cursor is closed afterwards. With `run_id` it can be stopped.
 #[tauri::command]
 pub async fn run_cursor_command(
     clients: State<'_, Clients>,
+    runs: State<'_, Runs>,
     id: String,
     database: String,
     command: Value,
     limit: usize,
+    run_id: Option<String>,
 ) -> Result<CursorPage> {
-    let mut cursor = clients
-        .get(&id)?
-        .database(&database)
-        .run_cursor_command(to_document(command)?)
+    let client = clients.get(&id)?;
+    let command = to_document(command)?;
+    let work = read_cursor(&client, &database, command, limit);
+    stoppable(&client, &runs, run_id.as_deref(), work).await
+}
+
+/// How often a stoppable command looks whether it was asked to stop.
+const STOP_POLL: Duration = Duration::from_millis(100);
+
+/// Runs `work`; with a run id it ends early when the run is stopped. The client stops waiting at
+/// once, and the server is asked to end the operation too: `find` and `aggregate` carry the run id
+/// as their `comment` (the frontend sets it), by which `currentOp` finds them for `killOp`.
+async fn stoppable<T>(
+    client: &Client,
+    runs: &Runs,
+    run_id: Option<&str>,
+    work: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    let Some(run_id) = run_id else {
+        return work.await;
+    };
+    let stop = runs.start(run_id);
+    tokio::pin!(work);
+    let outcome = loop {
+        tokio::select! {
+            outcome = &mut work => break outcome,
+            () = tokio::time::sleep(STOP_POLL) => {
+                if stop.load(Ordering::Relaxed) {
+                    kill_by_comment(client, run_id).await;
+                    break Err(Error::QueryStopped);
+                }
+            }
+        }
+    };
+    runs.finish(run_id);
+    outcome
+}
+
+/// Ends the server's operations whose command carries `comment`; best effort: without the right
+/// to see or end them, nothing happens.
+async fn kill_by_comment(client: &Client, comment: &str) {
+    let admin = client.database("admin");
+    let Ok(reply) = admin
+        .run_command(doc! { "currentOp": true, "command.comment": comment })
+        .await
+    else {
+        return;
+    };
+    for operation in reply.get_array("inprog").into_iter().flatten() {
+        if let Some(opid) = operation.as_document().and_then(|op| op.get("opid")) {
+            let _ = admin
+                .run_command(doc! { "killOp": 1, "op": opid.clone() })
+                .await;
+        }
+    }
+}
+
+/// Reads at most `limit` documents of the cursor a command opens.
+async fn read_cursor(
+    client: &Client,
+    database: &str,
+    command: Document,
+    limit: usize,
+) -> Result<CursorPage> {
+    let mut cursor = client
+        .database(database)
+        .run_cursor_command(command)
         .await?;
     let mut documents = Vec::new();
     let mut has_more = false;
@@ -217,6 +291,52 @@ mod tests {
         let filter = document.get_document("filter").unwrap();
         assert!(filter.get_object_id("_id").is_ok());
         assert!(filter.get_datetime("at").is_ok());
+    }
+
+    /// Against a real server, reading `querymaster_test` only: a slow query ends when its run is
+    /// stopped, and the server's operation is ended too.
+    #[tokio::test]
+    #[ignore]
+    async fn a_stopped_query_ends_on_both_sides() {
+        let uri = std::env::var("QUERYMASTER_TEST_URI")
+            .unwrap_or_else(|_| "mongodb://localhost:27017".into());
+        let (client, _) = open(&uri).await.unwrap();
+        let database = client.database("querymaster_test");
+        let slow = database.collection::<Document>("stop_slow");
+        slow.drop().await.unwrap();
+        slow.insert_many((0..20).map(|n| doc! { "n": n }))
+            .await
+            .unwrap();
+        let runs = Runs::default();
+        // Each document waits half a second on the server: ten seconds unless stopped.
+        let command = doc! {
+            "find": "stop_slow",
+            "filter": { "$where": "sleep(500) || true" },
+            "comment": "stop-test",
+        };
+        let started = std::time::Instant::now();
+        let (outcome, ()) = tokio::join!(
+            stoppable(
+                &client,
+                &runs,
+                Some("stop-test"),
+                read_cursor(&client, "querymaster_test", command, 100)
+            ),
+            async {
+                tokio::time::sleep(Duration::from_millis(700)).await;
+                runs.stop("stop-test");
+            }
+        );
+        assert!(matches!(outcome, Err(Error::QueryStopped)));
+        assert!(started.elapsed() < Duration::from_secs(3));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let left = client
+            .database("admin")
+            .run_command(doc! { "currentOp": true, "command.comment": "stop-test" })
+            .await
+            .unwrap();
+        assert!(left.get_array("inprog").unwrap().is_empty());
+        slow.drop().await.unwrap();
     }
 
     /// Against a real server, reading only: `cargo test -- --ignored`. The server is the one in

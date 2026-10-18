@@ -427,27 +427,49 @@ export const useTabsStore = defineStore("tabs", () => {
         const started = performance.now();
         let items: Json[];
         let hasMore = false;
-        if (plan.cursor) {
-            const command = pageCommand(plan, offset, tab.pageSize);
-            const paged = plan.paging !== undefined && !plan.shape;
-            const page = command
-                ? await backend.runCursorCommand(tab.connectionId, plan.database, command, paged ? tab.pageSize : UNPAGED_LIMIT)
-                : { documents: [], hasMore: false };
-            const shaped = plan.shape ? plan.shape(page.documents) : page.documents;
-            items = Array.isArray(shaped) ? shaped : [shaped];
-            hasMore = paged && page.hasMore;
-        } else {
-            const reply = await backend.runCommand(tab.connectionId, plan.database, plan.command);
-            const failure = replyError(reply);
-            if (failure) throw new ReplyError(failure);
-            const shaped = plan.shape ? plan.shape(reply) : reply;
-            items = Array.isArray(shaped) ? shaped : [shaped];
-            const name = Object.keys(plan.command)[0] ?? "";
-            if (STRUCTURE_COMMANDS.includes(name)) void connections.loadDatabases(tab.connectionId).catch(() => undefined);
+        // The run can be stopped (Stop, Shift+F5); inside a script the script's run id stays.
+        const own = tab.runId === undefined;
+        const runId = tab.runId ?? `${tab.id}-query-${Date.now()}`;
+        tab.runId = runId;
+        try {
+            if (plan.cursor) {
+                const command = withComment(pageCommand(plan, offset, tab.pageSize), runId);
+                const paged = plan.paging !== undefined && !plan.shape;
+                const page = command
+                    ? await backend.runCursorCommand(tab.connectionId, plan.database, command, paged ? tab.pageSize : UNPAGED_LIMIT, own ? runId : undefined)
+                    : { documents: [], hasMore: false };
+                const shaped = plan.shape ? plan.shape(page.documents) : page.documents;
+                items = Array.isArray(shaped) ? shaped : [shaped];
+                hasMore = paged && page.hasMore;
+            } else {
+                items = await commandItems(tab, plan, own ? runId : undefined);
+            }
+        } finally {
+            if (own) tab.runId = undefined;
         }
         tab.plan = markRaw(plan);
         tab.result = markRaw({ items, offset, hasMore, statement, milliseconds: Math.round(performance.now() - started) });
         if (tab.explain?.statement !== statement) tab.explain = undefined;
+    }
+
+    /**
+     * `find` and `aggregate` carry the run id as their comment, so a stop can find them on the
+     * server (`currentOp`) and end them; a comment of their own stays.
+     */
+    function withComment(command: Doc | undefined, runId: string): Doc | undefined {
+        if (!command || command.comment !== undefined || (command.find === undefined && command.aggregate === undefined)) return command;
+        return { ...command, comment: runId };
+    }
+
+    /** A command with one reply, as the items of the result. */
+    async function commandItems(tab: WorkTab, plan: Plan, runId: string | undefined): Promise<Json[]> {
+        const reply = await backend.runCommand(tab.connectionId, plan.database, plan.command, runId);
+        const failure = replyError(reply);
+        if (failure) throw new ReplyError(failure);
+        const shaped = plan.shape ? plan.shape(reply) : reply;
+        const name = Object.keys(plan.command)[0] ?? "";
+        if (STRUCTURE_COMMANDS.includes(name)) void connections.loadDatabases(tab.connectionId).catch(() => undefined);
+        return Array.isArray(shaped) ? shaped : [shaped];
     }
 
     async function guarded(tab: WorkTab, work: () => Promise<void>): Promise<boolean> {
@@ -516,7 +538,7 @@ export const useTabsStore = defineStore("tabs", () => {
         }
     }
 
-    /** Asks a running script to stop; it ends with an error saying so. */
+    /** Asks a running script or query to stop; it ends with an error saying so. */
     function stop(tab: WorkTab): void {
         if (tab.runId) void backend.stopRun(tab.runId);
     }

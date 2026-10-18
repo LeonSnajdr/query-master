@@ -163,6 +163,7 @@ const SHORTCUTS: Partial<Record<CommandId, () => void>> = {
     "tab.browse": () => actions.browse(),
     "tab.schema": () => actions.schema(),
     "query.save": () => withActive(tab => isQueryTab(tab) && dialogs.saveQuery(tab.id)),
+    "query.stop": () => withActive(tab => tabs.stop(tab)),
     "palette.open": () => (paletteOpen.value = true),
     "tab.shell": () => actions.openShell(),
     "tab.aggregation": () => actions.aggregation(),

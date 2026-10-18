@@ -24,6 +24,8 @@ pub enum Error {
     ReadOnly,
     #[error("the script was stopped")]
     ScriptStopped,
+    #[error("the query was stopped")]
+    QueryStopped,
     #[error("there is no collection {0}")]
     CollectionMissing(String),
     #[error("the export or import was stopped")]
@@ -70,6 +72,7 @@ impl Error {
             Self::Database(_) => Some("error.backend.database"),
             Self::ReadOnly => Some("error.plan.readonly"),
             Self::ScriptStopped => Some("error.script.stopped"),
+            Self::QueryStopped => Some("error.query.stopped"),
             Self::CollectionMissing(_) => Some("error.copy.missing"),
             Self::TransferStopped => Some("error.transfer.stopped"),
             Self::ImportShape => Some("error.transfer.shape"),
@@ -92,6 +95,7 @@ impl Error {
             | Self::CommandDocument
             | Self::ReadOnly
             | Self::ScriptStopped
+            | Self::QueryStopped
             | Self::TransferStopped
             | Self::ImportShape
             | Self::WritingPipeline

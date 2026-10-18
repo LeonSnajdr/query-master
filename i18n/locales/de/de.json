@@ -720,6 +720,7 @@
   "error.plan.update": "Das Update muss ein Dokument oder eine Pipeline sein.",
   "error.plan.write": "Das Schreiben ist fehlgeschlagen.",
   "error.plan.writeConcern": "Der Write Concern wurde nicht erfüllt.",
+  "error.query.stopped": "Die Abfrage wurde angehalten.",
   "error.script.browser": "Skripte laufen nur in der App, nicht in der Browser-Vorschau.",
   "error.script.stopped": "Das Skript wurde gestoppt.",
   "error.shell.binData": "BinData erwartet einen Subtyp und Base64-Text.",

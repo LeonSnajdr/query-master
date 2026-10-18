@@ -720,6 +720,7 @@
   "error.plan.update": "The update has to be a document or a pipeline.",
   "error.plan.write": "The write failed.",
   "error.plan.writeConcern": "The write concern was not met.",
+  "error.query.stopped": "The query was stopped.",
   "error.script.browser": "Scripts run in the app only, not in the browser preview.",
   "error.script.stopped": "The script was stopped.",
   "error.shell.binData": "BinData takes a subtype and base64 text.",
