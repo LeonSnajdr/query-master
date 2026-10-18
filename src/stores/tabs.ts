@@ -741,7 +741,15 @@ export const useTabsStore = defineStore("tabs", () => {
     async function count(tab: WorkTab): Promise<number | undefined> {
         const plan = tab.plan;
         const collection = sourceCollection(tab);
-        if (!plan || collection === undefined || plan.command.find === undefined) return undefined;
+        if (!plan || collection === undefined) return undefined;
+        // A pipeline counts what comes out of its stages; one that writes is not run a second time.
+        const stages = plan.command.pipeline;
+        if (plan.command.aggregate !== undefined && Array.isArray(stages)) {
+            if (stages.some(stage => isDoc(stage) && ("$out" in stage || "$merge" in stage))) return undefined;
+            const page = await backend.runCursorCommand(tab.connectionId, plan.database, { aggregate: plan.command.aggregate, pipeline: [...stages, { $count: "n" }], cursor: {} }, 1);
+            return toNumber(page.documents[0]?.n) ?? 0;
+        }
+        if (plan.command.find === undefined) return undefined;
         const filter = plan.command.filter ?? {};
         // Without a filter the collection's own count answers at once, instead of reading every document.
         if (isDoc(filter) && Object.keys(filter).length === 0 && plan.command.skip === undefined && plan.command.limit === undefined) {

@@ -49,6 +49,9 @@ const existing = computed(() => selected.value !== undefined);
 const databases = computed(() => connections.sessions[props.tab.connectionId]?.databases.map(database => database.name) ?? []);
 const problems = computed(() => userFormErrors(form.value, existing.value));
 
+/** Until the first answer the list says it loads, not that there is nothing. */
+const loaded = shallowRef(false);
+
 async function load() {
     try {
         const reply = await backend.runCommand(props.tab.connectionId, props.tab.database, { usersInfo: 1 });
@@ -59,6 +62,8 @@ async function load() {
         loadError.value = undefined;
     } catch (cause) {
         loadError.value = say(errorMessage(cause));
+    } finally {
+        loaded.value = true;
     }
 }
 
@@ -175,7 +180,7 @@ onMounted(async () => {
                     v-if="users.length === 0"
                     class="px-3 py-2 text-on-surface-variant"
                 >
-                    {{ $t("users.none") }}
+                    {{ $t(loaded ? "users.none" : "choice.loading") }}
                 </li>
             </ul>
         </aside>
@@ -251,6 +256,7 @@ onMounted(async () => {
                 <ButtonRoot
                     v-if="existing"
                     @click="drop"
+                    :disabled="busy"
                     class="btn-secondary"
                     data-testid="user-drop"
                 >

@@ -331,6 +331,7 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                         <div class="flex gap-1">
                             <ButtonRoot
                                 @click="saveForm"
+                                :disabled="!form.database.trim() || !form.collection.trim()"
                                 class="btn-primary h-8!"
                                 data-testid="export-form-save"
                             >
@@ -516,7 +517,7 @@ watch(() => wizard.runId, () => (failure.value = undefined));
 
                 <footer class="shrink-0 flex items-center gap-2 px-6 py-5">
                     <FormError
-                        v-if="wizard.step === 'rows' && problemText && state.rows.length > 0"
+                        v-if="wizard.step === 'rows' && problemText"
                         :text="problemText"
                         data-testid="export-problem"
                     />

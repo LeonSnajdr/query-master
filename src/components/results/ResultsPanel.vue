@@ -90,6 +90,8 @@ const page = computed(() => (result.value ? Math.floor(result.value.offset / tab
 const pageSizes = computed<MenuEntry[]>(() => PAGE_SIZES.map(size => ({
     label: String(size),
     checked: size === tab.value.pageSize,
+    // While the tab runs the new page could not be shown: the size waits for the run to end.
+    disabled: tab.value.running,
     action: () => {
         tab.value.pageSize = size;
         void tabs.showPage(tab.value, 0);
@@ -430,7 +432,7 @@ async function importShown() {
 async function countDocuments() {
     try {
         const count = await tabs.count(tab.value);
-        if (count !== undefined) notices.answer(t("result.counted", { count }, count));
+        notices.answer(count === undefined ? t("result.notCountable") : t("result.counted", { count }, count));
     } catch (error) {
         report(error);
     }
@@ -439,7 +441,10 @@ async function countDocuments() {
 async function lastPage() {
     try {
         const count = await tabs.count(tab.value);
-        if (count === undefined) return;
+        if (count === undefined) {
+            notices.answer(t("result.notCountable"));
+            return;
+        }
         const size = tab.value.pageSize;
         await tabs.showPage(tab.value, Math.max(0, Math.floor((count - 1) / size) * size));
     } catch (error) {

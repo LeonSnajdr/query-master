@@ -23,6 +23,8 @@ const open = shallowRef(false);
 const text = shallowRef("");
 const filterInput = useTemplateRef<HTMLInputElement>("filterInput");
 
+/** With every item greyed the button is greyed too, instead of opening a menu of grey items. */
+const inert = computed(() => props.entries.filter(isMenuItem).every(entry => entry.disabled));
 const filtering = computed(() => props.entries.filter(isMenuItem).length > props.filterAbove);
 /** While filtering: only the items whose name contains the text, without separators. */
 const shown = computed(() => (filtering.value && text.value.trim() ? props.entries.filter(entry => isMenuItem(entry) && matchRange(entry.label, text.value)) : props.entries));
@@ -47,6 +49,8 @@ function takeFirst() {
     <PopoverRoot v-model="open">
         <PopoverActivator
             :aria-label="label"
+            :class="inert ? 'opacity-40 pointer-events-none' : ''"
+            :disabled="inert"
             :title="label"
         >
             <slot />

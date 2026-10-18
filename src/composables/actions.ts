@@ -61,6 +61,12 @@ export function useActions() {
     const hasConnection = computed(() => target.value !== undefined && connections.sessions[target.value.connectionId] !== undefined);
     const hasDatabase = computed(() => hasConnection.value && target.value?.database !== undefined);
     const hasCollection = computed(() => hasDatabase.value && target.value?.collection !== undefined);
+    /** Whether the row is a view: it takes no documents, indexes or validator. */
+    function isView(at: TreeSelection | undefined): boolean {
+        const database = at && connections.sessions[at.connectionId]?.databases.find(item => item.name === at.database);
+        return at?.collection !== undefined && database?.types[at.collection] === "view";
+    }
+    const onView = computed(() => isView(target.value));
 
     /**
      * Whether the row may be changed; a row marked read-only in the tree, or one below such a row,
@@ -125,6 +131,7 @@ export function useActions() {
 
     /** The import wizard on the server of the selection; a collection chosen there takes every file. */
     function importWizard(at = target.value) {
+        if (isView(at)) return;
         void importOf.openImport(at);
     }
 
@@ -200,7 +207,7 @@ export function useActions() {
     }
 
     function editValidator(at = target.value) {
-        if (at?.database !== undefined && at.collection !== undefined && writable(at)) {
+        if (at?.database !== undefined && at.collection !== undefined && !isView(at) && writable(at)) {
             dialogs.editCollection({ mode: "validator", connectionId: at.connectionId, database: at.database, collection: at.collection });
         }
     }
@@ -247,7 +254,7 @@ export function useActions() {
     }
 
     function createIndex(at = target.value) {
-        if (at?.database !== undefined && at.collection !== undefined && writable(at)) {
+        if (at?.database !== undefined && at.collection !== undefined && !isView(at) && writable(at)) {
             dialogs.editIndex({ connectionId: at.connectionId, database: at.database, collection: at.collection });
         }
     }
@@ -519,7 +526,7 @@ export function useActions() {
     }
 
     return {
-        target, hasConnection, hasDatabase, hasCollection,
+        target, hasConnection, hasDatabase, hasCollection, onView,
         openShell, browse, schema, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,

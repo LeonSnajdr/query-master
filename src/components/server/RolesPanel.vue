@@ -58,6 +58,9 @@ function addAction(position: number, action: string) {
     actionTexts.value[position] = actions.join(", ");
 }
 
+/** Until the first answer the list says it loads, not that there is nothing. */
+const loaded = shallowRef(false);
+
 async function load() {
     try {
         const reply = await backend.runCommand(props.tab.connectionId, props.tab.database, { rolesInfo: 1, showPrivileges: true, showBuiltinRoles: false });
@@ -66,6 +69,8 @@ async function load() {
         loadError.value = undefined;
     } catch (cause) {
         loadError.value = say(errorMessage(cause));
+    } finally {
+        loaded.value = true;
     }
 }
 
@@ -188,7 +193,7 @@ onMounted(async () => {
                     v-if="roles.length === 0"
                     class="px-3 py-2 text-on-surface-variant"
                 >
-                    {{ $t("roles.none") }}
+                    {{ $t(loaded ? "roles.none" : "choice.loading") }}
                 </li>
             </ul>
         </aside>
@@ -315,6 +320,7 @@ onMounted(async () => {
                 <ButtonRoot
                     v-if="existing"
                     @click="drop"
+                    :disabled="busy"
                     class="btn-secondary"
                     data-testid="role-drop"
                 >

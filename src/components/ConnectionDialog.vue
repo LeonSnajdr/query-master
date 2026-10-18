@@ -156,7 +156,7 @@ async function save(connect = false) {
     <DialogRoot v-model="open">
         <DialogContent class="dialog w-[min(94vw,40rem)]!">
             <form
-                @submit.prevent="save()"
+                @submit.prevent="save(true)"
                 class="flex flex-col gap-4"
             >
                 <DialogTitle class="dialog-title text-[21px]!">

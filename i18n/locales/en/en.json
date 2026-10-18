@@ -1249,6 +1249,7 @@
   "result.imported": "{count} document imported | {count} documents imported",
   "result.link": "Ctrl+click opens the link in the browser",
   "result.more": "Show more ({count} left)",
+  "result.notCountable": "This result can not be counted: its pipeline writes, or it is not a query.",
   "result.notRun": "Not run",
   "result.notSet": "(not set)",
   "result.pin": "Pin field",

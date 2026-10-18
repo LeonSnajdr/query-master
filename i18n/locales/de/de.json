@@ -1249,6 +1249,7 @@
   "result.imported": "{count} Dokument importiert | {count} Dokumente importiert",
   "result.link": "Strg+Klick öffnet den Link im Browser",
   "result.more": "Mehr anzeigen (noch {count})",
+  "result.notCountable": "Dieses Ergebnis lässt sich nicht zählen: Seine Pipeline schreibt, oder es ist keine Abfrage.",
   "result.notRun": "Nicht ausgeführt",
   "result.notSet": "(nicht gesetzt)",
   "result.pin": "Feld anheften",

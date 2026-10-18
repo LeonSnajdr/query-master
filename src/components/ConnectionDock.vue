@@ -458,7 +458,7 @@ function onListKey(event: KeyboardEvent) {
 const createEntries = computed<MenuEntry[]>(() => [
     { label: t("database.create"), command: "database.create", action: () => void actions.createDatabase(), disabled: !actions.hasConnection.value },
     { label: t("collection.create"), icon: "i-lucide-file-plus-2", command: "collection.create", action: () => void actions.createCollection(), disabled: !actions.hasDatabase.value },
-    { label: t("index.create"), icon: "i-lucide-key-round", command: "index.create", action: () => actions.createIndex(), disabled: !actions.hasCollection.value }
+    { label: t("index.create"), icon: "i-lucide-key-round", command: "index.create", action: () => actions.createIndex(), disabled: !actions.hasCollection.value || actions.onView.value }
 ]);
 
 const manageEntries = computed<MenuEntry[]>(() => [
@@ -686,13 +686,18 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
     }
     anchor = at;
     select(at);
+    // A row marked read-only (or below one): what would change it is greyed, as its lock says.
+    const ro = notes.isReadonly(at);
+    // Creating beside the row asks the level above it.
+    const roDatabase = notes.isReadonly({ connectionId: at.connectionId, database: at.database });
+    const roConnection = notes.isReadonly({ connectionId: at.connectionId });
     // Pasting goes into the database of the row; the copy may come from another connection.
     const paste = (database: string): MenuEntry => ({
         label: pasteLabel(),
         icon: "i-lucide-clipboard-paste",
         command: "tree.paste",
         action: () => void copying.paste(at.connectionId, database),
-        disabled: !copying.copied.value?.length
+        disabled: ro || !copying.copied.value?.length
     });
     const tail: MenuEntry[] = [
         "separator",
@@ -717,12 +722,12 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
         entries = [
             { label: t("tab.shell"), icon: "i-lucide-square-terminal", command: "tab.shell", action: () => actions.openShell(at) },
             "separator",
-            { label: t("index.create"), icon: "i-lucide-key-round", command: "index.create", action: () => actions.createIndex(at) },
-            { label: t("index.recreate"), command: "index.recreate", action: () => actions.recreateIndex(at), disabled: at.index === "_id_" },
-            { label: t("index.duplicate"), icon: "i-lucide-copy", command: "index.duplicate", action: () => actions.duplicateIndex(at), disabled: at.index === "_id_" },
+            { label: t("index.create"), icon: "i-lucide-key-round", command: "index.create", action: () => actions.createIndex(at), disabled: ro },
+            { label: t("index.recreate"), command: "index.recreate", action: () => actions.recreateIndex(at), disabled: ro || at.index === "_id_" },
+            { label: t("index.duplicate"), icon: "i-lucide-copy", command: "index.duplicate", action: () => actions.duplicateIndex(at), disabled: ro || at.index === "_id_" },
             // The index on _id belongs to the collection: it can be neither dropped nor hidden.
-            { label: t(actions.indexOf(at)?.hidden === true ? "index.unhide" : "index.hide"), action: () => void actions.toggleIndexHidden(at), disabled: at.index === "_id_" },
-            { label: t("index.drop"), command: "tree.drop", danger: true, action: () => void actions.dropIndex(at), disabled: at.index === "_id_" },
+            { label: t(actions.indexOf(at)?.hidden === true ? "index.unhide" : "index.hide"), action: () => void actions.toggleIndexHidden(at), disabled: ro || at.index === "_id_" },
+            { label: t("index.drop"), command: "tree.drop", danger: true, action: () => void actions.dropIndex(at), disabled: ro || at.index === "_id_" },
             "separator",
             { label: t("index.info.show"), action: () => actions.indexInfo(at) },
             ...tail
@@ -739,22 +744,22 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("tab.aggregation"), icon: "i-lucide-network", command: "tab.aggregation", action: () => actions.aggregation(at) },
             { label: t("tab.sql"), icon: "i-lucide-file-code-2", command: "tab.sql", action: () => actions.openSql(at) },
             "separator",
-            { label: t("collection.create"), icon: "i-lucide-file-plus-2", command: "collection.create", action: () => void actions.createCollection(at) },
-            { label: t("view.create"), icon: "i-lucide-file-search", command: "view.create", action: () => actions.createView(at) },
-            { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(at) },
+            { label: t("collection.create"), icon: "i-lucide-file-plus-2", command: "collection.create", action: () => void actions.createCollection(at), disabled: roDatabase },
+            { label: t("view.create"), icon: "i-lucide-file-search", command: "view.create", action: () => actions.createView(at), disabled: roDatabase },
+            { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(at), disabled: roDatabase },
             "separator",
             { label: t("collection.copy"), icon: "i-lucide-copy", command: "tree.copy", action: () => copying.copy({ connectionId: at.connectionId, database: at.database!, collection: at.collection! }) },
             paste(at.database!),
             ...exportEntries(at),
-            { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at), disabled: isView(at) },
+            { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at), disabled: ro || isView(at) },
             "separator",
-            { label: t("collection.rename"), action: () => void actions.renameCollection(at) },
-            { label: t("collection.drop"), icon: "i-lucide-file-x-2", command: "tree.drop", danger: true, action: () => void actions.dropCollection(at) },
+            { label: t("collection.rename"), action: () => void actions.renameCollection(at), disabled: ro },
+            { label: t("collection.drop"), icon: "i-lucide-file-x-2", command: "tree.drop", danger: true, action: () => void actions.dropCollection(at), disabled: ro },
             "separator",
             // A view has neither indexes nor a validator of its own.
-            { label: t("index.create"), icon: "i-lucide-key-round", command: "index.create", action: () => actions.createIndex(at), disabled: isView(at) },
+            { label: t("index.create"), icon: "i-lucide-key-round", command: "index.create", action: () => actions.createIndex(at), disabled: ro || isView(at) },
             { label: t("index.list"), action: () => actions.indexes(at), disabled: isView(at) },
-            { label: t("validator.edit"), command: "validator.edit", action: () => actions.editValidator(at), disabled: isView(at) },
+            { label: t("validator.edit"), command: "validator.edit", action: () => actions.editValidator(at), disabled: ro || isView(at) },
             "separator",
             { label: t("collection.stats"), action: () => actions.collectionStats(at) },
             ...folderEntries(at),
@@ -765,21 +770,21 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
         entries = [
             { label: t("tab.shell"), icon: "i-lucide-square-terminal", command: "tab.shell", action: () => actions.openShell(at) },
             "separator",
-            { label: t("database.create"), command: "database.create", action: () => void actions.createDatabase(at) },
-            { label: t("collection.create"), icon: "i-lucide-file-plus-2", command: "collection.create", action: () => void actions.createCollection(at) },
-            { label: t("view.create"), icon: "i-lucide-file-search", command: "view.create", action: () => actions.createView(at) },
-            { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(at) },
+            { label: t("database.create"), command: "database.create", action: () => void actions.createDatabase(at), disabled: roConnection },
+            { label: t("collection.create"), icon: "i-lucide-file-plus-2", command: "collection.create", action: () => void actions.createCollection(at), disabled: ro },
+            { label: t("view.create"), icon: "i-lucide-file-search", command: "view.create", action: () => actions.createView(at), disabled: ro },
+            { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(at), disabled: ro },
             { label: t("folder.add"), icon: "i-lucide-folder-plus", command: "folder.add", action: () => void actions.addFolder(at) },
             "separator",
             { label: t("collection.copyAll"), icon: "i-lucide-copy", action: () => void copying.copyAll(at.connectionId, at.database!) },
             paste(at.database),
             "separator",
-            { label: t("database.drop"), command: "tree.drop", danger: true, action: () => void actions.dropDatabase(at) },
+            { label: t("database.drop"), command: "tree.drop", danger: true, action: () => void actions.dropDatabase(at), disabled: ro },
             "separator",
             { label: t("database.stats"), action: () => actions.databaseStats(at) },
             { label: t("database.collectionsStats"), action: () => actions.collectionsStats(at) },
             ...exportEntries(at),
-            { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at) },
+            { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at), disabled: ro },
             "separator",
             { label: t("users.manage"), icon: "i-lucide-users", command: "users.manage", action: () => actions.manageUsers(at) },
             { label: t("roles.manage"), icon: "i-lucide-shield", command: "roles.manage", action: () => actions.manageRoles(at) },
@@ -791,7 +796,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
         entries = [
             { label: t("tab.shell"), icon: "i-lucide-square-terminal", command: "tab.shell", action: () => actions.openShell(at) },
             "separator",
-            { label: t("database.create"), command: "database.create", action: () => void actions.createDatabase(at) },
+            { label: t("database.create"), command: "database.create", action: () => void actions.createDatabase(at), disabled: roConnection },
             { label: t("folder.add"), icon: "i-lucide-folder-plus", command: "folder.add", action: () => void actions.addFolder(at) },
             "separator",
             { label: t("connection.status"), icon: "i-lucide-activity", action: () => actions.serverStatus(at) },
@@ -800,7 +805,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             { label: t("roles.manage"), icon: "i-lucide-shield", command: "roles.manage", action: () => actions.manageRoles(at) },
             "separator",
             ...exportEntries(at),
-            { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at) },
+            { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at), disabled: ro },
             "separator",
             { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void actions.refresh(at) },
             { label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", command: "tree.collapse", action: () => connections.collapseAll() },

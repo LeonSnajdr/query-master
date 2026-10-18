@@ -415,6 +415,7 @@ onMounted(async () => {
             <StatusMessage />
             <span class="grow" />
             <span
+                v-if="tabs.active?.result"
                 class="tabular-nums text-on-surface-variant"
                 data-testid="status-time"
             >{{ $t("status.seconds", { seconds }) }}</span>
@@ -422,18 +423,21 @@ onMounted(async () => {
             <IconButton
                 @click="layout = 'default'"
                 :active="layout === 'default'"
+                :disabled="!isQueryTab(tabs.active)"
                 :label="$t('layout.default')"
                 icon="i-lucide-rows-2"
             />
             <IconButton
                 @click="layout = 'results'"
                 :active="layout === 'results'"
+                :disabled="!isQueryTab(tabs.active)"
                 :label="$t('layout.results')"
                 icon="i-lucide-panel-top-close"
             />
             <IconButton
                 @click="layout = 'editor'"
                 :active="layout === 'editor'"
+                :disabled="!isQueryTab(tabs.active)"
                 :label="$t('layout.editor')"
                 icon="i-lucide-panel-bottom-close"
             />
