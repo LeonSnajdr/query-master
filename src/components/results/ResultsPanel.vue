@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ToggleGroup, ToggleRoot } from "@vuetify/v0";
+import { ButtonContent, ButtonRoot, ToggleGroup, ToggleRoot } from "@vuetify/v0";
 import { computed, ref, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { errorMessage, inApp } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import DropMenu from "@/components/DropMenu.vue";
+import ErrorState from "@/components/ErrorState.vue";
 import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
@@ -23,6 +24,7 @@ import { useValueSearch, useValueSources } from "@/composables/values";
 import { useConnectionsStore } from "@/stores/connections";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
+import type { Message } from "@/shell/message";
 import { parseValue } from "@/shell/parse";
 import { CODE_LANGUAGES, queryCode } from "@/shell/code";
 import { isWrite } from "@/shell/plan";
@@ -42,7 +44,7 @@ const props = defineProps<{
 const VIEWS: ResultView[] = ["tree", "table", "json", "plan"];
 
 const { t } = useI18n();
-const { say, report } = useMessages();
+const { say, report, tell } = useMessages();
 const dialogs = useDialogs();
 const keymap = useKeymap();
 const notices = useNotices();
@@ -124,9 +126,15 @@ function parse(text: string): { value: Json } | { error: string } {
     }
 }
 
-/** After a write: the error to show in the dialog, if it failed. */
-function outcome(done: boolean): string | undefined {
-    return done ? undefined : say(tab.value.error ?? "");
+/** After a write: the error to show in the dialog, if it failed; the result behind it stays as it is. */
+function outcome(failure: string | Message | undefined): string | undefined {
+    return failure === undefined ? undefined : say(failure);
+}
+
+/** A write made from the result itself (a menu, a cell): what went wrong goes on a card, once. */
+function wrote(failure: string | Message | undefined): boolean {
+    if (failure !== undefined) tell(failure);
+    return failure === undefined;
 }
 
 function addDocument() {
@@ -172,6 +180,18 @@ function editDocument(index: number | undefined) {
     });
 }
 
+/** The result of before shows instead of the error of the last run, until the next run. */
+const showLast = shallowRef(false);
+watch(() => tab.value.error, () => (showLast.value = false));
+/** Runs that ended without a failure: refused by a lock, or stopped on purpose. A note, not red. */
+const NOTES: Record<string, string> = { "error.plan.readonly": "result.notRun", "error.plan.readonlyTree": "result.notRun", "error.script.stopped": "result.stopped" };
+const failure = computed(() => {
+    const error = tab.value.error;
+    if (!error || showLast.value) return undefined;
+    const note = typeof error === "string" ? undefined : NOTES[error.key];
+    return { title: t(note ?? "result.failedTitle"), detail: say(error), kind: note ? "info" as const : "error" as const };
+});
+
 const marked = shallowRef(new Set<number>());
 watch(result, () => (marked.value = new Set()));
 
@@ -216,7 +236,7 @@ async function removeDocument(index: number | undefined) {
             text: t("document.removeMany.text", { count: documents.length }, documents.length),
             action: t("action.delete")
         });
-        if (confirmed && !await tabs.removeDocuments(tab.value, documents.map(document => document._id!))) report(tab.value.error);
+        if (confirmed) wrote(await tabs.removeDocuments(tab.value, documents.map(document => document._id!)));
         return;
     }
     const document = documentAt(index);
@@ -226,7 +246,7 @@ async function removeDocument(index: number | undefined) {
         text: t("document.remove.text", { id: toShell(document._id!) }),
         action: t("action.delete")
     });
-    if (confirmed && !await tabs.removeDocuments(tab.value, [document._id!])) report(tab.value.error);
+    if (confirmed) wrote(await tabs.removeDocuments(tab.value, [document._id!]));
 }
 
 async function commit(target: ResultTarget, text: string) {
@@ -234,15 +254,15 @@ async function commit(target: ResultTarget, text: string) {
     if (!document) return;
     const parsed = parse(text);
     if ("error" in parsed) {
-        notices.notify({ kind: "error", title: parsed.error });
+        tell(parsed.error);
         return;
     }
-    if (!await tabs.setField(tab.value, document._id!, target.path, parsed.value)) report(tab.value.error);
+    wrote(await tabs.setField(tab.value, document._id!, target.path, parsed.value));
 }
 
 async function removeField(target: ResultTarget) {
     const document = documentAt(target.index);
-    if (document && !await tabs.removeField(tab.value, document._id!, target.path)) report(tab.value.error);
+    if (document) wrote(await tabs.removeField(tab.value, document._id!, target.path));
 }
 
 async function copy(text: string) {
@@ -377,9 +397,9 @@ async function importClipboard() {
             action: t("action.insert")
         });
         if (!confirmed) return;
-        if (await tabs.insertDocuments(tab.value, documents)) {
+        if (wrote(await tabs.insertDocuments(tab.value, documents))) {
             notices.notify({ kind: "success", title: t("result.imported", { count: documents.length }, documents.length) });
-        } else report(tab.value.error);
+        }
     } catch (error) {
         report(error);
     }
@@ -392,9 +412,9 @@ async function importShown() {
         if (text === undefined) return;
         const documents = readDocuments(text);
         if (documents.length === 0) return;
-        if (await tabs.insertDocuments(tab.value, documents)) {
+        if (wrote(await tabs.insertDocuments(tab.value, documents))) {
             notices.notify({ kind: "success", title: t("result.imported", { count: documents.length }, documents.length) });
-        } else report(tab.value.error);
+        }
     } catch (error) {
         report(error);
     }
@@ -676,8 +696,18 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
             </label>
 
             <span class="grow" />
+            <ButtonRoot
+                v-if="tab.error && showLast"
+                @click="showLast = false"
+                :title="$t('result.showError')"
+                class="mr-3 shrink-0 inline-flex items-center gap-1 text-xs text-error hover:underline"
+                data-testid="query-failed"
+            >
+                <span class="i-lucide-circle-alert size-3.5" />
+                <ButtonContent>{{ $t("result.failed") }}</ButtonContent>
+            </ButtonRoot>
             <span
-                v-if="result"
+                v-if="result && !failure"
                 class="pr-3 shrink-0 whitespace-nowrap text-xs text-on-surface-variant tabular-nums"
                 data-testid="result-range"
             >{{ rows.length === 0 ? $t("result.empty") : $t("result.range", { from: result.offset + 1, to: result.offset + result.items.length }) }}</span>
@@ -699,15 +729,6 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
             </ToggleGroup>
         </div>
 
-        <p
-            v-if="tab.error"
-            class="m-0 shrink-0 max-h-40 overflow-y-auto mx-3.5 my-1 px-3 py-2 rounded-sm bg-error/12 text-error text-[13px] font-mono whitespace-pre-wrap break-words"
-            data-testid="query-error"
-            role="alert"
-        >
-            {{ say(tab.error) }}
-        </p>
-
         <!-- Focusable for F7 ("Set focus to results"); the keys of the tree are handled here. -->
         <div
             @keydown="onResultKey"
@@ -715,8 +736,25 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
             data-testid="query-result"
             tabindex="-1"
         >
+            <!-- A failed run takes the place of the result, which stays one click away. -->
+            <ErrorState
+                v-if="failure"
+                :detail="failure.detail"
+                :kind="failure.kind"
+                :title="failure.title"
+                data-testid="query-error"
+            >
+                <ButtonRoot
+                    v-if="result"
+                    @click="showLast = true"
+                    class="btn-secondary h-7! text-[12px]"
+                    data-testid="query-error-last"
+                >
+                    <ButtonContent>{{ $t("result.showLast") }}</ButtonContent>
+                </ButtonRoot>
+            </ErrorState>
             <p
-                v-if="!result"
+                v-else-if="!result"
                 class="m-0 px-4 py-3 font-sans text-[13px] text-on-surface-variant"
             >
                 {{ tab.running ? $t("query.running") : runHint }}

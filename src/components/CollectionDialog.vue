@@ -3,6 +3,7 @@ import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogRoot, Dial
 import { computed, nextTick, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
+import FormError from "@/components/FormError.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
 import ChoiceField from "@/components/ChoiceField.vue";
 import { useMessages } from "@/composables/messages";
@@ -319,16 +320,11 @@ async function save() {
                     </div>
                 </TabsRoot>
 
-                <p
-                    v-if="error"
-                    class="m-0 text-sm text-error break-words"
-                    data-testid="collection-error"
-                    role="alert"
-                >
-                    {{ error }}
-                </p>
-
                 <div class="flex justify-end gap-2">
+                    <FormError
+                        :text="error"
+                        data-testid="collection-error"
+                    />
                     <ButtonRoot
                         @click="save"
                         :disabled="busy || !name.trim()"

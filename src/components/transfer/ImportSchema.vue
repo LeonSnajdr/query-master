@@ -2,6 +2,7 @@
 import { computed, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
+import ErrorState from "@/components/ErrorState.vue";
 import ChoiceField from "@/components/ChoiceField.vue";
 import { useMessages } from "@/composables/messages";
 import { splitPath } from "@/transfer/export";
@@ -72,14 +73,15 @@ watch(current, path => void load(path), { immediate: true });
                 :options="fileOptions"
             />
         </div>
-        <p
-            v-if="failure"
-            class="m-0 text-error break-words"
-        >
-            {{ failure }}
-        </p>
         <div class="h-1/2 min-h-0 overflow-auto rounded-sm bg-background border border-divider">
+            <!-- A file that can not be read: said in place of its columns. -->
+            <ErrorState
+                v-if="failure"
+                :detail="failure"
+                :title="$t('page.loadFailed')"
+            />
             <table
+                v-else
                 class="w-full border-collapse"
                 data-testid="import-columns"
             >

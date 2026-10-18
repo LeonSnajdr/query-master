@@ -6,8 +6,8 @@ import { javascript, localCompletionSource, snippets } from "@codemirror/lang-ja
 import { sql } from "@codemirror/lang-sql";
 import { HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
-import type { Extension } from "@codemirror/state";
-import { EditorView, ViewPlugin, drawSelection, highlightActiveLine, keymap, lineNumbers, showTooltip } from "@codemirror/view";
+import type { Extension, Range } from "@codemirror/state";
+import { Decoration, EditorView, ViewPlugin, drawSelection, highlightActiveLine, keymap, lineNumbers, showTooltip } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
 import { useMessages } from "@/composables/messages";
@@ -320,6 +320,32 @@ const searchBarAlone = StateField.define<boolean>({
         : null))
 });
 
+const markError = StateEffect.define<number | undefined>();
+const errorMark = Decoration.mark({ class: "cm-errorMark" });
+
+/**
+ * The place a run failed, underlined as a word processor marks a misspelling: the word there, or
+ * one character. It goes when the text changes or the next run succeeds.
+ */
+const errorMarks = StateField.define({
+    create: () => Decoration.none,
+    update(marks, transaction) {
+        for (const effect of transaction.effects) {
+            if (!effect.is(markError)) continue;
+            const position = effect.value;
+            if (position === undefined) return Decoration.none;
+            const doc = transaction.state.doc;
+            const from = Math.min(position, doc.length);
+            const word = transaction.state.wordAt(from);
+            const to = word && word.from === from ? word.to : Math.min(from + 1, doc.length);
+            const ranges: Range<Decoration>[] = from < to ? [errorMark.range(from, to)] : [];
+            return Decoration.set(ranges);
+        }
+        return transaction.docChanged ? Decoration.none : marks;
+    },
+    provide: field => EditorView.decorations.from(field)
+});
+
 /** Ctrl+Space: with the list open at a value, search all data; else open it, with the footer alone where no value is known. */
 function ctrlSpace(target: EditorView): boolean {
     if (completionStatus(target.state) === "active") return searchAll(target);
@@ -354,6 +380,7 @@ const theme = EditorView.theme({
     ".cm-content": { caretColor: "var(--v0-primary)", padding: props.compact ? "0" : props.singleLine ? "5px 0" : "8px 0" },
     ".cm-line": { padding: props.singleLine ? "0 2px" : "0 6px" },
     ".cm-cursor": { borderLeftColor: "var(--v0-primary)" },
+    ".cm-errorMark": { textDecoration: "underline wavy var(--v0-error)", textUnderlineOffset: "3px", textDecorationSkipInk: "none" },
     ".cm-gutters": { backgroundColor: "transparent", color: "var(--v0-on-surface-variant)", border: "none", paddingLeft: "8px" },
     ".cm-activeLine": { backgroundColor: props.readonly || props.singleLine ? "transparent" : "color-mix(in srgb, var(--v0-on-surface) 5%, transparent)" },
     ".cm-activeLineGutter": { backgroundColor: "transparent", color: "var(--v0-on-surface-strong)" },
@@ -432,6 +459,7 @@ function extensions(): Extension[] {
         ])),
         searchBarAlone,
         searchFooter,
+        errorMarks,
         // SQL completes from its language (keywords, schema); shell code from the shell's catalog,
         // and a script also with its own variables and the JavaScript keywords.
         props.sqlSchema
@@ -486,8 +514,12 @@ watch(() => shortcuts.keys("query.run"), () => view?.dispatch({ effects: runKeys
 watch(() => shortcuts.keys("editor.format"), () => view?.dispatch({ effects: formatKeys.reconfigure(formatKeymap()) }));
 
 watch(() => props.errorPosition, (position) => {
-    if (!view || position === undefined) return;
-    view.dispatch({ selection: { anchor: Math.min(position, view.state.doc.length) }, scrollIntoView: true });
+    if (!view) return;
+    if (position === undefined) {
+        view.dispatch({ effects: markError.of(undefined) });
+        return;
+    }
+    view.dispatch({ selection: { anchor: Math.min(position, view.state.doc.length) }, effects: markError.of(position), scrollIntoView: true });
     view.focus();
 });
 

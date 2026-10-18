@@ -4,6 +4,7 @@ import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
 import type { Profile } from "@/api";
+import FormError from "@/components/FormError.vue";
 import ChoiceField from "@/components/ChoiceField.vue";
 import { useActions } from "@/composables/actions";
 import { useDialogs } from "@/composables/dialogs";
@@ -418,24 +419,20 @@ async function save(connect = false) {
                     </div>
                 </TabsRoot>
 
-                <p
-                    v-if="notice"
-                    :class="notice.ok ? 'text-success' : 'text-error'"
-                    class="m-0 text-sm break-words"
-                    data-testid="connection-notice"
-                >
-                    {{ notice.text }}
-                </p>
-
                 <div class="flex justify-end gap-2">
                     <ButtonRoot
                         @click="test"
                         :disabled="busy"
-                        class="btn-secondary mr-auto"
+                        class="btn-secondary"
                         data-testid="connection-test"
                     >
                         <ButtonContent>{{ $t(busy ? "connection.busy" : "connection.test") }}</ButtonContent>
                     </ButtonRoot>
+                    <FormError
+                        :kind="notice?.ok ? 'success' : 'error'"
+                        :text="notice?.text"
+                        data-testid="connection-notice"
+                    />
                     <!-- v0 buttons are never of type "submit": Enter in a field submits the form, the click saves. -->
                     <ButtonRoot
                         @click="save(true)"

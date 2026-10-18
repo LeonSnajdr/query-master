@@ -1,5 +1,6 @@
 import { getCurrentScope, onScopeDispose, reactive, ref } from "vue";
 import { backend } from "@/api";
+import { warnOnce } from "@/composables/unseen";
 import { isChanged, keysOf, sameKeys } from "./bindings";
 import type { Overrides } from "./bindings";
 import { COMMANDS, commandOf, isCommandId, MAX_KEYS } from "./commands";
@@ -20,13 +21,13 @@ export async function loadKeymap(): Promise<void> {
             overrides[id] = keys.map(normalizeHotkey).filter((key): key is string => key !== undefined).slice(0, MAX_KEYS);
         }
     } catch (error) {
-        console.warn("Keyboard shortcuts could not be read", error);
+        warnOnce("unseen.keysNotRead", error);
     }
 }
 
 function save(ids: string[]): void {
     const changes = ids.map(id => ({ commandId: id, keys: isCommandId(id) && isChanged(overrides, id) ? overrides[id]! : null }));
-    void backend.saveKeybindings(changes).catch(error => console.warn("Keyboard shortcuts were not saved", error));
+    void backend.saveKeybindings(changes).catch(error => warnOnce("unseen.keysNotSaved", error));
 }
 
 /** The keys of the commands, for menus, the help and the settings. */
@@ -76,7 +77,7 @@ export function useKeymap() {
         },
         async resetAll(): Promise<void> {
             for (const id of Object.keys(overrides)) delete overrides[id];
-            await backend.clearKeybindings().catch(error => console.warn("Keyboard shortcuts were not reset", error));
+            await backend.clearKeybindings().catch(error => warnOnce("unseen.keysNotSaved", error));
         }
     };
 }

@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { ButtonContent, ButtonRoot } from "@vuetify/v0";
 import { computed, onMounted, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage, inApp } from "@/api";
+import ErrorState from "@/components/ErrorState.vue";
 import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
@@ -193,15 +195,26 @@ onMounted(load);
             <span class="text-on-surface-variant tabular-nums">{{ $t("gridfs.count", { count: files.length }, files.length) }}</span>
         </div>
 
-        <p
+        <!-- Not read: said in place of the content, never above it. -->
+        <ErrorState
             v-if="error"
-            class="mx-5 my-2 text-sm text-error break-words"
-            role="alert"
+            :detail="error"
+            :title="$t('page.loadFailed')"
+            class="grow"
+            data-testid="gridfs-error"
         >
-            {{ error }}
-        </p>
+            <ButtonRoot
+                @click="load"
+                class="btn-primary h-7! text-[12px]"
+            >
+                <ButtonContent>{{ $t("action.reload") }}</ButtonContent>
+            </ButtonRoot>
+        </ErrorState>
 
-        <div class="grow min-h-0 overflow-auto px-5 pb-4">
+        <div
+            v-else
+            class="grow min-h-0 overflow-auto px-5 pb-4"
+        >
             <table
                 class="plain-table"
                 data-testid="gridfs-files"

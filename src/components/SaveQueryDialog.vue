@@ -2,9 +2,11 @@
 import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogRoot, DialogTitle } from "@vuetify/v0";
 import { computed, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { errorMessage } from "@/api";
 import type { SavedQuery } from "@/api";
 import { namesAsChoices } from "@/choice";
 import ChoiceField from "@/components/ChoiceField.vue";
+import FormError from "@/components/FormError.vue";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
 import { draftOf, useQueriesStore } from "@/stores/queries";
@@ -17,7 +19,7 @@ const props = defineProps<{
 const open = defineModel<boolean>({ default: false });
 
 const { t } = useI18n();
-const { report } = useMessages();
+const { say } = useMessages();
 const notices = useNotices();
 const tabs = useTabsStore();
 const queries = useQueriesStore();
@@ -30,6 +32,10 @@ const folder = shallowRef("");
 /** For the collection of the tab, or for its whole database. */
 const scope = shallowRef<"collection" | "database">("collection");
 const busy = shallowRef(false);
+/** What went wrong saving or removing, beside the buttons; the dialog stays open. */
+const error = shallowRef<string>();
+/** Save was pressed without a name. */
+const nameMissing = shallowRef(false);
 
 /** Only the document browser and the aggregation have a collection to save for. */
 const hasCollection = computed(() => (tab.value?.kind === "browse" || tab.value?.kind === "aggregate") && tab.value.collection !== undefined);
@@ -52,13 +58,17 @@ watch(open, (isOpen) => {
     const start = existing.value ?? draftOf(tab.value);
     name.value = start?.name ?? "";
     folder.value = start?.folder ?? "";
+    error.value = undefined;
+    nameMissing.value = false;
     scope.value = hasCollection.value && (start?.collection ?? null) !== null ? "collection" : "database";
 });
 
 async function save() {
     const current = tab.value;
     const draft = current ? draftOf(current) : undefined;
-    if (!current || !draft || !name.value.trim()) return;
+    nameMissing.value = !name.value.trim();
+    if (!current || !draft || nameMissing.value) return;
+    error.value = undefined;
     busy.value = true;
     try {
         await queries.save({
@@ -70,8 +80,8 @@ async function save() {
         });
         notices.answer(t("savedQuery.saved", { name: name.value.trim() }));
         open.value = false;
-    } catch (error) {
-        report(error);
+    } catch (cause) {
+        error.value = say(errorMessage(cause));
     } finally {
         busy.value = false;
     }
@@ -84,8 +94,8 @@ async function remove() {
         await queries.remove(existing.value);
         notices.answer(t("savedQuery.removed", { name: existing.value.name }));
         open.value = false;
-    } catch (error) {
-        report(error);
+    } catch (cause) {
+        error.value = say(errorMessage(cause));
     } finally {
         busy.value = false;
     }
@@ -107,6 +117,8 @@ async function remove() {
                     <span>{{ $t("savedQuery.name") }}:</span>
                     <input
                         v-model="name"
+                        :aria-invalid="nameMissing || undefined"
+                        :class="nameMissing ? 'field-invalid' : ''"
                         class="field"
                         data-testid="save-query-name"
                         type="text"
@@ -136,21 +148,21 @@ async function remove() {
                         v-if="existing"
                         @click="remove"
                         :disabled="busy"
-                        class="btn-danger mr-auto"
+                        class="btn-danger"
                         data-testid="save-query-remove"
                     >
                         <ButtonContent>{{ $t("savedQuery.remove") }}</ButtonContent>
                     </ButtonRoot>
-                    <span
-                        v-else
-                        class="mr-auto"
+                    <FormError
+                        :text="error ?? (nameMissing ? $t('savedQuery.error.name') : undefined)"
+                        data-testid="save-query-error"
                     />
                     <DialogClose class="btn-ghost">
                         {{ $t("action.cancel") }}
                     </DialogClose>
                     <ButtonRoot
                         @click="save"
-                        :disabled="busy || !name.trim()"
+                        :disabled="busy"
                         class="btn-primary"
                         data-testid="save-query-submit"
                     >

@@ -3,6 +3,8 @@ import { ButtonContent, ButtonRoot } from "@vuetify/v0";
 import { computed, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
+import ErrorState from "@/components/ErrorState.vue";
+import FormError from "@/components/FormError.vue";
 import IconButton from "@/components/IconButton.vue";
 import RoleRows from "@/components/server/RoleRows.vue";
 import ChoiceField from "@/components/ChoiceField.vue";
@@ -21,7 +23,7 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
-const { say, report } = useMessages();
+const { say } = useMessages();
 const dialogs = useDialogs();
 const connections = useConnectionsStore();
 
@@ -31,7 +33,12 @@ const selected = shallowRef<string>();
 const form = ref<RoleForm>({ role: "", privileges: [], roles: [] });
 /** The actions of each privilege row as typed: comma separated. */
 const actionTexts = ref<string[]>([]);
+/** The list could not be read: said in place of the page. */
+const loadError = shallowRef<string>();
+/** What the server said to the last save or drop, beside the buttons. */
 const error = shallowRef<string>();
+/** Save was pressed without a name: the field is framed, the footer says why. */
+const nameMissing = shallowRef(false);
 const busy = shallowRef(false);
 
 const existing = computed(() => selected.value !== undefined);
@@ -56,9 +63,9 @@ async function load() {
         const reply = await backend.runCommand(props.tab.connectionId, props.tab.database, { rolesInfo: 1, showPrivileges: true, showBuiltinRoles: false });
         roles.value = (Array.isArray(reply.roles) ? reply.roles.filter(isDoc) : []).sort((a, b) => String(a.role).localeCompare(String(b.role)));
         roleNames.value = [...new Set([...roles.value.map(role => String(role.role)), ...BUILTIN_ROLES.map(role => role.role)])].sort((a, b) => a.localeCompare(b));
-        error.value = undefined;
+        loadError.value = undefined;
     } catch (cause) {
-        error.value = say(errorMessage(cause));
+        loadError.value = say(errorMessage(cause));
     }
 }
 
@@ -67,6 +74,7 @@ function choose(role?: Doc) {
     form.value = role ? roleFormOf(role) : { role: "", privileges: [newPrivilege()], roles: [] };
     actionTexts.value = form.value.privileges.map(privilege => privilege.actions.join(", "));
     error.value = undefined;
+    nameMissing.value = false;
 }
 
 function newPrivilege(): PrivilegeForm {
@@ -84,7 +92,9 @@ function removePrivilege(position: number) {
 }
 
 async function save() {
-    if (!form.value.role.trim()) return;
+    nameMissing.value = !form.value.role.trim();
+    if (nameMissing.value) return;
+    error.value = undefined;
     busy.value = true;
     try {
         const privileges = form.value.privileges.map((privilege, position) => ({ ...privilege, actions: splitActions(actionTexts.value[position] ?? "") }));
@@ -109,7 +119,7 @@ async function drop() {
         await load();
         choose();
     } catch (cause) {
-        report(cause);
+        error.value = say(errorMessage(cause));
     }
 }
 
@@ -120,7 +130,23 @@ onMounted(async () => {
 </script>
 
 <template>
-    <div class="h-full flex min-h-0">
+    <ErrorState
+        v-if="loadError"
+        :detail="loadError"
+        :title="$t('page.loadFailed')"
+        data-testid="role-load-error"
+    >
+        <ButtonRoot
+            @click="load"
+            class="btn-primary h-7! text-[12px]"
+        >
+            <ButtonContent>{{ $t("action.reload") }}</ButtonContent>
+        </ButtonRoot>
+    </ErrorState>
+    <div
+        v-else
+        class="h-full flex min-h-0"
+    >
         <aside class="w-60 shrink-0 flex flex-col border-r border-divider">
             <div class="h-9 shrink-0 flex items-center gap-0.5 px-3">
                 <IconButton
@@ -178,6 +204,8 @@ onMounted(async () => {
                 <span>{{ $t("roles.name") }}:</span>
                 <input
                     v-model="form.role"
+                    :aria-invalid="nameMissing || undefined"
+                    :class="nameMissing ? 'field-invalid' : ''"
                     :disabled="existing"
                     class="field disabled:opacity-60"
                     data-testid="role-name-field"
@@ -275,19 +303,10 @@ onMounted(async () => {
                 />
             </div>
 
-            <p
-                v-if="error"
-                class="m-0 text-sm text-error break-words"
-                data-testid="role-error"
-                role="alert"
-            >
-                {{ error }}
-            </p>
-
             <div class="flex gap-2">
                 <ButtonRoot
                     @click="save"
-                    :disabled="busy || !form.role.trim()"
+                    :disabled="busy"
                     class="btn-primary"
                     data-testid="role-save"
                 >
@@ -301,6 +320,10 @@ onMounted(async () => {
                 >
                     <ButtonContent>{{ $t("roles.drop") }}</ButtonContent>
                 </ButtonRoot>
+                <FormError
+                    :text="error ?? (nameMissing ? $t('roles.error.name') : undefined)"
+                    data-testid="role-error"
+                />
             </div>
         </form>
     </div>

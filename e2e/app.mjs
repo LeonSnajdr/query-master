@@ -255,7 +255,9 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         // The field `n`, before and after, in a line of its own each.
         assert.match(await id("confirm-changes").innerText(), /\bn\s+− \d+\s+\+ \d+/);
         await page.keyboard.press("Escape");
-        await panel.locator("[data-testid=query-error]", { hasText: "cancelled" }).waitFor();
+        // Said no to: a word in the status bar, no error in place of the result.
+        await page.locator("[data-testid=status-message]", { hasText: "cancelled" }).waitFor();
+        assert.equal(await panel.locator("[data-testid=query-error]").count(), 0);
 
         // Confirmed: the statement runs on the two documents.
         await panel.locator("[data-testid=query-run]").click();
@@ -272,7 +274,8 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await write(panel, "for (;;) {}");
         await panel.locator("[data-testid=query-run]").click();
         await panel.locator("[data-testid=query-stop]").click();
-        await panel.locator("[data-testid=query-error]", { hasText: "stopped" }).waitFor();
+        // Stopped on purpose: said in place of the result, as a note, not as an error.
+        await panel.locator("[data-testid=query-error][data-kind=info]", { hasText: "stopped" }).waitFor();
         await panel.locator("[data-testid=query-run]").waitFor();
     });
 

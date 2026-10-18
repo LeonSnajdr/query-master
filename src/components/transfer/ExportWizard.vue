@@ -3,6 +3,7 @@ import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogRoot, Dial
 import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { namesAsChoices } from "@/choice";
+import FormError from "@/components/FormError.vue";
 import IconButton from "@/components/IconButton.vue";
 import ChoiceField from "@/components/ChoiceField.vue";
 import { useExportWizard } from "@/composables/exportWizard";
@@ -514,13 +515,11 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                 />
 
                 <footer class="shrink-0 flex items-center gap-2 px-6 py-5">
-                    <p
+                    <FormError
                         v-if="wizard.step === 'rows' && problemText && state.rows.length > 0"
-                        class="m-0 grow text-error"
+                        :text="problemText"
                         data-testid="export-problem"
-                    >
-                        {{ problemText }}
-                    </p>
+                    />
                     <TransferFailure
                         v-else-if="wizard.step === 'progress'"
                         :progress="wizard.progress"

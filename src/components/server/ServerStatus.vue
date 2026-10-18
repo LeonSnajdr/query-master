@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { useTimer } from "@vuetify/v0";
+import { ButtonContent, ButtonRoot, useTimer } from "@vuetify/v0";
 import { computed, onMounted, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
+import ErrorState from "@/components/ErrorState.vue";
 import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
 import { preview } from "@/shell/ejson";
+import { ShellError } from "@/shell/message";
 import type { Doc } from "@/shell/ejson";
 import { formatUptime, OPERATIONS, runningOperation, summarize } from "@/shell/server";
 import type { RunningOperation, StatusSample } from "@/shell/server";
@@ -68,7 +70,7 @@ function toggle() {
 
 async function kill(operation: RunningOperation) {
     if (tabs.locked(props.tab)) {
-        report(new Error(t("error.plan.readonly")));
+        report(new ShellError("error.plan.readonly"));
         return;
     }
     const confirmed = await dialogs.confirm({
@@ -118,16 +120,24 @@ onMounted(() => {
             >{{ summary.process }} {{ summary.version }} · {{ summary.host }}</span>
         </div>
 
-        <p
+        <!-- Not read: said in place of the content, never above it. -->
+        <ErrorState
             v-if="error"
-            class="mx-5 my-2 text-sm text-error break-words"
-            role="alert"
+            :detail="error"
+            :title="$t('page.loadFailed')"
+            class="grow"
+            data-testid="status-error"
         >
-            {{ error }}
-        </p>
+            <ButtonRoot
+                @click="load"
+                class="btn-primary h-7! text-[12px]"
+            >
+                <ButtonContent>{{ $t("action.reload") }}</ButtonContent>
+            </ButtonRoot>
+        </ErrorState>
 
         <div
-            v-if="summary"
+            v-else-if="summary"
             class="grow min-h-0 overflow-auto px-5 pb-4 flex flex-col gap-5"
             data-testid="server-status"
         >

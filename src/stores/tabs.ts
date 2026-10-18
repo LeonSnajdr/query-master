@@ -3,7 +3,10 @@ import { computed, markRaw, reactive, ref } from "vue";
 import type { Ref } from "vue";
 import { backend, errorMessage } from "@/api";
 import { preferences } from "@/composables/appearance";
+import { useNotices } from "@/composables/notices";
+import { warnOnce } from "@/composables/unseen";
 import { useWriteGuard } from "@/composables/writeGuard";
+import i18n from "@/plugins/i18n";
 import { isDoc, preview, toNumber, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError, scriptErrorPosition } from "@/shell/message";
@@ -140,6 +143,16 @@ class ReplyError extends Error {
     constructor(readonly reason: string | Message) {
         super(typeof reason === "string" ? reason : reason.key);
     }
+}
+
+/** What a failed run or write says, as a text of the driver or a message of the app. */
+function failure(error: unknown): string | Message {
+    return error instanceof ReplyError ? error.reason : errorMessage(error);
+}
+
+/** The user said no when asked before a write. */
+function isCancel(error: unknown): boolean {
+    return error instanceof ShellError && error.key === "error.write.cancelled";
 }
 
 /**
@@ -375,8 +388,8 @@ export const useTabsStore = defineStore("tabs", () => {
 
     function remember(tab: WorkTab, statement: string): void {
         history.set(tab.connectionId, [statement, ...historyOf(tab.connectionId).filter(item => item !== statement)]);
-        // The result is there either way; a history that could not be written is not worth an error on top.
-        void backend.addHistory(tab.connectionId, tab.database, statement).catch(error => console.warn("History was not saved", error));
+        // The result is there either way: a history that could not be written is a warning, once.
+        void backend.addHistory(tab.connectionId, tab.database, statement).catch(error => warnOnce("unseen.historyNotSaved", error));
     }
 
     async function clearHistory(connectionId: string): Promise<void> {
@@ -450,8 +463,12 @@ export const useTabsStore = defineStore("tabs", () => {
             await work();
             return true;
         } catch (error) {
-            tab.error = error instanceof ReplyError ? error.reason : errorMessage(error);
-            tab.errorPosition = (error as { position?: number } | undefined)?.position;
+            // A write the user said no to is no error: a word in the status bar, and the result stays.
+            if (isCancel(error)) useNotices().answer(i18n.global.t("error.write.cancelled"), "info");
+            else {
+                tab.error = failure(error);
+                tab.errorPosition = (error as { position?: number } | undefined)?.position;
+            }
             return false;
         } finally {
             tab.running = false;
@@ -735,40 +752,49 @@ export const useTabsStore = defineStore("tabs", () => {
         return toNumber(page.documents[0]?.n) ?? 0;
     }
 
-    /** Sends a write for the collection of the tab and shows the documents anew. */
-    async function write(tab: WorkTab, command: (collection: string) => Doc): Promise<boolean> {
+    /**
+     * Sends a write for the collection of the tab and shows the documents anew. What went wrong is
+     * returned, not put in place of the result: it is shown where the write was made (a card, the
+     * dialog); said no to, that is what it returns (`error.write.cancelled`, no error to `tell`).
+     */
+    async function write(tab: WorkTab, command: (collection: string) => Doc): Promise<string | Message | undefined> {
         const collection = sourceCollection(tab);
         const database = tab.plan?.database ?? tab.database;
-        if (collection === undefined) return false;
-        const done = await guarded(tab, async () => {
+        if (collection === undefined || tab.running) return undefined;
+        tab.running = true;
+        try {
             guardWrite(tab, true, database, collection);
             const document = command(collection);
             if (!await writeGuard.confirmWrite(tab.connectionId, database, document, { editOnce: tab.id })) throw new ShellError("error.write.cancelled");
-            const failure = replyError(await backend.runCommand(tab.connectionId, database, document));
-            if (failure) throw new ReplyError(failure);
-        });
-        if (done) await refresh(tab);
-        return done;
+            const reply = replyError(await backend.runCommand(tab.connectionId, database, document));
+            if (reply) throw new ReplyError(reply);
+        } catch (error) {
+            return failure(error);
+        } finally {
+            tab.running = false;
+        }
+        await refresh(tab);
+        return undefined;
     }
 
-    function insertDocuments(tab: WorkTab, documents: Doc[]): Promise<boolean> {
+    function insertDocuments(tab: WorkTab, documents: Doc[]): Promise<string | Message | undefined> {
         return write(tab, collection => ({ insert: collection, documents }));
     }
 
-    function replaceDocument(tab: WorkTab, id: Json, document: Doc): Promise<boolean> {
+    function replaceDocument(tab: WorkTab, id: Json, document: Doc): Promise<string | Message | undefined> {
         return write(tab, collection => ({ update: collection, updates: [{ q: { _id: id }, u: document, multi: false }] }));
     }
 
-    function removeDocuments(tab: WorkTab, ids: Json[]): Promise<boolean> {
+    function removeDocuments(tab: WorkTab, ids: Json[]): Promise<string | Message | undefined> {
         return write(tab, collection => ({ delete: collection, deletes: [{ q: { _id: { $in: ids } }, limit: 0 }] }));
     }
 
     /** Sets one field of a document; `path` is the dotted path from its root. */
-    function setField(tab: WorkTab, id: Json, path: string, value: Json): Promise<boolean> {
+    function setField(tab: WorkTab, id: Json, path: string, value: Json): Promise<string | Message | undefined> {
         return write(tab, collection => ({ update: collection, updates: [{ q: { _id: id }, u: { $set: { [path]: value } }, multi: false }] }));
     }
 
-    function removeField(tab: WorkTab, id: Json, path: string): Promise<boolean> {
+    function removeField(tab: WorkTab, id: Json, path: string): Promise<string | Message | undefined> {
         return write(tab, collection => ({ update: collection, updates: [{ q: { _id: id }, u: { $unset: { [path]: "" } }, multi: false }] }));
     }
 

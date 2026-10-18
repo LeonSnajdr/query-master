@@ -4,6 +4,7 @@ import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
 import { namesAsChoices } from "@/choice";
+import FormError from "@/components/FormError.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
 import IconButton from "@/components/IconButton.vue";
 import ChoiceField from "@/components/ChoiceField.vue";
@@ -53,6 +54,12 @@ const environment = computed<Environment | undefined>(() => {
 const placeholderName = computed(() => defaultIndexName(indexKey(form.value.fields)));
 const problems = computed(() => indexFormErrors(form.value));
 // A form without a field yet is how it starts, not a mistake to point out; saving waits for one.
+/** Field names given more than once: their rows are framed red. */
+const duplicates = computed(() => {
+    const names = form.value.fields.map(row => row.field.trim()).filter(Boolean);
+    return new Set(names.filter((name, index) => names.indexOf(name) !== index));
+});
+const ttlWrong = computed(() => problems.value.includes("indexDialog.error.ttl"));
 const shownProblems = computed(() => problems.value.filter(key => key !== "indexDialog.error.noField").map(key => t(key)));
 const title = computed(() => {
     const request = props.request;
@@ -138,7 +145,11 @@ async function save() {
                         class="flex items-center gap-1.5"
                         data-testid="index-field-row"
                     >
-                        <div class="grow min-w-0">
+                        <div
+                            :aria-invalid="duplicates.has(row.field.trim()) || undefined"
+                            :class="duplicates.has(row.field.trim()) ? 'within-invalid' : ''"
+                            class="grow min-w-0"
+                        >
                             <ChoiceField
                                 v-model="row.field"
                                 :label="$t('indexDialog.field')"
@@ -212,6 +223,8 @@ async function save() {
                     <span>{{ $t("indexDialog.ttl") }}:</span>
                     <input
                         v-model="form.ttl"
+                        :aria-invalid="ttlWrong || undefined"
+                        :class="ttlWrong ? 'field-invalid' : ''"
                         :placeholder="$t('indexDialog.ttl.placeholder')"
                         class="field w-36"
                         data-testid="index-ttl"
@@ -237,16 +250,11 @@ async function save() {
                     </div>
                 </div>
 
-                <p
-                    v-if="error || shownProblems.length > 0"
-                    class="m-0 text-sm text-error break-words"
-                    data-testid="index-error"
-                    role="alert"
-                >
-                    {{ error ?? shownProblems.join(" ") }}
-                </p>
-
                 <div class="flex justify-end gap-2">
+                    <FormError
+                        :text="error ?? (shownProblems.join(' ') || undefined)"
+                        data-testid="index-error"
+                    />
                     <ButtonRoot
                         @click="save"
                         :disabled="busy || problems.length > 0"

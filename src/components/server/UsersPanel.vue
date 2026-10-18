@@ -4,6 +4,8 @@ import { computed, onMounted, ref, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
+import ErrorState from "@/components/ErrorState.vue";
+import FormError from "@/components/FormError.vue";
 import IconButton from "@/components/IconButton.vue";
 import RoleRows from "@/components/server/RoleRows.vue";
 import { useDialogs } from "@/composables/dialogs";
@@ -25,7 +27,7 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
-const { say, report } = useMessages();
+const { say } = useMessages();
 const dialogs = useDialogs();
 const connections = useConnectionsStore();
 
@@ -35,7 +37,12 @@ const roleNames = shallowRef<string[]>([]);
 const selected = shallowRef<string>();
 const form = ref<UserForm>({ user: "", password: "", roles: [] });
 const customData = shallowRef("{}");
+/** The list could not be read: said in place of the page. */
+const loadError = shallowRef<string>();
+/** What the server said to the last save, beside the buttons. */
 const error = shallowRef<string>();
+/** Save was pressed: from then on what is missing is said, and its fields are framed. */
+const tried = shallowRef(false);
 const busy = shallowRef(false);
 
 const existing = computed(() => selected.value !== undefined);
@@ -49,9 +56,9 @@ async function load() {
         const roles = await backend.runCommand(props.tab.connectionId, props.tab.database, { rolesInfo: 1, showBuiltinRoles: true });
         const own = Array.isArray(roles.roles) ? roles.roles.filter(isDoc).map(role => String(role.role)) : [];
         roleNames.value = [...new Set([...own, ...BUILTIN_ROLES.map(role => role.role)])].sort((a, b) => a.localeCompare(b));
-        error.value = undefined;
+        loadError.value = undefined;
     } catch (cause) {
-        error.value = say(errorMessage(cause));
+        loadError.value = say(errorMessage(cause));
     }
 }
 
@@ -60,10 +67,18 @@ function choose(user?: Doc) {
     form.value = user ? userFormOf(user) : { user: "", password: "", roles: [{ role: "read", db: "" }] };
     customData.value = form.value.customData ? toShell(form.value.customData) : "{}";
     error.value = undefined;
+    tried.value = false;
+}
+
+/** A problem of the form, once save was pressed. */
+function missing(key: string): boolean {
+    return tried.value && problems.value.includes(key);
 }
 
 async function save() {
+    tried.value = true;
     if (problems.value.length > 0) return;
+    error.value = undefined;
     busy.value = true;
     try {
         const data = customData.value.trim() ? parseValue(customData.value) : {};
@@ -91,7 +106,7 @@ async function drop() {
         await load();
         choose();
     } catch (cause) {
-        report(cause);
+        error.value = say(errorMessage(cause));
     }
 }
 
@@ -102,7 +117,23 @@ onMounted(async () => {
 </script>
 
 <template>
-    <div class="h-full flex min-h-0">
+    <ErrorState
+        v-if="loadError"
+        :detail="loadError"
+        :title="$t('page.loadFailed')"
+        data-testid="user-load-error"
+    >
+        <ButtonRoot
+            @click="load"
+            class="btn-primary h-7! text-[12px]"
+        >
+            <ButtonContent>{{ $t("action.reload") }}</ButtonContent>
+        </ButtonRoot>
+    </ErrorState>
+    <div
+        v-else
+        class="h-full flex min-h-0"
+    >
         <aside class="w-60 shrink-0 flex flex-col border-r border-divider">
             <div class="h-9 shrink-0 flex items-center gap-0.5 px-3">
                 <IconButton
@@ -160,6 +191,8 @@ onMounted(async () => {
                 <span>{{ $t("users.name") }}:</span>
                 <input
                     v-model="form.user"
+                    :aria-invalid="missing('users.error.name') || undefined"
+                    :class="missing('users.error.name') ? 'field-invalid' : ''"
                     :disabled="existing"
                     autocomplete="off"
                     class="field disabled:opacity-60"
@@ -169,6 +202,8 @@ onMounted(async () => {
                 <span>{{ $t(existing ? "users.newPassword" : "users.password") }}:</span>
                 <input
                     v-model="form.password"
+                    :aria-invalid="missing('users.error.password') || undefined"
+                    :class="missing('users.error.password') ? 'field-invalid' : ''"
                     :placeholder="existing ? $t('users.password.unchanged') : ''"
                     autocomplete="new-password"
                     class="field"
@@ -204,19 +239,10 @@ onMounted(async () => {
                 · {{ form.roles.map(roleLabel).join(", ") }}
             </p>
 
-            <p
-                v-if="error"
-                class="m-0 text-sm text-error break-words"
-                data-testid="user-error"
-                role="alert"
-            >
-                {{ error }}
-            </p>
-
             <div class="flex gap-2">
                 <ButtonRoot
                     @click="save"
-                    :disabled="busy || problems.length > 0"
+                    :disabled="busy"
                     class="btn-primary"
                     data-testid="user-save"
                 >
@@ -230,6 +256,10 @@ onMounted(async () => {
                 >
                     <ButtonContent>{{ $t("users.drop") }}</ButtonContent>
                 </ButtonRoot>
+                <FormError
+                    :text="error ?? (tried ? problems.map(key => $t(key)).join(' ') || undefined : undefined)"
+                    data-testid="user-error"
+                />
             </div>
         </form>
     </div>

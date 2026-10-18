@@ -2,6 +2,7 @@
 import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogDescription, DialogRoot, DialogTitle } from "@vuetify/v0";
 import { computed, shallowRef, watch } from "vue";
 import { namesAsChoices } from "@/choice";
+import FormError from "@/components/FormError.vue";
 import ChoiceField from "@/components/ChoiceField.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
 import CollectionDialog from "@/components/CollectionDialog.vue";
@@ -357,23 +358,19 @@ function copyText() {
                         :readonly="!state.text.action"
                     />
                 </div>
-                <p
-                    v-if="textError"
-                    class="m-0 text-sm text-error break-words"
-                    data-testid="text-error"
-                    role="alert"
-                >
-                    {{ textError }}
-                </p>
                 <div class="flex justify-end gap-2">
                     <ButtonRoot
                         @click="copyText"
-                        class="btn-secondary mr-auto"
+                        class="btn-secondary"
                     >
                         <ButtonContent>
                             <CopiedLabel :copied />
                         </ButtonContent>
                     </ButtonRoot>
+                    <FormError
+                        :text="textError"
+                        data-testid="text-error"
+                    />
                     <DialogClose class="btn-ghost">
                         {{ $t(state.text.action ? "action.cancel" : "action.close") }}
                     </DialogClose>

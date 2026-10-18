@@ -5,6 +5,7 @@ import type { SessionTab } from "@/api";
 import { startupChoice, useAppearance } from "@/composables/appearance";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
+import { warnOnce } from "@/composables/unseen";
 import { isDoc } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
 import { storedStages } from "@/shell/pipeline";
@@ -75,7 +76,7 @@ export function useSession() {
         if (!keeping) return;
         clearTimeout(timer);
         timer = undefined;
-        void backend.saveSession(sessionOf(tabs.tabs, tabs.activeId, kept)).catch(error => console.warn("The session was not kept", error));
+        void backend.saveSession(sessionOf(tabs.tabs, tabs.activeId, kept)).catch(error => warnOnce("unseen.sessionNotSaved", error));
     }
 
     function restore(saved: SessionTab[]): number {
@@ -119,7 +120,7 @@ export function useSession() {
         try {
             saved = await backend.loadSession();
         } catch (error) {
-            console.warn("The last session could not be read", error);
+            warnOnce("unseen.sessionNotRead", error);
         }
         watch(() => JSON.stringify(sessionOf(tabs.tabs, tabs.activeId, kept)), () => {
             clearTimeout(timer);

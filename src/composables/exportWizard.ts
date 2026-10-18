@@ -5,6 +5,7 @@ import type { ExportOutcome } from "@/api";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
 import { useWriteGuard } from "@/composables/writeGuard";
+import { ShellError } from "@/shell/message";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
@@ -140,7 +141,7 @@ export function useExportWizard() {
     async function start() {
         const state = wizard.state;
         if (state.format === "database" && notes.isReadonly({ connectionId: state.database.connectionId, database: state.database.database })) {
-            report(new Error(t("error.plan.readonlyTree", { name: state.database.database })));
+            report(new ShellError("error.plan.readonlyTree", { name: state.database.database }));
             return;
         }
         if (state.format === "database" && !await writeGuard.confirmJob(state.database.connectionId, state.database.database, t("export.menu"))) return;
@@ -164,7 +165,8 @@ export function useExportWizard() {
             // Rows that failed leave a warning that stays; the rows show why in the wizard.
             notices.notify({
                 kind: outcome.failed > 0 ? "warning" : "success",
-                title: t(outcome.failed > 0 ? "export.doneWithFailures" : "export.done", { documents: outcome.documents.toLocaleString(), failed: outcome.failed }, outcome.documents)
+                title: t(outcome.failed > 0 ? "export.doneWithFailures" : "export.done", { documents: outcome.documents.toLocaleString(), failed: outcome.failed }, outcome.documents),
+                sticky: outcome.failed > 0
             });
             if (state.format === "database") await connections.loadDatabases(state.database.connectionId).catch(() => undefined);
         } catch (error) {
@@ -173,7 +175,8 @@ export function useExportWizard() {
             for (const row of wizard.progress) {
                 if (row.state === "waiting" || row.state === "running") Object.assign(row, { state: "failed", error: message });
             }
-            report(error);
+            // The open wizard says it in its rows and footer; closed meanwhile, a card does.
+            if (!wizard.open) report(error);
         } finally {
             wizard.runId = undefined;
         }

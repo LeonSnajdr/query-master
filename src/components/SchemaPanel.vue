@@ -3,6 +3,7 @@ import { ButtonContent, ButtonRoot } from "@vuetify/v0";
 import { computed, shallowRef } from "vue";
 import { useI18n } from "vue-i18n";
 import ChoiceField from "@/components/ChoiceField.vue";
+import ErrorState from "@/components/ErrorState.vue";
 import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
 import { preview, toShell } from "@/shell/ejson";
@@ -220,17 +221,16 @@ function otherType(field: FieldStats): { type: ValueType; count: number } | unde
             >{{ $t("schema.clickHint") }}</span>
         </div>
 
-        <p
-            v-if="tab.error"
-            class="m-0 shrink-0 mx-5 my-1 px-3 py-2 rounded-sm bg-error/12 text-error font-mono text-[13px]"
-            role="alert"
-        >
-            {{ typeof tab.error === "string" ? tab.error : $t(tab.error.key, tab.error.params ?? {}) }}
-        </p>
-
         <div class="grow min-h-0 overflow-auto px-5 pb-4">
+            <!-- A failed analysis takes the place of the figures, as a failed query that of its result. -->
+            <ErrorState
+                v-if="tab.error"
+                :detail="typeof tab.error === 'string' ? tab.error : $t(tab.error.key, tab.error.params ?? {})"
+                :title="$t('schema.failed')"
+                data-testid="schema-error"
+            />
             <p
-                v-if="!schema"
+                v-else-if="!schema"
                 class="m-0 py-3 text-on-surface-variant"
             >
                 {{ tab.running ? $t("schema.reading") : $t("schema.notYet") }}

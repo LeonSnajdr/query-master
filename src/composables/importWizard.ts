@@ -5,6 +5,7 @@ import type { ImportOutcome } from "@/api";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
 import { useWriteGuard } from "@/composables/writeGuard";
+import { ShellError } from "@/shell/message";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
@@ -102,7 +103,7 @@ export function useImportWizard() {
         const state = wizard.state;
         const locked = state.rows.find(row => notes.isReadonly({ connectionId: state.connectionId, database: row.database.trim(), collection: row.collection.trim() }));
         if (locked) {
-            report(new Error(t("error.plan.readonlyTree", { name: `${locked.database}.${locked.collection}` })));
+            report(new ShellError("error.plan.readonlyTree", { name: `${locked.database}.${locked.collection}` }));
             return;
         }
         const databases = [...new Set(state.rows.map(row => row.database.trim()))].join(", ");
@@ -123,14 +124,16 @@ export function useImportWizard() {
             // Files that failed leave a warning that stays; the rows show why in the wizard.
             notices.notify({
                 kind: outcome.failed > 0 ? "warning" : "success",
-                title: t(outcome.failed > 0 ? "import.doneWithFailures" : "import.done", { documents: outcome.documents.toLocaleString(), failed: outcome.failed }, outcome.documents)
+                title: t(outcome.failed > 0 ? "import.doneWithFailures" : "import.done", { documents: outcome.documents.toLocaleString(), failed: outcome.failed }, outcome.documents),
+                sticky: outcome.failed > 0
             });
         } catch (error) {
             const message = say(errorMessage(error));
             for (const row of wizard.progress) {
                 if (row.state === "waiting" || row.state === "running") Object.assign(row, { state: "failed", error: message });
             }
-            report(error);
+            // The open wizard says it in its rows and footer; closed meanwhile, a card does.
+            if (!wizard.open) report(error);
         } finally {
             wizard.runId = undefined;
             busy.value = false;

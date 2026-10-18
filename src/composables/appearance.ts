@@ -5,6 +5,7 @@ import { LOCALES } from "../../i18n/i18n.config";
 import type { AppLocale } from "../../i18n/i18n.config";
 import { backend } from "@/api";
 import type { Setting } from "@/api";
+import { warnOnce } from "@/composables/unseen";
 import { THEMES } from "@/plugins/vuetify";
 import type { ThemeName } from "@/plugins/vuetify";
 
@@ -51,7 +52,7 @@ function takeLegacy(key: string): string | null {
 }
 
 function save(): void {
-    void backend.saveSetting({ ...chosen }).catch(error => console.warn("Settings were not saved", error));
+    void backend.saveSetting({ ...chosen }).catch(error => warnOnce("unseen.settingsNotSaved", error));
 }
 
 function apply(): void {
@@ -74,7 +75,7 @@ export async function loadAppearance(): Promise<void> {
             save();
         }
     } catch (error) {
-        console.warn("Settings could not be read", error);
+        warnOnce("unseen.settingsNotRead", error);
     }
     apply();
 }
