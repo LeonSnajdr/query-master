@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogRoot, DialogTitle, SwitchRoot, SwitchThumb, SwitchTrack, TabsItem, TabsList, TabsPanel, TabsRoot } from "@vuetify/v0";
-import { computed, nextTick, shallowRef, watch } from "vue";
+import { computed, nextTick, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
 import FormError from "@/components/FormError.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
 import ChoiceField from "@/components/ChoiceField.vue";
+import CollationFields from "@/components/CollationFields.vue";
 import { useMessages } from "@/composables/messages";
 import type { CollectionRequest } from "@/composables/dialogs";
 import { isDoc, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 import { parseValue } from "@/shell/parse";
+import { collationDoc, emptyCollation } from "@/shell/collation";
+import type { CollationForm } from "@/shell/collation";
 import { replyError } from "@/shell/plan";
 import { useConnectionsStore } from "@/stores/connections";
 
@@ -26,8 +29,6 @@ const open = defineModel<boolean>({ default: false });
 const LEVELS = ["off", "strict", "moderate"] as const;
 const ACTIONS = ["error", "warn"] as const;
 const GRANULARITIES = ["seconds", "minutes", "hours"] as const;
-/** Collation locales offered; MongoDB knows more, typed ones are taken too. */
-const LOCALES = ["", "simple", "de", "en", "en_US", "es", "fr", "it", "nl", "pl", "pt", "sv", "tr", "zh"];
 
 const { t } = useI18n();
 const { say } = useMessages();
@@ -45,7 +46,7 @@ const granularity = shallowRef<typeof GRANULARITIES[number]>("seconds");
 const level = shallowRef<typeof LEVELS[number]>("off");
 const action = shallowRef<typeof ACTIONS[number]>("error");
 const validator = shallowRef("{\n    \n}");
-const locale = shallowRef("");
+const collation = ref<CollationForm>(emptyCollation());
 const viewOn = shallowRef("");
 const pipeline = shallowRef("[\n    \n]");
 const busy = shallowRef(false);
@@ -57,7 +58,6 @@ const levelsApply = computed(() => mode.value === "validator" || validator.value
 const tabs = computed(() => (mode.value === "view" ? ["view", "collation"] : mode.value === "validator" ? ["validator"] : ["options", "validator", "collation"]));
 const collections = computed(() => (props.request ? connections.collectionsOf(props.request.connectionId, props.request.database) : []));
 const option = <T extends string>(values: readonly T[], prefix: string) => values.map(value => ({ value, label: t(`${prefix}.${value}`) }));
-const localeOptions = computed(() => LOCALES.map(value => ({ value, label: value || t("collectionDialog.locale.none") })));
 const sourceOptions = computed(() => collections.value.map(value => ({ value, label: value })));
 const title = computed(() => t(`collectionDialog.title.${mode.value}`));
 
@@ -87,7 +87,7 @@ watch([open, () => props.request], async ([isOpen]) => {
     level.value = mode.value === "validator" ? "strict" : "off";
     action.value = "error";
     validator.value = "{\n    \n}";
-    locale.value = "";
+    collation.value = emptyCollation();
     viewOn.value = props.request.collection ?? collections.value[0] ?? "";
     pipeline.value = props.request.pipeline ?? "[\n    \n]";
     if (mode.value === "validator") await loadValidator(props.request).catch(cause => (error.value = say(errorMessage(cause))));
@@ -115,12 +115,13 @@ function command(): Doc {
     const validation: Doc = Object.keys(validatorValue).length > 0 || mode.value === "validator"
         ? { validator: validatorValue, validationLevel: level.value, validationAction: action.value }
         : {};
-    const collation: Doc = locale.value ? { collation: { locale: locale.value } } : {};
+    const chosen = collationDoc(collation.value);
+    const collationPart: Doc = chosen ? { collation: chosen } : {};
     if (mode.value === "validator") return { collMod: name.value, ...validation };
     if (mode.value === "view") {
         const stages = parse(pipeline.value, t("collectionDialog.pipeline"));
         if (!Array.isArray(stages)) throw new Error(t("collectionDialog.error.pipeline"));
-        return { create: name.value.trim(), viewOn: viewOn.value, pipeline: stages, ...collation };
+        return { create: name.value.trim(), viewOn: viewOn.value, pipeline: stages, ...collationPart };
     }
     const result: Doc = { create: name.value.trim() };
     if (capped.value) {
@@ -132,7 +133,7 @@ function command(): Doc {
         if (!timeField.value.trim()) throw new Error(t("collectionDialog.error.timeField"));
         result.timeseries = { timeField: timeField.value.trim(), ...(metaField.value.trim() ? { metaField: metaField.value.trim() } : {}), granularity: granularity.value };
     }
-    return { ...result, ...validation, ...collation };
+    return { ...result, ...validation, ...collationPart };
 }
 
 async function save() {
@@ -315,16 +316,8 @@ async function save() {
                             </div>
                         </TabsPanel>
 
-                        <TabsPanel
-                            class="form-grid"
-                            value="collation"
-                        >
-                            <span>{{ $t("collectionDialog.locale") }}:</span>
-                            <ChoiceField
-                                v-model="locale"
-                                :label="$t('collectionDialog.locale')"
-                                :options="localeOptions"
-                            />
+                        <TabsPanel value="collation">
+                            <CollationFields v-model="collation" />
                         </TabsPanel>
                     </div>
                 </TabsRoot>

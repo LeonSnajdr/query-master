@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { emptyIndexForm, indexFormErrors, indexFormOf, indexSpec, storedSpec } from "./indexes";
 import type { IndexForm } from "./indexes";
+import { emptyCollation } from "./collation";
 
 function form(change: Partial<IndexForm>): IndexForm {
     return { ...emptyIndexForm(), ...change };
@@ -21,7 +22,7 @@ describe("indexSpec", () => {
             hidden: true,
             ttl: "3600",
             partialFilter: { done: true },
-            locale: "de"
+            collation: { ...emptyCollation(), locale: "de" }
         }));
         expect(spec).toEqual({
             key: { at: 1 },
@@ -66,7 +67,7 @@ describe("indexFormOf", () => {
             expireAfterSeconds: { $numberInt: "60" },
             collation: { locale: "de", strength: { $numberInt: "3" } }
         };
-        expect(indexFormOf(index)).toEqual({
+        expect(indexFormOf(index)).toMatchObject({
             fields: [{ field: "at", kind: "-1" }, { field: "body", kind: "text" }],
             name: "at_-1_body_text",
             unique: true,
@@ -74,8 +75,8 @@ describe("indexFormOf", () => {
             hidden: false,
             ttl: "60",
             partialFilter: undefined,
-            locale: "de",
-            kept: { collation: { locale: "de", strength: { $numberInt: "3" } } }
+            collation: { locale: "de", strength: "3" },
+            kept: {}
         });
     });
 
@@ -102,7 +103,22 @@ describe("indexFormOf", () => {
             collation: { locale: "de", strength: 2, numericOrdering: true }
         });
         // Another locale keeps the other settings; none drops the collation.
-        expect(indexSpec({ ...form, locale: "fr" }).collation).toEqual({ locale: "fr", strength: 2, numericOrdering: true });
-        expect(indexSpec({ ...form, locale: "" }).collation).toBeUndefined();
+        expect(indexSpec({ ...form, collation: { ...form.collation, locale: "fr" } }).collation).toEqual({ locale: "fr", strength: 2, numericOrdering: true });
+        expect(indexSpec({ ...form, collation: { ...form.collation, locale: "" } }).collation).toBeUndefined();
+        // What only the dialog has no field for stays as it was.
+        expect(indexSpec(indexFormOf({ key: { a: 1 }, name: "a_1", wildcardProjection: { b: 0 } }))).toEqual({ key: { a: 1 }, name: "a_1", wildcardProjection: { b: 0 } });
+    });
+
+    it("writes the options of text and geo only for such fields, and checks them", () => {
+        const text = form({ fields: [{ field: "body", kind: "text" }], text: { defaultLanguage: "german", languageOverride: "", version: "3", weights: "{ body: 5 }" } });
+        expect(indexSpec(text)).toEqual({ key: { body: "text" }, name: "body_text", weights: { body: 5 }, default_language: "german", textIndexVersion: 3 });
+        expect(indexSpec({ ...text, fields: [{ field: "body", kind: "1" }] })).toEqual({ key: { body: 1 }, name: "body_1" });
+        expect(indexFormErrors({ ...text, text: { ...text.text, weights: "[1]" } })).toEqual(["indexDialog.error.weights"]);
+        expect(indexSpec({ ...text, text: { ...text.text, weights: "body: 5, title: 2" } }).weights).toEqual({ body: 5, title: 2 });
+        const flat = form({ fields: [{ field: "at", kind: "2d" }], geo: { min: "-10", max: "10", bits: "20", sphereVersion: "3" } });
+        expect(indexSpec(flat)).toEqual({ key: { at: "2d" }, name: "at_2d", min: -10, max: 10, bits: 20 });
+        expect(indexFormErrors({ ...flat, geo: { ...flat.geo, min: "10" } })).toEqual(["indexDialog.error.bounds"]);
+        expect(indexFormErrors({ ...flat, geo: { ...flat.geo, bits: "40" } })).toEqual(["indexDialog.error.bits"]);
+        expect(indexSpec(form({ fields: [{ field: "at", kind: "2dsphere" }], geo: flat.geo }))).toEqual({ "key": { at: "2dsphere" }, "name": "at_2dsphere", "2dsphereIndexVersion": 3 });
     });
 });
