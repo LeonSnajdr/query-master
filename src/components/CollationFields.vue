@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import ChoiceField from "@/components/ChoiceField.vue";
-import { COLLATION_CHOICES, COLLATION_LOCALES, COLLATION_OPTIONS, optionsApply } from "@/shell/collation";
+import { COLLATION_CHOICES, COLLATION_LOCALES, COLLATION_OPTIONS, optionApplies } from "@/shell/collation";
 import type { CollationForm, CollationOption } from "@/shell/collation";
 
 /**
@@ -18,7 +18,6 @@ const localeOptions = computed(() => [
     { value: "", label: t("collectionDialog.locale.none") },
     ...COLLATION_LOCALES.map(value => ({ value, label: value }))
 ]);
-const apply = computed(() => optionsApply(form.value));
 
 function choices(option: CollationOption) {
     return COLLATION_CHOICES[option].map(value => ({ value, label: value === "" ? t("collation.default") : t(`collation.${option}.${value}`) }));
@@ -48,11 +47,11 @@ function set(option: CollationOption | "locale", value: string) {
             v-for="option in COLLATION_OPTIONS"
             :key="option"
         >
-            <span :class="apply ? '' : 'opacity-50'">{{ $t(`collation.${option}`) }}:</span>
+            <span :class="optionApplies(form, option) ? '' : 'opacity-50'">{{ $t(`collation.${option}`) }}:</span>
             <ChoiceField
                 @update:modelValue="(value: string) => set(option, value)"
                 :data-testid="`collation-${option}`"
-                :disabled="!apply"
+                :disabled="!optionApplies(form, option)"
                 :label="$t(`collation.${option}`)"
                 :modelValue="form[option]"
                 :options="choices(option)"

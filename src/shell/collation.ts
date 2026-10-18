@@ -52,6 +52,18 @@ export function optionsApply(form: CollationForm): boolean {
     return locale !== "" && locale !== "simple";
 }
 
+/**
+ * Whether an option can be set with the others as chosen: `caseFirst` needs the case level or a
+ * strength above 2 (the server refuses it otherwise), `maxVariable` takes effect only with
+ * `alternate: shifted`.
+ */
+export function optionApplies(form: CollationForm, option: CollationOption): boolean {
+    if (!optionsApply(form)) return false;
+    if (option === "caseFirst") return form.caseLevel === "true" || form.strength === "" || Number(form.strength) > 2;
+    if (option === "maxVariable") return form.alternate === "shifted";
+    return true;
+}
+
 const BOOLEAN_OPTIONS: CollationOption[] = ["caseLevel", "numericOrdering", "backwards", "normalization"];
 
 /** The collation document of the form; undefined without a locale. */
@@ -62,7 +74,7 @@ export function collationDoc(form: CollationForm): Doc | undefined {
     if (!optionsApply(form)) return doc;
     for (const option of COLLATION_OPTIONS) {
         const value = form[option];
-        if (value === "") continue;
+        if (value === "" || !optionApplies(form, option)) continue;
         if (option === "strength") doc.strength = Number(value);
         else if (BOOLEAN_OPTIONS.includes(option)) doc[option] = value === "true";
         else doc[option] = value;
