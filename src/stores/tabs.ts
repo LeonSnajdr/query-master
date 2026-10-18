@@ -857,6 +857,6 @@ export const useTabsStore = defineStore("tabs", () => {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, move, step,
         openSchema, analyzeSchema, browseFiltered, restoreTab, run, showResult, explainResult, stop, runStages, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
-        insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument
+        insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument, write
     };
 });

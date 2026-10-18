@@ -51,6 +51,8 @@ export interface TextRequest {
     text: string;
     /** With an action the text can be changed and is handed back. */
     action?: string;
+    /** A second button that hands the text back and keeps the dialog open for another one. */
+    again?: string;
     /** Checks the edited text; a string is shown as the error and the dialog stays open. */
     submit?: (text: string) => Promise<string | undefined> | string | undefined;
     /** Other forms of the text to switch between (the query in other languages); `text` is the first. */

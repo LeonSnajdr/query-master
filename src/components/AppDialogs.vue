@@ -70,13 +70,16 @@ function showVariant(index: number) {
     text.value = state.text?.variants?.[index]?.text ?? text.value;
 }
 
-async function submitText() {
+/** `again`: the dialog stays open with the text it started with, for the next one (*Save and continue*). */
+async function submitText(again = false) {
     const request = state.text;
     if (!request?.submit) return;
     busy.value = true;
     try {
         textError.value = await request.submit(text.value);
-        if (textError.value === undefined) state.text = undefined;
+        if (textError.value !== undefined) return;
+        if (again) text.value = request.variants?.[0]?.text ?? request.text;
+        else state.text = undefined;
     } catch (error) {
         report(error);
     } finally {
@@ -353,7 +356,7 @@ function copyText() {
                     <CodeEditor
                         :key="state.text.title + state.text.text.length + variant"
                         v-model="text"
-                        @run="submitText"
+                        @run="submitText()"
                         :label="state.text.title"
                         :readonly="!state.text.action"
                     />
@@ -375,8 +378,17 @@ function copyText() {
                         {{ $t(state.text.action ? "action.cancel" : "action.close") }}
                     </DialogClose>
                     <ButtonRoot
+                        v-if="state.text.again"
+                        @click="submitText(true)"
+                        :disabled="busy"
+                        class="btn-secondary"
+                        data-testid="text-submit-again"
+                    >
+                        <ButtonContent>{{ state.text.again }}</ButtonContent>
+                    </ButtonRoot>
+                    <ButtonRoot
                         v-if="state.text.action"
-                        @click="submitText"
+                        @click="submitText()"
                         :disabled="busy"
                         class="btn-primary"
                         data-testid="text-submit"

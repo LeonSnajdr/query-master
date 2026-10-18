@@ -26,6 +26,8 @@ import type { Doc, Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
 import type { Message } from "@/shell/message";
 import { parseValue } from "@/shell/parse";
+import { fieldCommand } from "@/shell/fields";
+import type { FieldChange, FieldCondition, FieldScope } from "@/shell/fields";
 import { CODE_LANGUAGES, queryCode } from "@/shell/code";
 import { isWrite } from "@/shell/plan";
 import { PAGE_SIZES, useTabsStore } from "@/stores/tabs";
@@ -35,6 +37,8 @@ import type { Fold, ResultTarget } from "./result-context";
 import PlanView from "./PlanView.vue";
 import ResultTable from "./ResultTable.vue";
 import TreeRow from "./TreeRow.vue";
+import FieldDialog from "./FieldDialog.vue";
+import type { FieldRequest } from "./FieldDialog.vue";
 
 /** What a query returned: paging, the tools for documents, and the tree, table or JSON view. */
 const props = defineProps<{
@@ -121,9 +125,29 @@ function onResultKey(event: KeyboardEvent) {
     if (keymap.matches(event, "result.expand")) setFold(true, selected.value, selectedPath.value);
     else if (keymap.matches(event, "result.collapse")) setFold(false, selected.value, selectedPath.value);
     else if (keymap.matches(event, "result.pin") && selectedPath.value !== "") togglePin(selectedPath.value);
+    else if (fieldKey(event)) return;
     else return;
     // Without it the web view opens its downloads (Ctrl+J) or prints (Ctrl+P).
     event.preventDefault();
+}
+
+/** The keys of the field dialogs on the chosen field (adding also on the document); true when one acted. */
+function fieldKey(event: KeyboardEvent): boolean {
+    const index = selected.value;
+    const document = documentAt(index);
+    if (index === undefined || !document || !editable.value) return false;
+    const path = selectedPath.value;
+    const target: ResultTarget = { index, path, value: path ? valueAtPath(document, path) ?? null : document };
+    const onField = path !== "" && path !== "_id";
+    let mode: FieldRequest["mode"] | undefined;
+    if (keymap.matches(event, "field.add")) mode = "add";
+    else if (keymap.matches(event, "field.edit") && onField) mode = "edit";
+    else if (keymap.matches(event, "field.rename") && onField) mode = "rename";
+    else if (keymap.matches(event, "field.remove") && onField) mode = "remove";
+    if (!mode) return false;
+    event.preventDefault();
+    openField(mode, target);
+    return true;
 }
 
 /** The value a text stands for, or the message why it is none. */
@@ -151,6 +175,8 @@ function addDocument() {
         title: t("document.add"),
         text: "{\n    \n}",
         action: t("action.insert"),
+        // *Save and continue*: insert, and the dialog stays for the next document.
+        again: t("document.insertAndContinue"),
         submit: async (text) => {
             const parsed = parse(text);
             if ("error" in parsed) return parsed.error;
@@ -269,9 +295,50 @@ async function commit(target: ResultTarget, text: string) {
     wrote(await tabs.setField(tab.value, document._id!, target.path, parsed.value));
 }
 
-async function removeField(target: ResultTarget) {
+/** The field dialog (add, edit, rename, delete, append) *Fields* menu. */
+const fieldRequest = shallowRef<FieldRequest>();
+const fieldOpen = shallowRef(false);
+
+/** The filter of the query in the tab, when its documents come from a `find`. */
+function queryFilter(): Doc | undefined {
+    const command = tab.value.plan?.command;
+    if (command?.find === undefined) return undefined;
+    return isDoc(command.filter) ? command.filter : {};
+}
+
+function openField(mode: FieldRequest["mode"], target: ResultTarget) {
     const document = documentAt(target.index);
-    if (document) wrote(await tabs.removeField(tab.value, document._id!, target.path));
+    if (!document) return;
+    const ids = [...marked.value].map(index => documentAt(index)?._id).filter((id): id is Json => id !== undefined);
+    const dot = target.path.lastIndexOf(".");
+    const parent = dot === -1 ? "" : target.path.slice(0, dot);
+    const own = dot === -1 ? target.path : target.path.slice(dot + 1);
+    // Adding on a sub document adds into it; on any other field beside it.
+    const into = mode === "add" && (target.path === "" || isDoc(target.value));
+    fieldRequest.value = {
+        mode,
+        parent: into ? target.path : parent,
+        name: mode === "add" ? "" : own,
+        value: mode === "edit" ? target.value : undefined,
+        target: { id: document._id!, selected: ids.length > 1 ? ids : [document._id!], query: queryFilter() }
+    };
+    fieldOpen.value = true;
+}
+
+async function duplicateDocument(index: number) {
+    const document = documentAt(index);
+    if (!document) return;
+    const copy = { ...document };
+    delete copy._id;
+    wrote(await tabs.insertDocuments(tab.value, [copy]));
+}
+
+async function submitField(change: FieldChange, scope: FieldScope, condition: FieldCondition): Promise<string | undefined> {
+    const target = fieldRequest.value?.target;
+    if (!target) return undefined;
+    const failure = await tabs.write(tab.value, collection => fieldCommand(collection, change, target, scope, condition));
+    if (failure === undefined) return undefined;
+    return typeof failure === "string" ? failure : say(failure);
 }
 
 async function copy(text: string) {
@@ -496,6 +563,8 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
             icon: "i-lucide-files",
             children: [
                 { label: t("document.add"), icon: "i-lucide-file-plus-2", action: addDocument, disabled: locked },
+                // *Duplicate document*: the same document under a new `_id`.
+                { label: t("document.duplicate"), icon: "i-lucide-copy-plus", action: () => void duplicateDocument(target.index), disabled: !document || !editable.value },
                 { label: t("document.remove"), icon: "i-lucide-file-x-2", danger: true, action: () => void removeDocument(target.index), disabled: !document || !editable.value },
                 { label: t("document.refresh"), icon: "i-lucide-rotate-cw", action: () => void tabs.refreshDocument(tab.value, target.index).catch(report), disabled: !document || collection.value === undefined },
                 "separator",
@@ -510,7 +579,12 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
             label: t("menu.fields"),
             icon: "i-lucide-list-tree",
             children: [
-                { label: t("field.remove"), action: () => void removeField(target), disabled: !field || !editable.value || target.path === "_id" },
+                //: adding works on any row; the rest needs a field (not `_id`).
+                { label: `${t("field.title.add")} …`, icon: "i-lucide-list-plus", command: "field.add", action: () => openField("add", target), disabled: !document || !editable.value },
+                { label: `${t("field.title.edit")} …`, icon: "i-lucide-pencil", command: "field.edit", action: () => openField("edit", target), disabled: !field || !editable.value || target.path === "_id" },
+                { label: `${t("field.title.rename")} …`, command: "field.rename", action: () => openField("rename", target), disabled: !field || !editable.value || target.path === "_id" || /\.\d+(\.|$)/.test(target.path) },
+                { label: `${t("field.title.remove")} …`, icon: "i-lucide-trash-2", danger: true, command: "field.remove", action: () => openField("remove", target), disabled: !field || !editable.value || target.path === "_id" },
+                ...(Array.isArray(target.value) && field ? [{ label: `${t("field.title.push")} …`, action: () => openField("push", target), disabled: !editable.value }] : []),
                 "separator",
                 { label: t("result.expand.node"), command: "result.expand", action: () => setFold(true, target.index, target.path) },
                 { label: t("result.collapse.node"), command: "result.collapse", action: () => setFold(false, target.index, target.path) },
@@ -811,5 +885,10 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
         </div>
 
         <ContextMenu ref="menu" />
+        <FieldDialog
+            v-model="fieldOpen"
+            :request="fieldRequest"
+            :submit="submitField"
+        />
     </section>
 </template>
