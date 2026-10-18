@@ -14,6 +14,7 @@ mod saved_query;
 mod script;
 mod session;
 mod setting;
+mod ssh;
 mod transfer;
 mod tree;
 
@@ -35,6 +36,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             connection::commands::connection_list,
             connection::commands::connection_uri,
+            connection::commands::connection_ssh,
             connection::commands::connection_save,
             connection::commands::connection_delete,
             connection::commands::connection_set_environment,

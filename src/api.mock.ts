@@ -90,6 +90,7 @@ function valueGroups(pipeline: Json[]): Doc[] | undefined {
 export const mockBackend: Backend = {
     listConnections: async () => [...profiles],
     connectionUri: async () => "mongodb://localhost:27017",
+    connectionSsh: async () => null,
     saveConnection: async (input) => {
         const profile = { id: input.id ?? `mock-${profiles.length}`, name: input.name, address: input.uri.replace(/\/\/[^@/]*@/, "//"), environment: input.environment ?? null };
         const index = profiles.findIndex(item => item.id === profile.id);

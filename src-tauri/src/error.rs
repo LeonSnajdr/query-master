@@ -26,6 +26,10 @@ pub enum Error {
     ScriptStopped,
     #[error("the query was stopped")]
     QueryStopped,
+    #[error("the SSH server could not be used: {0}")]
+    Ssh(String),
+    #[error("the SSH server did not accept the login")]
+    SshAuthentication,
     #[error("there is no collection {0}")]
     CollectionMissing(String),
     #[error("the export or import was stopped")]
@@ -73,6 +77,8 @@ impl Error {
             Self::ReadOnly => Some("error.plan.readonly"),
             Self::ScriptStopped => Some("error.script.stopped"),
             Self::QueryStopped => Some("error.query.stopped"),
+            Self::Ssh(_) => Some("error.backend.ssh"),
+            Self::SshAuthentication => Some("error.backend.sshAuthentication"),
             Self::CollectionMissing(_) => Some("error.copy.missing"),
             Self::TransferStopped => Some("error.transfer.stopped"),
             Self::ImportShape => Some("error.transfer.shape"),
@@ -96,6 +102,7 @@ impl Error {
             | Self::ReadOnly
             | Self::ScriptStopped
             | Self::QueryStopped
+            | Self::SshAuthentication
             | Self::TransferStopped
             | Self::ImportShape
             | Self::WritingPipeline
@@ -104,6 +111,7 @@ impl Error {
             | Self::QueryName => None,
             Self::OutputName(name) | Self::ImportText(name) => Some(name.clone()),
             Self::CollectionMissing(name) => Some(name.clone()),
+            Self::Ssh(message) => Some(message.clone()),
             Self::Script(message) | Self::Environment(message) => Some(message.clone()),
             Self::ExtendedJson(cause) => Some(cause.clone()),
             Self::Keychain(cause) | Self::KeychainRead(cause) | Self::KeychainWrite(cause) => {

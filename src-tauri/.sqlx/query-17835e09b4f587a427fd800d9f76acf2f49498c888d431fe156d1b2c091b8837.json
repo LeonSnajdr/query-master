@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n                    insert into connection_ssh (connection_id, host, port, username, method, key_path)\n                    values ($1, $2, $3, $4, $5, $6)\n                    on conflict (connection_id) do update set\n                        host = excluded.host,\n                        port = excluded.port,\n                        username = excluded.username,\n                        method = excluded.method,\n                        key_path = excluded.key_path\n                ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "17835e09b4f587a427fd800d9f76acf2f49498c888d431fe156d1b2c091b8837"
+}

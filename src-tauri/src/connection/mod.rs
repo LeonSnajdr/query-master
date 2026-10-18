@@ -11,6 +11,7 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::error::{Error, Result};
+use crate::ssh::{SshMethod, SshSettings};
 
 /// A saved connection, as it lies in the table and as the frontend gets it.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -38,6 +39,9 @@ pub struct SaveConnection {
     pub uri: String,
     #[serde(default)]
     pub environment: Option<String>,
+    /// Through an SSH server; absent for a direct connection.
+    #[serde(default)]
+    pub ssh: Option<SshSettings>,
 }
 
 /// The kinds of use a connection can be marked with.
@@ -85,7 +89,42 @@ pub async fn save(pool: &SqlitePool, input: SaveConnection) -> Result<Connection
     // The secret first: a row without its connection string could not be opened.
     keychain::write(connection.id, uri)?;
     repository::upsert(pool, &connection).await?;
+    let ssh = input.ssh.as_ref().map(|ssh| repository::SshRow {
+        host: ssh.host.trim().to_owned(),
+        port: i64::from(ssh.port),
+        username: ssh.username.trim().to_owned(),
+        method: match ssh.method {
+            SshMethod::Password => "password",
+            SshMethod::Key => "key",
+        }
+        .to_owned(),
+        key_path: ssh.key_path.trim().to_owned(),
+    });
+    keychain::write_ssh(
+        connection.id,
+        input.ssh.as_ref().map_or("", |ssh| ssh.secret.as_str()),
+    )?;
+    repository::set_ssh(pool, connection.id, ssh.as_ref()).await?;
     Ok(connection)
+}
+
+/// The SSH part of a saved connection with its secret; `None` for a direct connection.
+pub async fn ssh(pool: &SqlitePool, id: Uuid) -> Result<Option<SshSettings>> {
+    let Some(row) = repository::ssh(pool, id).await? else {
+        return Ok(None);
+    };
+    Ok(Some(SshSettings {
+        host: row.host,
+        port: u16::try_from(row.port).unwrap_or(22),
+        username: row.username,
+        method: if row.method == "key" {
+            SshMethod::Key
+        } else {
+            SshMethod::Password
+        },
+        key_path: row.key_path,
+        secret: keychain::read_ssh(id)?,
+    }))
 }
 
 /// Marks a connection (from its menu in the tree); `None` takes the mark away.
@@ -103,6 +142,7 @@ pub async fn mark_used(pool: &SqlitePool, id: Uuid) -> Result<()> {
 
 pub async fn delete(pool: &SqlitePool, id: Uuid) -> Result<()> {
     repository::delete(pool, id).await?;
+    keychain::delete_ssh(id)?;
     keychain::delete(id)
 }
 

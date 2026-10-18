@@ -38,3 +38,12 @@ pub async fn connection_set_environment(
 pub async fn connection_delete(pool: State<'_, SqlitePool>, id: Uuid) -> Result<()> {
     super::delete(&pool, id).await
 }
+
+/// The SSH part of a saved connection, for the dialog; `null` for a direct connection.
+#[tauri::command]
+pub async fn connection_ssh(
+    pool: State<'_, SqlitePool>,
+    id: Uuid,
+) -> Result<Option<crate::ssh::SshSettings>> {
+    super::ssh(&pool, id).await
+}

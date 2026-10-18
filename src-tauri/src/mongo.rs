@@ -11,7 +11,7 @@ use std::{
 use futures_util::TryStreamExt;
 use mongodb::{
     bson::{doc, Bson, Document},
-    options::ClientOptions,
+    options::{ClientOptions, ServerAddress},
     Client,
 };
 use serde::Serialize;
@@ -22,21 +22,46 @@ use crate::{
     connection,
     error::{Error, Result},
     runs::Runs,
+    ssh::{SshSettings, Tunnel},
 };
 
 /// Without a timeout in the connection string a wrong address would block for 30 seconds.
 const SERVER_SELECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Default)]
-pub struct Clients(Mutex<HashMap<String, Client>>);
+pub struct Clients(Mutex<HashMap<String, Session>>);
+
+/// An open connection; through an SSH server its tunnel lives as long as it does.
+struct Session {
+    client: Client,
+    _tunnel: Option<Tunnel>,
+}
 
 impl Clients {
     pub(crate) fn get(&self, id: &str) -> Result<Client> {
-        self.lock().get(id).cloned().ok_or(Error::NotConnected)
+        self.lock()
+            .get(id)
+            .map(|session| session.client.clone())
+            .ok_or(Error::NotConnected)
+    }
+
+    /// Puts a connection under `id`; the one there before is closed, at once: waiting would wait
+    /// for queries still running on it.
+    async fn replace(&self, id: String, client: Client, tunnel: Option<Tunnel>) {
+        let previous = self.lock().insert(
+            id,
+            Session {
+                client,
+                _tunnel: tunnel,
+            },
+        );
+        if let Some(previous) = previous {
+            previous.client.shutdown().immediate(true).await;
+        }
     }
 
     // The map stays usable after a panic elsewhere: an entry is inserted or removed whole.
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Client>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Session>> {
         self.0
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -60,6 +85,17 @@ pub struct CursorPage {
 }
 
 async fn open(uri: &str) -> Result<(Client, ServerInfo)> {
+    let (client, info, _) = open_through(uri, None).await?;
+    Ok((client, info))
+}
+
+/// Opens a client, through an SSH server when there is one: the driver then talks to the local
+/// end of the tunnel, directly (a replica set behind it would name hosts it cannot reach), and
+/// the tunnel goes to the first host of the string as the SSH server sees it.
+async fn open_through(
+    uri: &str,
+    ssh: Option<&SshSettings>,
+) -> Result<(Client, ServerInfo, Option<Tunnel>)> {
     let mut options = ClientOptions::parse(uri).await?;
     options
         .app_name
@@ -67,13 +103,30 @@ async fn open(uri: &str) -> Result<(Client, ServerInfo)> {
     options
         .server_selection_timeout
         .get_or_insert(SERVER_SELECTION_TIMEOUT);
+    let tunnel = match ssh {
+        Some(settings) => {
+            let (host, port) = match options.hosts.first() {
+                Some(ServerAddress::Tcp { host, port }) => (host.clone(), port.unwrap_or(27017)),
+                _ => ("localhost".to_owned(), 27017),
+            };
+            let tunnel = crate::ssh::open(settings, &host, port).await?;
+            options.hosts = vec![ServerAddress::Tcp {
+                host: "127.0.0.1".to_owned(),
+                port: Some(tunnel.local_port),
+            }];
+            options.direct_connection = Some(true);
+            options.repl_set_name = None;
+            Some(tunnel)
+        }
+        None => None,
+    };
     let client = Client::with_options(options)?;
     let info = client
         .database("admin")
         .run_command(doc! { "buildInfo": 1 })
         .await?;
     let version = info.get_str("version").unwrap_or("unknown").to_string();
-    Ok((client, ServerInfo { version }))
+    Ok((client, ServerInfo { version }, tunnel))
 }
 
 pub(crate) fn to_document(command: Value) -> Result<Document> {
@@ -87,9 +140,10 @@ pub(crate) fn to_json(document: Document) -> Value {
     Bson::Document(document).into_canonical_extjson()
 }
 
+/// Tries a connection from the dialog, through its SSH server when it has one.
 #[tauri::command]
-pub async fn test_connection(uri: String) -> Result<ServerInfo> {
-    let (client, info) = open(uri.trim()).await?;
+pub async fn test_connection(uri: String, ssh: Option<SshSettings>) -> Result<ServerInfo> {
+    let (client, info, _tunnel) = open_through(uri.trim(), ssh.as_ref()).await?;
     client.shutdown().await;
     Ok(info)
 }
@@ -100,14 +154,10 @@ pub async fn connect(
     pool: State<'_, sqlx::SqlitePool>,
     id: uuid::Uuid,
 ) -> Result<ServerInfo> {
-    let (client, info) = open(&connection::uri(id)?).await?;
+    let ssh = connection::ssh(&pool, id).await?;
+    let (client, info, tunnel) = open_through(&connection::uri(id)?, ssh.as_ref()).await?;
     connection::mark_used(&pool, id).await?;
-    let id = id.to_string();
-    let previous = clients.lock().insert(id, client);
-    if let Some(previous) = previous {
-        // Immediate: without it the call would wait for queries still running on the old client.
-        previous.shutdown().immediate(true).await;
-    }
+    clients.replace(id.to_string(), client, tunnel).await;
     Ok(info)
 }
 
@@ -132,10 +182,7 @@ pub async fn connect_uri(
         return Err(Error::UriScheme);
     }
     let (client, info) = open(uri).await?;
-    let previous = clients.lock().insert(id, client);
-    if let Some(previous) = previous {
-        previous.shutdown().immediate(true).await;
-    }
+    clients.replace(id, client, None).await;
     Ok(UriConnection {
         version: info.version,
         address: connection::address_of(uri),
@@ -144,10 +191,11 @@ pub async fn connect_uri(
 
 #[tauri::command]
 pub async fn disconnect(clients: State<'_, Clients>, id: String) -> Result<()> {
-    let client = clients.lock().remove(&id);
-    if let Some(client) = client {
-        // Immediate: disconnecting must not wait for a query that is still running.
-        client.shutdown().immediate(true).await;
+    let session = clients.lock().remove(&id);
+    if let Some(session) = session {
+        // Immediate: disconnecting must not wait for a query that is still running. The tunnel
+        // closes after the client, when the session goes.
+        session.client.shutdown().immediate(true).await;
     }
     Ok(())
 }
@@ -271,6 +319,102 @@ async fn read_cursor(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// An SSH server for the tests: takes the password `secret` and forwards `direct-tcpip`.
+    struct ForwardingServer;
+
+    impl russh::server::Handler for ForwardingServer {
+        type Error = russh::Error;
+
+        async fn auth_password(
+            &mut self,
+            _user: &str,
+            password: &str,
+        ) -> std::result::Result<russh::server::Auth, Self::Error> {
+            Ok(if password == "secret" {
+                russh::server::Auth::Accept
+            } else {
+                russh::server::Auth::reject()
+            })
+        }
+
+        async fn channel_open_direct_tcpip(
+            &mut self,
+            channel: russh::Channel<russh::server::Msg>,
+            host: &str,
+            port: u32,
+            _originator_address: &str,
+            _originator_port: u32,
+            reply: russh::server::ChannelOpenHandle,
+            _session: &mut russh::server::Session,
+        ) -> std::result::Result<(), Self::Error> {
+            let target = format!("{host}:{port}");
+            reply.accept().await;
+            tokio::spawn(async move {
+                if let Ok(mut socket) = tokio::net::TcpStream::connect(target).await {
+                    let mut stream = channel.into_stream();
+                    let _ = tokio::io::copy_bidirectional(&mut socket, &mut stream).await;
+                }
+            });
+            Ok(())
+        }
+    }
+
+    /// Starts the test SSH server on a free local port.
+    async fn forwarding_server() -> u16 {
+        let key = russh::keys::ssh_key::private::Ed25519Keypair::from_seed(&[7; 32]);
+        let config = std::sync::Arc::new(russh::server::Config {
+            keys: vec![russh::keys::PrivateKey::from(key)],
+            ..Default::default()
+        });
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((socket, _)) = listener.accept().await {
+                let config = config.clone();
+                tokio::spawn(async move {
+                    if let Ok(session) =
+                        russh::server::run_stream(config, socket, ForwardingServer).await
+                    {
+                        let _ = session.await;
+                    }
+                });
+            }
+        });
+        port
+    }
+
+    /// Against a real server through an SSH server in the test: the tunnel carries the
+    /// connection, and a wrong password is refused.
+    #[tokio::test]
+    #[ignore]
+    async fn connects_through_an_ssh_server() {
+        let uri = std::env::var("QUERYMASTER_TEST_URI")
+            .unwrap_or_else(|_| "mongodb://localhost:27017".into());
+        let port = forwarding_server().await;
+        let mut settings = SshSettings {
+            host: "127.0.0.1".into(),
+            port,
+            username: "tester".into(),
+            method: crate::ssh::SshMethod::Password,
+            key_path: String::new(),
+            secret: "secret".into(),
+        };
+        let (client, info, tunnel) = open_through(&uri, Some(&settings)).await.unwrap();
+        assert!(!info.version.is_empty());
+        assert!(tunnel.is_some());
+        let names = client.list_database_names().await.unwrap();
+        assert!(names.iter().any(|name| name == "admin"));
+        client.shutdown().immediate(true).await;
+
+        settings.secret = "wrong".into();
+        assert!(matches!(
+            open_through(&uri, Some(&settings)).await,
+            Err(Error::SshAuthentication)
+        ));
+    }
 
     #[test]
     fn commands_keep_key_order_and_types() {

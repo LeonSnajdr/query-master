@@ -17,12 +17,26 @@ export interface Profile {
     environment?: Environment | null;
 }
 
+export type SshMethod = "password" | "key";
+
+/** The SSH server a connection goes through; `secret` is the password or the key's passphrase. */
+export interface SshSettings {
+    host: string;
+    port: number;
+    username: string;
+    method: SshMethod;
+    keyPath: string;
+    secret: string;
+}
+
 export interface ProfileInput {
     /** Absent for a new connection. */
     id?: string;
     name: string;
     uri: string;
     environment?: Environment | null;
+    /** Through an SSH server; absent or null for a direct connection. */
+    ssh?: SshSettings | null;
 }
 
 export interface KeybindingChange {
@@ -140,11 +154,13 @@ export interface CursorPage {
 export interface Backend {
     listConnections: () => Promise<Profile[]>;
     connectionUri: (id: string) => Promise<string>;
+    /** The SSH part of a saved connection with its secret; null for a direct one. */
+    connectionSsh: (id: string) => Promise<SshSettings | null>;
     saveConnection: (input: ProfileInput) => Promise<Profile>;
     /** Marks a saved connection as development, test or production; `null` takes the mark away. */
     setConnectionEnvironment: (id: string, environment: Environment | null) => Promise<void>;
     deleteConnection: (id: string) => Promise<void>;
-    testConnection: (uri: string) => Promise<ServerInfo>;
+    testConnection: (uri: string, ssh?: SshSettings | null) => Promise<ServerInfo>;
     connect: (id: string) => Promise<ServerInfo>;
     /** Connects with a string that is not saved; the session lives under `id` until `disconnect`. */
     connectUri: (id: string, uri: string) => Promise<ServerInfo & { address: string }>;
@@ -215,10 +231,11 @@ export interface Backend {
 const tauriBackend: Backend = {
     listConnections: () => invoke("connection_list"),
     connectionUri: id => invoke("connection_uri", { id }),
+    connectionSsh: id => invoke("connection_ssh", { id }),
     saveConnection: input => invoke("connection_save", { input }),
     setConnectionEnvironment: (id, environment) => invoke("connection_set_environment", { id, environment }),
     deleteConnection: id => invoke("connection_delete", { id }),
-    testConnection: uri => invoke("test_connection", { uri }),
+    testConnection: (uri, ssh) => invoke("test_connection", { uri, ssh: ssh ?? null }),
     connect: id => invoke("connect", { id }),
     connectUri: (id, uri) => invoke("connect_uri", { id, uri }),
     disconnect: id => invoke("disconnect", { id }),
