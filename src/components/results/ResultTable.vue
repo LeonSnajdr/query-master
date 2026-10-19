@@ -469,8 +469,9 @@ function onKey(event: KeyboardEvent) {
                             :label="column"
                             :suggest="context.suggest?.(fullPath(column))"
                             :value="cell(value, column)"
-                            class="absolute! left-0 top-0 z-1 h-full min-w-full w-56 pl-2 bg-background! outline outline-1 -outline-offset-1 outline-primary"
+                            class="absolute! left-0 top-0 z-1 min-h-full w-max items-start! pl-2 bg-background! outline outline-1 -outline-offset-1 outline-primary"
                             testid="table-edit"
+                            grow
                             inheritFont
                         />
                         <span

@@ -718,7 +718,7 @@
   "drag.outOfFolders": "Out of the folder, into {name}",
   "drag.top": "To the top level",
   "edit.calendar": "Pick date and time",
-  "edit.expand": "Edit in a larger editor",
+  "edit.expand": "Edit in a larger editor (Shift + Enter)",
   "edit.largeHint": "Ctrl + Enter applies, Esc goes back",
   "edit.more": "More",
   "edit.openFile": "Load from a file",

@@ -54,6 +54,11 @@ const props = defineProps<{
     compact?: boolean;
     /** The font of the row it edits in (a cell of the table), not that of the editors. */
     inheritFont?: boolean;
+    /**
+     * As high as its text (wrapped, at most six lines), never a scroll bar across: for a value
+     * edited in a cell. The list of suggestions opens below the whole field, not below the line.
+     */
+    grow?: boolean;
     /** The find and replace bar (Ctrl+F) and go to line: for editors with room for it (shell, SQL, text). */
     findBar?: boolean;
     /** Text shown grey while the editor is empty. */
@@ -402,7 +407,17 @@ const theme = EditorView.theme({
     ...(props.inheritFont ? { "&.cm-editor .cm-scroller": { fontFamily: "inherit" } } : {}),
     // One line never scrolls up and down; a pixel of rounding would show a scroll bar otherwise,
     // and no room is kept for one.
-    ".cm-scroller": props.singleLine ? { overflowY: "hidden", scrollbarGutter: "auto" } : {},
+    // Across it scrolls with the cursor, without a bar that would cover the one line.
+    ".cm-scroller": props.singleLine ? { overflowY: "hidden", scrollbarGutter: "auto", scrollbarWidth: "none" } : {},
+    ...(props.grow
+        ? {
+                "&": { height: "auto", fontSize: props.inheritFont ? "inherit" : "var(--editor-font-size, 13px)", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
+                ".cm-scroller": { overflowX: "hidden", overflowY: "auto", maxHeight: "calc(6 * 1.4em)", scrollbarGutter: "auto", scrollbarWidth: "thin" },
+                // The list below the field (or above it), never over the text: set from the field's edges.
+                ".cm-tooltip.cm-tooltip-autocomplete:not(.cm-tooltip-above)": { transform: "translateY(var(--below-field, 0px))" },
+                ".cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-above": { transform: "translateY(var(--above-field, 0px))" }
+            }
+        : {}),
     ".cm-content": { caretColor: "var(--v0-primary)", padding: props.compact ? "0" : props.singleLine ? "5px 0" : "8px 0" },
     ".cm-line": { padding: props.singleLine ? "0 2px" : "0 6px" },
     ".cm-cursor": { borderLeftColor: "var(--v0-primary)" },
@@ -480,6 +495,28 @@ const theme = EditorView.theme({
     ".cm-snippetField": { backgroundColor: "color-mix(in srgb, var(--v0-primary) 18%, transparent)" }
 });
 
+/**
+ * How far the field reaches below and above the line of the cursor, as CSS variables on the
+ * editor: the list of suggestions moves by them to the field's edge.
+ */
+const fieldEdges = EditorView.updateListener.of((update) => {
+    if (!update.docChanged && !update.selectionSet && !update.geometryChanged && !update.focusChanged) return;
+    const target = update.view;
+    target.requestMeasure({
+        read: (current) => {
+            const line = current.coordsAtPos(current.state.selection.main.head);
+            const box = current.dom.getBoundingClientRect();
+            // Two pixels clear of the frame of the field.
+            return line ? { below: Math.max(0, box.bottom - line.bottom) + 2, above: Math.min(0, box.top - line.top) - 2 } : undefined;
+        },
+        write: (edges, current) => {
+            if (!edges) return;
+            current.dom.style.setProperty("--below-field", `${edges.below}px`);
+            current.dom.style.setProperty("--above-field", `${edges.above}px`);
+        }
+    });
+});
+
 function extensions(): Extension[] {
     const base: Extension[] = [
         drawSelection(),
@@ -494,6 +531,7 @@ function extensions(): Extension[] {
         theme
     ];
     if (!props.singleLine) base.push(lineNumbers(), highlightActiveLine());
+    if (props.grow) base.push(EditorView.lineWrapping, fieldEdges);
     if (props.readonly) return [...base, EditorState.readOnly.of(true), EditorView.editable.of(false)];
     return [
         ...base,

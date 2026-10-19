@@ -34,6 +34,11 @@ const props = defineProps<{
     suggest?: ValueField;
     /** Written in the font of the row (a cell of the table) instead of the editors' one. */
     inheritFont?: boolean;
+    /**
+     * Grows with the text over the cells beside it, up to the visible width of the results, then
+     * wraps (a cell of the table); no scroll bar across.
+     */
+    grow?: boolean;
 }>();
 
 /** Types whose values are suggested: those a filter suggests (strings, numbers, booleans). */
@@ -63,7 +68,29 @@ const typesAt = shallowRef({ left: 0, top: 0 });
 const largeAt = shallowRef({ left: 0, top: 0, width: 480 });
 const expanded = shallowRef(false);
 
-onMounted(() => input.value?.select());
+onMounted(() => {
+    input.value?.select();
+    if (props.grow) measureRoom();
+});
+
+/** At least the cell (and room to type), at most up to the right edge of the results shown. */
+const room = shallowRef<{ minWidth?: string; maxWidth?: string }>({});
+function measureRoom() {
+    const cell = root.value?.parentElement?.getBoundingClientRect();
+    const results = root.value?.closest("[data-testid=query-result]")?.getBoundingClientRect();
+    if (!cell) return;
+    const least = Math.max(cell.width, 224);
+    const most = results ? Math.max(least, results.right - cell.left - 16) : least;
+    room.value = { minWidth: `${least}px`, maxWidth: `${most}px` };
+}
+
+/** Shift+Enter, as in DataGrip: the value in the large editor. */
+function onShiftEnter(event: KeyboardEvent) {
+    if (event.key !== "Enter" || !event.shiftKey || expanded.value) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void openLarge();
+}
 
 function focusField() {
     if (code.value) code.value.focus();
@@ -221,7 +248,9 @@ function closeLarge() {
         @click.stop
         @dblclick.stop
         @focusout="onFocusOut"
+        @keydown.capture="onShiftEnter"
         @keydown.esc="onEscape"
+        :style="room"
         class="relative flex items-center min-w-0 bg-surface-variant"
     >
         <CodeEditor
@@ -231,6 +260,7 @@ function closeLarge() {
             @pick="pick"
             @run="commit"
             :class="inheritFont ? '' : 'font-mono'"
+            :grow
             :inheritFont
             :label
             :testid
@@ -248,6 +278,7 @@ function closeLarge() {
             :class="[empty ? 'text-on-surface-variant/60' : 'text-on-surface-strong', inheritFont ? '' : 'font-mono']"
             :data-testid="testid"
             :readonly="empty"
+            :size="grow ? Math.max(4, draft.text.length + 1) : undefined"
             class="grow min-w-0 h-full bg-transparent outline-none"
             spellcheck="false"
         />
