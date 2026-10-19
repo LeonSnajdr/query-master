@@ -11,6 +11,7 @@ import NoteMarks from "@/components/NoteMarks.vue";
 import { useActions } from "@/composables/actions";
 import { useCopy } from "@/composables/copy";
 import { useDialogs } from "@/composables/dialogs";
+import { useFreeSpace } from "@/composables/freeSpace";
 import { useExportWizard } from "@/composables/exportWizard";
 import { preferences } from "@/composables/appearance";
 import { useMessages } from "@/composables/messages";
@@ -289,16 +290,6 @@ function clearSelection() {
     anchor = undefined;
 }
 
-/** Whether a click hit the free space of the tree, not one of its connections and their rows. */
-function onTreeSpace(event: MouseEvent): boolean {
-    return !(event.target instanceof Element && event.target.closest("[data-testid=connection]"));
-}
-
-/** A click into the free space takes the selection away, as in Windows Explorer. */
-function onTreeSpaceClick(event: MouseEvent) {
-    if (onTreeSpace(event)) clearSelection();
-}
-
 function setMarked(rows: TreeSelection[], focus: TreeSelection) {
     // `marked` first: the watch on `selected` keeps it when the focus is one of its rows.
     connections.marked = rows.length > 1 ? rows : [];
@@ -512,12 +503,8 @@ function openListMenu(event: MouseEvent, profile?: Profile, group?: string) {
     ]);
 }
 
-/**
- * Right click on the free space of the list: what needs no chosen connection. Rows open their own
- * menu and stop the event, so only a click on the free space comes here.
- */
+/** Right click on the free space of the list: what needs no chosen connection. */
 function openListSpaceMenu(event: MouseEvent) {
-    event.preventDefault();
     const close = (action: () => void) => () => {
         listOpen.value = false;
         action();
@@ -538,10 +525,6 @@ function openListSpaceMenu(event: MouseEvent) {
  * the recent connections, and what acts on every open connection at once.
  */
 function openTreeSpaceMenu(event: MouseEvent) {
-    if (!onTreeSpace(event)) return;
-    event.preventDefault();
-    // As Windows Explorer: the menu of the free space is not that of the row chosen before.
-    clearSelection();
     const rows = connected.value.filter(profile => connections.sessions[profile.id]).map(profile => ({ connectionId: profile.id }));
     const recent: MenuEntry[] = connections.recent.slice(0, 10).map(profile => ({
         label: profile.name,
@@ -567,6 +550,11 @@ function openTreeSpaceMenu(event: MouseEvent) {
         { label: t("tree.disconnectAll"), icon: "i-lucide-unplug", action: () => void actions.disconnectMany(rows), disabled: rows.length === 0 }
     ]);
 }
+
+// Clicks on the free space of the tree and of the list take the selection away, as in Windows
+// Explorer; a right click there opens the menu of the space, not that of the row chosen before.
+const treeSpace = useFreeSpace(clearSelection, { menu: openTreeSpaceMenu });
+const listSpace = useFreeSpace(() => (picked.value = undefined), { menu: openListSpaceMenu });
 
 async function moveToGroup(profile: Profile, group: string) {
     await connections.setGroup(profile.id, group).catch(report);
@@ -1067,7 +1055,8 @@ defineExpose({
                         />
                     </label>
                     <div
-                        @contextmenu="openListSpaceMenu"
+                        @click="listSpace.onClick"
+                        @contextmenu="listSpace.onContextMenu"
                         @keydown="onListKey"
                         class="grow min-h-0 overflow-auto pb-2 text-[13px]"
                         role="tree"
@@ -1222,8 +1211,8 @@ defineExpose({
 
         <div
             ref="tree"
-            @click="onTreeSpaceClick"
-            @contextmenu="openTreeSpaceMenu"
+            @click="treeSpace.onClick"
+            @contextmenu="treeSpace.onContextMenu"
             @keydown="onTreeKey"
             aria-multiselectable="true"
             class="grow min-h-0 overflow-y-auto pt-2 pb-2 text-[13px]"
