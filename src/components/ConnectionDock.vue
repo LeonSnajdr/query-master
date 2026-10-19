@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ButtonRoot, PopoverActivator, PopoverContent, PopoverRoot } from "@vuetify/v0";
-import { computed, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { errorMessage } from "@/api";
 import type { Profile } from "@/api";
@@ -488,9 +488,11 @@ watch(listOpen, (open) => {
 });
 onBeforeUnmount(() => clearInterval(waitForDialog));
 
-// Color and read-only of a connection show in the list before it is connected.
+// Color and read-only of a connection show in the list before it is connected. The search has
+// the focus, so typing filters at once (the arrow keys still pick from there).
 watch(listOpen, (open) => {
     if (!open) return;
+    void nextTick(() => listSearchInput.value?.focus());
     listSearch.value = "";
     for (const profile of connections.saved) {
         if (!notes.notes[profile.id]) void notes.load(profile.id).catch(report);
@@ -718,6 +720,16 @@ function startGroupDrag(event: PointerEvent, source: { profile?: Profile; folder
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", end);
     window.addEventListener("pointercancel", cancel);
+}
+
+/**
+ * In the search (where the focus starts): up and down pick in the list below, Enter connects the
+ * picked one, or the first that matches. The other keys are for typing.
+ */
+function onSearchKey(event: KeyboardEvent) {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Enter") return;
+    if (event.key === "Enter" && !pickedProfile.value) picked.value = shownProfiles.value[0]?.id;
+    onListKey(event);
 }
 
 /** Up and down pick, Enter connects, Del deletes, Ctrl+E edits, Ctrl+F searches, the key of "View connection URI" shows it. */
@@ -1192,6 +1204,7 @@ defineExpose({
                         <input
                             ref="listSearchInput"
                             v-model="listSearch"
+                            @keydown="onSearchKey"
                             :aria-label="$t('tree.search')"
                             :placeholder="`${$t('tree.search')} …`"
                             class="grow min-w-0 bg-transparent outline-none text-[13px] text-on-surface-strong placeholder:italic placeholder:text-on-surface-variant"

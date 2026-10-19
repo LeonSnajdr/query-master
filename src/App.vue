@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ButtonRoot, SplitterHandle, SplitterPanel, SplitterRoot, TabsItem, TabsList, TabsRoot } from "@vuetify/v0";
-import { computed, onMounted, shallowRef, useTemplateRef } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { inApp } from "@/api";
 import AppMenuBar from "@/components/AppMenuBar.vue";
@@ -25,6 +25,7 @@ import { useSession } from "@/composables/session";
 import { watchAppearance } from "@/composables/appearance";
 import { fileName } from "@/composables/recentFiles";
 import { useFocusAreas } from "@/composables/focus";
+import { focusStart, watchDialogFocus } from "@/composables/startFocus";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
 import type { CommandId } from "@/keys/commands";
@@ -218,6 +219,17 @@ const SHORTCUTS: Partial<Record<CommandId, () => void>> = {
 };
 for (const [id, run] of Object.entries(SHORTCUTS) as [CommandId, () => void][]) useShortcut(id, run);
 
+// Dialogs start with the focus in their first field.
+const stopDialogFocus = watchDialogFocus();
+onBeforeUnmount(stopDialogFocus);
+
+// A tab that comes to the front takes the focus where its work starts: the editor of a shell or
+// SQL tab, the first stage of a query. Not while a dialog is open.
+watch(() => tabs.activeId, id => void nextTick(() => {
+    if (id === undefined || document.querySelector("dialog:modal")) return;
+    focusStart(document.querySelector(`[data-testid=tab-panel][data-tab-id="${id}"]`));
+}));
+
 onMounted(async () => {
     tabs.openStart();
     await connections.load().catch(report);
@@ -378,6 +390,7 @@ onMounted(async () => {
                     v-for="tab in tabs.tabs"
                     v-show="tab.id === tabs.activeId"
                     :key="tab.id"
+                    :data-tab-id="tab.id"
                     class="grow min-h-0"
                     data-testid="tab-panel"
                 >
