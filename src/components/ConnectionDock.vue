@@ -142,7 +142,7 @@ function databaseRowsOf(profile: Profile): (FolderRow | { kind: "database"; node
  * below it with it (`--shift` is set on the database's own block).
  */
 function indent(rem: number): Record<string, string> {
-    return { paddingLeft: `calc(${rem}rem + var(--shift, 0rem))` };
+    return { paddingLeft: `calc(${rem}rem + var(--shift, 0rem) + var(--group-shift, 0rem))` };
 }
 
 function shownCollections(database: DatabaseNode): string[] {
@@ -1215,7 +1215,7 @@ defineExpose({
                                 :aria-expanded="!closedGroups.has(row.node.path)"
                                 :data-group-drop="row.node.path"
                                 :style="{ paddingLeft: `${20 + row.depth * 16}px` }"
-                                class="tree-row"
+                                class="tree-row h-[21px]"
                                 data-testid="connection-group-row"
                                 role="treeitem"
                                 tabindex="0"
@@ -1226,9 +1226,11 @@ defineExpose({
                                 />
                                 <span
                                     :class="closedGroups.has(row.node.path) ? 'i-lucide-folder' : 'i-lucide-folder-open'"
-                                    class="size-4 shrink-0 text-on-surface"
+                                    class="size-4 shrink-0 text-warning"
                                 />
-                                <span class="truncate font-bold text-on-surface-strong">{{ row.node.name }}</span>
+                                <span class="truncate text-on-surface-strong">{{ row.node.name }}</span>
+                                <span class="grow" />
+                                <span class="shrink-0 text-[11px] text-on-surface-variant">{{ countIn(row.node) || $t("connection.folder.empty") }}</span>
                             </div>
                             <!-- A connection: the one-element loop names it `profile` for the row. -->
                             <div
@@ -1376,8 +1378,8 @@ defineExpose({
                     @pointerdown="startGroupDrag($event, { folder: entry.node.path })"
                     :aria-expanded="!closedTreeFolders.has(entry.node.path)"
                     :data-group-drop="entry.node.path"
-                    :style="{ paddingLeft: `${14 + entry.depth * 16}px` }"
-                    class="tree-entry"
+                    :style="indent(0.875 + entry.depth)"
+                    class="tree-row"
                     data-testid="tree-group"
                     role="treeitem"
                     tabindex="0"
@@ -1388,17 +1390,18 @@ defineExpose({
                     />
                     <span
                         :class="closedTreeFolders.has(entry.node.path) ? 'i-lucide-folder' : 'i-lucide-folder-open'"
-                        class="size-4 shrink-0 text-on-surface"
+                        class="size-4 shrink-0 text-warning"
                     />
-                    <span class="truncate font-bold text-on-surface-strong">{{ entry.node.name }}</span>
-                    <span class="shrink-0 text-[11.5px] text-on-surface-variant">{{ groupCount(entry.node) }}</span>
+                    <span class="truncate text-on-surface-strong">{{ entry.node.name }}</span>
+                    <span class="grow" />
+                    <span class="shrink-0 text-[11px] text-on-surface-variant">{{ groupCount(entry.node) }}</span>
                 </div>
                 <!-- A connection: the one-element loop names it `profile` for all its rows below. -->
                 <div
                     v-for="profile in entry.kind === 'item' ? [entry.item] : []"
                     :key="profile.id"
                     :data-group-drop="folderPath(profile.groupName ?? '')"
-                    :style="{ marginLeft: `${entry.depth * 16}px` }"
+                    :style="entry.depth > 0 ? { '--group-shift': `${entry.depth}rem` } : undefined"
                     class="relative"
                     data-testid="connection"
                 >
@@ -1422,8 +1425,9 @@ defineExpose({
                         :class="rowClass({ connectionId: profile.id })"
                         :data-drop-connection="profile.id"
                         :data-row="keyOf({ connectionId: profile.id })"
+                        :style="indent(0.875)"
                         aria-level="1"
-                        class="tree-row pl-3.5"
+                        class="tree-row"
                         data-drop-scope=""
                         data-testid="connection-row"
                         role="treeitem"

@@ -123,6 +123,11 @@ export default defineConfig({
           scrollbar-color: color-mix(in srgb, var(--v0-on-surface) 30%, transparent) transparent;
         }
 
+        /* A scrollbar that comes and goes does not move the content: its room is kept. */
+        .overflow-auto, .overflow-y-auto, .overflow-scroll, .overflow-y-scroll, .cm-scroller {
+          scrollbar-gutter: stable;
+        }
+
         /* Notice cards: a card fades in, a closed one fades out, the others glide to their place.
            The place sits in transform, the coming in translate, so the two do not fight. */
         .notice-slot {
