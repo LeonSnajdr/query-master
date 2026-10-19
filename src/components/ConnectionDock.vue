@@ -282,6 +282,23 @@ function shownRows(): TreeSelection[] {
     return [...treeElement.value?.querySelectorAll<HTMLElement>("[data-row]") ?? []].map(element => rowOf(element.dataset.row!));
 }
 
+/** Nothing is chosen in the tree any more: the toolbar and the menus act on no row. */
+function clearSelection() {
+    connections.marked = [];
+    connections.selected = undefined;
+    anchor = undefined;
+}
+
+/** Whether a click hit the free space of the tree, not one of its connections and their rows. */
+function onTreeSpace(event: MouseEvent): boolean {
+    return !(event.target instanceof Element && event.target.closest("[data-testid=connection]"));
+}
+
+/** A click into the free space takes the selection away, as in Windows Explorer. */
+function onTreeSpaceClick(event: MouseEvent) {
+    if (onTreeSpace(event)) clearSelection();
+}
+
 function setMarked(rows: TreeSelection[], focus: TreeSelection) {
     // `marked` first: the watch on `selected` keeps it when the focus is one of its rows.
     connections.marked = rows.length > 1 ? rows : [];
@@ -521,8 +538,10 @@ function openListSpaceMenu(event: MouseEvent) {
  * the recent connections, and what acts on every open connection at once.
  */
 function openTreeSpaceMenu(event: MouseEvent) {
-    if (event.target instanceof Element && event.target.closest("[data-testid=connection]")) return;
+    if (!onTreeSpace(event)) return;
     event.preventDefault();
+    // As Windows Explorer: the menu of the free space is not that of the row chosen before.
+    clearSelection();
     const rows = connected.value.filter(profile => connections.sessions[profile.id]).map(profile => ({ connectionId: profile.id }));
     const recent: MenuEntry[] = connections.recent.slice(0, 10).map(profile => ({
         label: profile.name,
@@ -1203,6 +1222,7 @@ defineExpose({
 
         <div
             ref="tree"
+            @click="onTreeSpaceClick"
             @contextmenu="openTreeSpaceMenu"
             @keydown="onTreeKey"
             aria-multiselectable="true"
