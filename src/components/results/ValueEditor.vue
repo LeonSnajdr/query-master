@@ -32,6 +32,8 @@ const props = defineProps<{
     testid: string;
     /** The field the value belongs to: its known values are suggested as in a filter. */
     suggest?: ValueField;
+    /** Written in the font of the row (a cell of the table) instead of the editors' one. */
+    inheritFont?: boolean;
 }>();
 
 /** Types whose values are suggested: those a filter suggests (strings, numbers, booleans). */
@@ -228,10 +230,12 @@ function closeLarge() {
             v-model="draft.text"
             @pick="pick"
             @run="commit"
+            :class="inheritFont ? '' : 'font-mono'"
+            :inheritFont
             :label
             :testid
             :valueField="suggest"
-            class="grow min-w-0 h-full font-mono"
+            class="grow min-w-0 h-full"
             compact
             singleLine
         />
@@ -241,10 +245,10 @@ function closeLarge() {
             v-model="draft.text"
             @keydown.enter.prevent.stop="commit"
             :aria-label="label"
-            :class="empty ? 'text-on-surface-variant/60' : 'text-on-surface-strong'"
+            :class="[empty ? 'text-on-surface-variant/60' : 'text-on-surface-strong', inheritFont ? '' : 'font-mono']"
             :data-testid="testid"
             :readonly="empty"
-            class="grow min-w-0 h-full bg-transparent outline-none font-mono"
+            class="grow min-w-0 h-full bg-transparent outline-none"
             spellcheck="false"
         />
         <!--: a calendar for a date, open and save a file for binary data. -->

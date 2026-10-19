@@ -765,7 +765,9 @@ function suggest(path: string): ValueField | undefined {
     return { collection, field, values: valueSources, search: valueSearch };
 }
 
-provideResultContext({ editable, selected, selectedPath, marked, choose, fold, pinned, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument, suggest });
+/** The path the table stepped into (a field of the documents); the toolbar shows the way back. */
+const tableStack = ref<string[]>([]);
+provideResultContext({ editable, selected, selectedPath, marked, choose, fold, pinned, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument, suggest, tableStack });
 </script>
 
 <template>
@@ -922,6 +924,25 @@ provideResultContext({ editable, selected, selectedPath, marked, choose, fold, p
             </label>
 
             <span class="grow" />
+            <!-- Stepped into a field of the table: the way back, after the space, so nothing moves. -->
+            <span
+                v-if="tab.view === 'table' && tableStack.length > 0"
+                class="mr-3 min-w-0 inline-flex items-center gap-1.5"
+            >
+                <IconButton
+                    @click="tableStack = tableStack.slice(0, -1)"
+                    :label="keymap.titled($t('table.stepBack'), 'table.stepBack')"
+                    data-testid="table-step-back"
+                    icon="i-lucide-arrow-left"
+                >
+                    {{ $t("table.stepBack") }}
+                </IconButton>
+                <span
+                    :title="tableStack.join('.')"
+                    class="truncate font-mono text-[12px] text-on-surface-variant"
+                    data-testid="table-step-path"
+                >{{ tableStack.join(".") }}</span>
+            </span>
             <ButtonRoot
                 v-if="tab.error && showLast"
                 @click="showLast = false"

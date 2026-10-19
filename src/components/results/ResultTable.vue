@@ -1,6 +1,5 @@
 <script setup lang="ts">
-import { ButtonContent, ButtonRoot } from "@vuetify/v0";
-import { computed, ref, shallowRef, useTemplateRef } from "vue";
+import { computed, ref, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { preferences } from "@/composables/appearance";
 import { useKeymap } from "@/keys/keymap";
@@ -31,7 +30,8 @@ const context = useResultContext();
 const keymap = useKeymap();
 
 /** The path stepped into, segment by segment; empty at the top of the documents. */
-const stack = ref<string[]>([]);
+/** The path the table stepped into; the toolbar of the results shows the way back. */
+const stack = context.tableStack;
 /** Columns (relative to `stack`) whose embedded fields are shown as columns. */
 const embedded = ref(new Set<string>());
 const pinned = ref<string[]>([]);
@@ -175,9 +175,14 @@ function stepInto(column: string): void {
 
 function stepBack(): void {
     stack.value = stack.value.slice(0, -1);
+}
+
+// A level up, from the keys here or the button of the toolbar: what was set for the level below goes.
+watch(() => stack.value.length, (length, before) => {
+    if (length >= before) return;
     embedded.value = new Set();
     current.value = undefined;
-}
+});
 
 function restore(): void {
     stack.value = [];
@@ -396,20 +401,6 @@ function onKey(event: KeyboardEvent) {
         data-testid="result-table-keys"
         tabindex="0"
     >
-        <div
-            v-if="stack.length > 0"
-            class="h-7 flex items-center gap-2 px-2"
-        >
-            <ButtonRoot
-                @click="stepBack"
-                class="h-6 px-1.5 inline-flex items-center gap-1 rounded-sm text-[13px] text-on-surface-strong hover:bg-on-surface/10"
-                data-testid="table-step-back"
-            >
-                <span class="i-lucide-arrow-left size-3.5" />
-                <ButtonContent>{{ $t("table.stepBack") }}</ButtonContent>
-            </ButtonRoot>
-            <span class="font-mono text-[12px] text-on-surface-variant">{{ stack.join(".") }}</span>
-        </div>
         <table
             class="border-separate border-spacing-0 font-sans text-[12.5px]"
             data-testid="result-table"
@@ -461,7 +452,8 @@ function onKey(event: KeyboardEvent) {
                         @dblclick="activate(index, column)"
                         :class="[
                             cellClass(cell(value, column)),
-                            current?.index === index && current.column === column ? 'outline outline-1 -outline-offset-1 outline-primary' : '',
+                            // While editing the editor draws the one frame, over the cell.
+                            current?.index === index && current.column === column && !isEditing(index, column) ? 'outline outline-1 -outline-offset-1 outline-primary' : '',
                             // The editor may reach past a narrow cell; the text below it keeps the width.
                             isEditing(index, column) ? 'overflow-visible' : 'truncate'
                         ]"
@@ -477,8 +469,9 @@ function onKey(event: KeyboardEvent) {
                             :label="column"
                             :suggest="context.suggest?.(fullPath(column))"
                             :value="cell(value, column)"
-                            class="absolute left-0 top-0 z-1 h-full min-w-full w-56 pl-2 outline outline-1 -outline-offset-1 outline-primary"
+                            class="absolute! left-0 top-0 z-1 h-full min-w-full w-56 pl-2 bg-background! outline outline-1 -outline-offset-1 outline-primary"
                             testid="table-edit"
+                            inheritFont
                         />
                         <span
                             v-if="isLink(cell(value, column))"

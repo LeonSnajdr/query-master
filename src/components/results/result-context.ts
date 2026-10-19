@@ -42,6 +42,11 @@ export interface ResultContext {
     open: (index: number) => void;
     /** The field of a value at a dotted path, for the values to suggest when it is edited. */
     suggest?: (path: string) => ValueField | undefined;
+    /**
+     * The table shows the documents at this path (stepped into a field); empty at the top. Kept
+     * here so the toolbar can draw the way back without the table moving.
+     */
+    tableStack: Ref<string[]>;
 }
 
 /**

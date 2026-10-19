@@ -52,6 +52,8 @@ const props = defineProps<{
     valueField?: ValueField;
     /** Without room above and below the line, to fit a row of the result. */
     compact?: boolean;
+    /** The font of the row it edits in (a cell of the table), not that of the editors. */
+    inheritFont?: boolean;
     /** The find and replace bar (Ctrl+F) and go to line: for editors with room for it (shell, SQL, text). */
     findBar?: boolean;
     /** Text shown grey while the editor is empty. */
@@ -395,10 +397,12 @@ const highlight = HighlightStyle.define([
 const EDITOR_SEARCH_KEYS = searchKeymap.filter(binding => binding.key !== "Mod-d");
 
 const theme = EditorView.theme({
-    "&": { height: "100%", fontSize: "var(--editor-font-size, 13px)", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
+    "&": { height: "100%", fontSize: props.inheritFont ? "inherit" : "var(--editor-font-size, 13px)", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
     "&.cm-focused": { outline: "none" },
-    // One line never scrolls up and down; a pixel of rounding would show a scroll bar otherwise.
-    ".cm-scroller": props.singleLine ? { overflowY: "hidden" } : {},
+    ...(props.inheritFont ? { "&.cm-editor .cm-scroller": { fontFamily: "inherit" } } : {}),
+    // One line never scrolls up and down; a pixel of rounding would show a scroll bar otherwise,
+    // and no room is kept for one.
+    ".cm-scroller": props.singleLine ? { overflowY: "hidden", scrollbarGutter: "auto" } : {},
     ".cm-content": { caretColor: "var(--v0-primary)", padding: props.compact ? "0" : props.singleLine ? "5px 0" : "8px 0" },
     ".cm-line": { padding: props.singleLine ? "0 2px" : "0 6px" },
     ".cm-cursor": { borderLeftColor: "var(--v0-primary)" },
