@@ -176,7 +176,14 @@ function openFolderMenu(event: MouseEvent, profile: Profile, database: DatabaseN
         ? (database.collections ?? []).map(collection => ({ connectionId: profile.id, database: database.name, collection }))
         : (connections.sessions[profile.id]?.databases ?? []).map(item => ({ connectionId: profile.id, database: item.name }));
     const members = rows.filter(inFolder);
+    const ro = notes.isReadonly(at);
     void menu.value?.open(event, [
+        { label: t("tab.shell"), icon: "i-lucide-square-terminal", command: "tab.shell", action: () => actions.openShell(database ? at : { connectionId: profile.id }) },
+        "separator",
+        ...(database
+            ? [{ label: t("collection.create"), icon: "i-lucide-file-plus-2", command: "collection.create", action: () => void actions.createCollection(at), disabled: ro }] satisfies MenuEntry[]
+            : [{ label: t("database.create"), command: "database.create", action: () => void actions.createDatabase(at), disabled: ro }] satisfies MenuEntry[]),
+        "separator",
         { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void actions.exportWizard(members), disabled: members.length === 0 },
         { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at), disabled: notes.isReadonly(at) },
         "separator",
@@ -184,7 +191,10 @@ function openFolderMenu(event: MouseEvent, profile: Profile, database: DatabaseN
         { label: t("folder.addInside"), icon: "i-lucide-folder-tree", action: () => void actions.addFolder(at, folder) },
         { label: t("folder.rename"), icon: "i-lucide-pencil", action: () => void actions.renameFolder(at, folder) },
         ...(targets.length > 0 ? [{ label: t("folder.moveFolder"), icon: "i-lucide-folder", children: targets }] : []),
-        { label: t("folder.delete"), icon: "i-lucide-folder-x", danger: true, action: () => void actions.deleteFolder(at, folder) }
+        { label: t("folder.delete"), icon: "i-lucide-folder-x", danger: true, action: () => void actions.deleteFolder(at, folder) },
+        "separator",
+        { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void actions.refresh(at) },
+        { label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", command: "tree.collapse", action: () => connections.collapseAll() }
     ]);
 }
 
@@ -201,7 +211,9 @@ function folderEntries(at: TreeSelection): MenuEntry[] {
     if (current) entries.push({ label: t("folder.moveOut", { name: current }), icon: "i-lucide-folder-output", action: () => void actions.moveToFolder(at, null) });
     // Many folders would make a long menu: they get one of their own.
     if (entries.length > 1) return ["separator", { label: t("folder.menu"), icon: "i-lucide-folder", children: entries }];
-    return entries.length > 0 ? ["separator", ...entries] : [];
+    // None: the entry stays, grey, and says how to get one.
+    if (entries.length === 0) return ["separator", { label: t("folder.noneToMove"), icon: "i-lucide-folder-input", action: () => undefined, disabled: true }];
+    return ["separator", ...entries];
 }
 
 /** "Export..." and, as a shortcut, "Export as" with the wizard on the chosen format. */
@@ -527,7 +539,13 @@ function onListKey(event: KeyboardEvent) {
 const createEntries = computed<MenuEntry[]>(() => [
     { label: t("database.create"), command: "database.create", action: () => void actions.createDatabase(), disabled: !actions.hasConnection.value },
     { label: t("collection.create"), icon: "i-lucide-file-plus-2", command: "collection.create", action: () => void actions.createCollection(), disabled: !actions.hasDatabase.value },
-    { label: t("index.create"), icon: "i-lucide-key-round", command: "index.create", action: () => actions.createIndex(), disabled: !actions.hasCollection.value || actions.onView.value }
+    { label: t("view.create"), icon: "i-lucide-file-search", command: "view.create", action: () => actions.createView(), disabled: !actions.hasDatabase.value },
+    { label: t("gridfs.create"), icon: "i-lucide-folder-archive", action: () => void actions.createBucket(), disabled: !actions.hasDatabase.value },
+    "separator",
+    { label: t("index.create"), icon: "i-lucide-key-round", command: "index.create", action: () => actions.createIndex(), disabled: !actions.hasCollection.value || actions.onView.value },
+    { label: t("validator.edit"), command: "validator.edit", action: () => actions.editValidator(), disabled: !actions.hasCollection.value || actions.onView.value },
+    "separator",
+    { label: t("folder.add"), icon: "i-lucide-folder-plus", command: "folder.add", action: () => void actions.addFolder(), disabled: !actions.hasConnection.value }
 ]);
 
 const manageEntries = computed<MenuEntry[]>(() => [
@@ -694,7 +712,8 @@ function openManyMenu(event: MouseEvent, rows: TreeSelection[]) {
         : [];
     const tail: MenuEntry[] = [
         "separator",
-        { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void actions.refreshMany(rows) }
+        { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void actions.refreshMany(rows) },
+        ...(kind === "connection" ? [] : [{ label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", command: "tree.collapse", action: () => connections.collapseAll() } satisfies MenuEntry])
     ];
     let entries: MenuEntry[];
     if (kind === "connection") {
@@ -771,6 +790,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
     const tail: MenuEntry[] = [
         "separator",
         { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void actions.refresh(at) },
+        { label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", command: "tree.collapse", action: () => connections.collapseAll() },
         { label: t("connection.disconnect"), command: "connection.disconnect", action: () => void actions.disconnect(at) }
     ];
     let entries: MenuEntry[];

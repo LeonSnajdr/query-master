@@ -32,6 +32,7 @@ import { appWindow } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { useConnectionsStore } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
+import { useQueriesStore } from "@/stores/queries";
 import { useTabsStore } from "@/stores/tabs";
 import { isQueryTab } from "@/stores/tabs";
 import type { ResultView, WorkTab } from "@/stores/tabs";
@@ -66,6 +67,19 @@ const activeTab = computed({
     get: () => tabs.activeId ?? "",
     set: (id: string) => (tabs.activeId = id || undefined)
 });
+
+const queries = useQueriesStore();
+
+/**
+ * A script that would be lost on closing, marked as editors mark an unsaved file: a shell tab
+ * changed since its file was read or written, or a shell or SQL text that is neither a file nor a
+ * saved query.
+ */
+function unsaved(tab: WorkTab): boolean {
+    if (tab.kind !== "shell" && tab.kind !== "sql") return false;
+    if (tab.file !== undefined) return tab.fileText !== undefined && tab.text !== tab.fileText;
+    return tab.text.trim() !== "" && queries.savedFor(tab) === undefined;
+}
 
 function titleOf(tab: WorkTab): string {
     if (tab.kind === "start") return t("start.title");
@@ -309,6 +323,12 @@ onMounted(async () => {
                                         class="size-4 shrink-0"
                                     />
                                     <span class="truncate">{{ titleOf(tab) }}</span>
+                                    <span
+                                        v-if="unsaved(tab)"
+                                        :title="$t('tab.unsaved')"
+                                        class="size-1.5 shrink-0 rounded-full bg-on-surface-variant"
+                                        data-testid="tab-unsaved"
+                                    />
                                 </TabsItem>
                                 <ButtonRoot
                                     @click="tabs.close(tab.id)"

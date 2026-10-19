@@ -592,7 +592,29 @@ async function lastPage() {
     }
 }
 
+/**
+ * Whether the clipboard holds documents, read as the menu opens:, *Import from
+ * clipboard* is grey without them. A clipboard that can not be read leaves the entry on.
+ */
+async function clipboardHasDocuments(): Promise<boolean> {
+    let text: string;
+    try {
+        text = await Promise.race([navigator.clipboard.readText(), new Promise<never>((_, reject) => setTimeout(reject, 300))]);
+    } catch {
+        return true;
+    }
+    try {
+        return readDocuments(text).length > 0;
+    } catch {
+        return false;
+    }
+}
+
 function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = []) {
+    void clipboardHasDocuments().then(pasteable => showMenu(event, target, extra, pasteable));
+}
+
+function showMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[], pasteable: boolean) {
     selected.value = target.index;
     choosePath(target.path);
     // A click outside the marked documents marks only the one clicked.
@@ -641,7 +663,7 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
                 { label: t("document.remove"), icon: "i-lucide-file-x-2", danger: true, action: () => void removeDocument(target.index), disabled: !document || !editable.value },
                 { label: t("document.refresh"), icon: "i-lucide-rotate-cw", action: () => void tabs.refreshDocument(tab.value, target.index).catch(report), disabled: !document || collection.value === undefined },
                 "separator",
-                { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", command: "result.importClipboard", action: () => void importClipboard(), disabled: locked },
+                { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", command: "result.importClipboard", action: () => void importClipboard(), disabled: locked || !pasteable },
                 { label: t("result.import"), icon: "i-lucide-download", command: "result.import", action: () => void importDocuments(), disabled: locked },
                 { label: t("export.menu"), icon: "i-lucide-upload", command: "result.export", action: () => void openExport() },
                 // A result the wizard can not read again is saved as shown, whatever the format.

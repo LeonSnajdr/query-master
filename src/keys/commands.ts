@@ -5,12 +5,12 @@
 
 /**
  * Where a shortcut acts. `global` listens on the window; the others are the keys of one part of
- * the app, handled there: the editor, the whole results area, the result tree, the result table
- * and the tree in the dock.
+ * the app, handled there: the editor, the whole results area, the result tree, the result table,
+ * the tree in the dock and the stage rows of a query.
  */
-export type Scope = "global" | "editor" | "results" | "resultTree" | "table" | "tree";
+export type Scope = "global" | "editor" | "results" | "resultTree" | "table" | "tree" | "stages";
 
-export const GROUPS = ["connection", "tabs", "create", "manage", "view", "focus", "editor", "results", "table", "tree"] as const;
+export const GROUPS = ["connection", "tabs", "create", "manage", "view", "focus", "editor", "stages", "results", "table", "tree"] as const;
 export type CommandGroup = typeof GROUPS[number];
 
 export interface Command {
@@ -30,8 +30,10 @@ export interface Command {
 
 /** Scopes that can be active at the same moment; a key used in both is a conflict. */
 const OVERLAP: Record<Scope, readonly Scope[]> = {
-    global: ["global", "editor", "results", "resultTree", "table", "tree"],
-    editor: ["global", "editor"],
+    global: ["global", "editor", "results", "resultTree", "table", "tree", "stages"],
+    // A stage row holds an editor: its keys act while the editor has the focus.
+    editor: ["global", "editor", "stages"],
+    stages: ["global", "editor", "stages"],
     results: ["global", "results", "resultTree", "table"],
     // The tree and the table of the results are never shown together.
     resultTree: ["global", "results", "resultTree"],
@@ -145,6 +147,14 @@ const LIST = [
     command({ id: "table.moveRight", label: "table.moveRight", group: "table", scope: "table", keys: ["ctrl+alt+arrowright"] }),
     command({ id: "table.autosize", label: "table.autosize", group: "table", scope: "table", keys: ["ctrl+'"] }),
     command({ id: "table.autosizeAll", label: "table.autosizeAll", group: "table", scope: "table", keys: ["ctrl+shift+'"] }),
+
+    // The stage rows, with the keys (its Ctrl+Enter "change stage" stays "run").
+    command({ id: "stage.add", label: "stage.add", group: "stages", scope: "stages", keys: ["ctrl+b"] }),
+    command({ id: "stage.remove", label: "stage.remove", group: "stages", scope: "stages", keys: ["ctrl+delete"] }),
+    command({ id: "stage.up", label: "stage.up", group: "stages", scope: "stages", keys: ["ctrl+arrowup"] }),
+    command({ id: "stage.down", label: "stage.down", group: "stages", scope: "stages", keys: ["ctrl+arrowdown"] }),
+    command({ id: "stage.toggle", label: "stage.toggle", group: "stages", scope: "stages", keys: ["alt+t"] }),
+    command({ id: "stage.collapse", label: "stage.collapse", group: "stages", scope: "stages", keys: ["ctrl+\\"] }),
 
     command({ id: "tree.drop", label: "keys.command.drop", group: "tree", scope: "tree", keys: ["delete"], fixed: true }),
     command({ id: "tree.copy", label: "collection.copy", group: "tree", scope: "tree", keys: ["ctrl+c"], fixed: true }),

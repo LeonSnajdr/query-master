@@ -95,6 +95,7 @@ async function openPath(path: string) {
         return;
     }
     tab.value.file = path;
+    tab.value.fileText = tab.value.text;
     void recent.add(path).catch(report);
 }
 
@@ -123,6 +124,7 @@ async function saveScript(ask = false) {
         if (path === undefined) return;
         await backend.writeTextFile(path, tab.value.text);
         tab.value.file = path;
+        tab.value.fileText = tab.value.text;
         notices.answer(t("script.saved", { name: fileName(path) }));
         void recent.add(path).catch(report);
     } catch (error) {

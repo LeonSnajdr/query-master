@@ -102,6 +102,8 @@ export interface WorkTab {
     text: string;
     /** Shell tabs: the file the script was opened from or saved to; the tab carries its name. */
     file?: string;
+    /** Shell tabs: the text as last read from or written to `file`; a different text is unsaved. */
+    fileText?: string;
     view: ResultView;
     pageSize: number;
     /** Writes are refused. */
