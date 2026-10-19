@@ -22,7 +22,7 @@ const locked = computed(() => tab.value.readonly || byTree.value);
         @click="tab.readonly = !tab.readonly"
         :active="locked"
         :disabled="byTree"
-        :icon="locked ? 'i-lucide-lock' : 'i-lucide-lock-open'"
+        :icon="locked ? 'i-app-lock' : 'i-lucide-lock-open'"
         :label="byTree ? t('query.readonly.tree') : t('query.readonly')"
         data-testid="query-readonly"
     />

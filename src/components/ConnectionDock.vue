@@ -7,6 +7,7 @@ import type { Profile } from "@/api";
 import ContextMenu from "@/components/ContextMenu.vue";
 import DropMenu from "@/components/DropMenu.vue";
 import IconButton from "@/components/IconButton.vue";
+import NodeIcon from "@/components/NodeIcon.vue";
 import NoteMarks from "@/components/NoteMarks.vue";
 import { useActions } from "@/composables/actions";
 import { useCopy } from "@/composables/copy";
@@ -79,7 +80,7 @@ function noteEntries(at: TreeSelection): MenuEntry[] {
     ];
     if (note?.comment) entries.push({ label: t("note.comment.remove"), action: () => void actions.removeComment(at) });
     entries.push(
-        { label: t("note.readonly"), icon: "i-lucide-lock", checked: note?.readonly === true, action: () => void actions.toggleReadonly(at) },
+        { label: t("note.readonly"), icon: "i-app-lock", checked: note?.readonly === true, action: () => void actions.toggleReadonly(at) },
         { label: t("note.color"), swatches: NOTE_COLORS, current: note?.color ?? null, choose: color => void actions.setColor(at, color) }
     );
     // A saved connection is marked as development, test or production: how the app asks before writing.
@@ -884,7 +885,7 @@ function openManyMenu(event: MouseEvent, rows: TreeSelection[]) {
     const readonly = rows.every(row => notes.noteOf({ connectionId: row.connectionId, database: row.database, collection: row.collection })?.readonly === true);
     const marks: MenuEntry[] = [
         "separator",
-        { label: t("note.readonly"), icon: "i-lucide-lock", checked: readonly, action: () => void actions.toggleReadonlyMany(rows) },
+        { label: t("note.readonly"), icon: "i-app-lock", checked: readonly, action: () => void actions.toggleReadonlyMany(rows) },
         { label: t("note.color"), swatches: NOTE_COLORS, current: null, choose: color => void actions.setColorMany(rows, color) }
     ];
     // Folders hold the databases of a connection or the collections of a database: all rows in one.
@@ -1252,15 +1253,10 @@ defineExpose({
                                     :class="`note-${connectionColor(profile)}`"
                                     class="absolute z-1 -left-px -inset-y-px w-[5px] rounded-r-sm pointer-events-none"
                                 />
-                                <span class="relative size-4 shrink-0">
-                                    <span class="i-lucide-server size-4 block text-on-surface" />
-                                    <!-- Read-only: a lock over the lower left of the icon. -->
-                                    <span
-                                        v-if="notes.noteOf({ connectionId: profile.id })?.readonly"
-                                        :title="$t('note.readonly')"
-                                        class="i-lucide-lock absolute -left-0.5 -bottom-0.5 size-2.5 text-warning"
-                                    />
-                                </span>
+                                <NodeIcon
+                                    :place="{ connectionId: profile.id }"
+                                    icon="i-lucide-server text-on-surface"
+                                />
                                 <span class="shrink-0 text-on-surface-strong">{{ profile.name }}</span>
                                 <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>
                             </div>
@@ -1454,7 +1450,10 @@ defineExpose({
                             :class="connections.sessions[profile.id]?.open ? 'rotate-90' : ''"
                             class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
                         />
-                        <span class="i-lucide-server size-4 shrink-0 text-on-surface" />
+                        <NodeIcon
+                            :place="{ connectionId: profile.id }"
+                            icon="i-lucide-server text-on-surface"
+                        />
                         <span class="truncate text-on-surface-strong">{{ profile.name }}</span>
                         <NoteMarks :place="{ connectionId: profile.id }" />
                         <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>
@@ -1538,9 +1537,9 @@ defineExpose({
                                             class="size-3.5 shrink-0 text-on-surface-variant"
                                             data-testid="database-toggle"
                                         />
-                                        <span
-                                            :class="tint({ connectionId: profile.id, database: database.name })"
-                                            class="i-lucide-database size-4 shrink-0"
+                                        <NodeIcon
+                                            :icon="['i-lucide-database', tint({ connectionId: profile.id, database: database.name })]"
+                                            :place="{ connectionId: profile.id, database: database.name }"
                                         />
                                         <span class="truncate text-on-surface-strong">{{ database.name }}</span>
                                         <NoteMarks :place="{ connectionId: profile.id, database: database.name }" />
@@ -1624,10 +1623,10 @@ defineExpose({
                                                             class="size-3.5 shrink-0 text-on-surface-variant"
                                                             data-testid="collection-toggle"
                                                         />
-                                                        <span
-                                                            :class="[collectionIcon(database, collection), tint({ connectionId: profile.id, database: database.name, collection })]"
+                                                        <NodeIcon
+                                                            :icon="[collectionIcon(database, collection), tint({ connectionId: profile.id, database: database.name, collection })]"
+                                                            :place="{ connectionId: profile.id, database: database.name, collection }"
                                                             :title="database.types[collection] === 'collection' ? undefined : $t(`collection.type.${database.types[collection] ?? 'collection'}`)"
-                                                            class="size-4 shrink-0"
                                                         />
                                                         <span class="truncate text-on-surface-strong">{{ bucketAt(database, collection) ?? collection }}</span>
                                                         <span
