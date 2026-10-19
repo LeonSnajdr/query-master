@@ -2,8 +2,11 @@
 import { ButtonRoot } from "@vuetify/v0";
 import { computed, nextTick, onMounted, ref, shallowRef, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
+import { backend } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
 import MenuList from "@/components/MenuList.vue";
+import { useMessages } from "@/composables/messages";
+import { pickFilePath, pickSavePath } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { convertDraft, DRAFT_TYPES, EMPTY_TYPES, fromDraft, toDraft } from "@/shell/edit";
 import type { Draft } from "@/shell/edit";
@@ -35,6 +38,7 @@ const props = defineProps<{
 const SUGGESTED: readonly ValueType[] = ["string", "int", "long", "double", "decimal", "bool"];
 
 const { t, te } = useI18n();
+const { report } = useMessages();
 
 const initial: Draft = props.value === undefined ? { type: "string", text: "" } : toDraft(props.value);
 const draft = ref<Draft>({ ...initial });
@@ -84,9 +88,60 @@ function commit() {
 
 /** Focus that leaves the editor and its menus ends it without writing. */
 function onFocusOut(event: FocusEvent) {
+    // A file dialog takes the focus away for a while: the editor stays.
+    if (picking.value) return;
     const next = event.relatedTarget as Node | null;
     if (next && root.value?.contains(next)) return;
     emit("close", false);
+}
+
+/** A file dialog of *Open file* or *Save file* is open. */
+const picking = shallowRef(false);
+const datePicker = useTemplateRef<HTMLInputElement>("datePicker");
+
+/** calendar: the browser's date and time picker, in local time. */
+function openCalendar() {
+    const input = datePicker.value;
+    if (!input) return;
+    const at = new Date(draft.value.text);
+    const local = Number.isNaN(at.getTime()) ? new Date() : at;
+    input.value = new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString().slice(0, 23);
+    input.showPicker();
+}
+
+function pickDate() {
+    const value = datePicker.value?.value;
+    if (!value) return;
+    const at = new Date(value);
+    if (!Number.isNaN(at.getTime())) draft.value = { ...draft.value, text: at.toISOString() };
+}
+
+/** *Open file*: the bytes of a file become the binary value. */
+async function loadFile() {
+    picking.value = true;
+    try {
+        const path = await pickFilePath();
+        if (path) draft.value = { ...draft.value, text: await backend.readBase64File(path) };
+    } catch (error) {
+        report(error);
+    } finally {
+        picking.value = false;
+        focusField();
+    }
+}
+
+/** *Save file*: the binary value into a file. */
+async function saveFile() {
+    picking.value = true;
+    try {
+        const path = await pickSavePath(`${props.label || "value"}.bin`);
+        if (path) await backend.writeBase64File(path, draft.value.text);
+    } catch (error) {
+        report(error);
+    } finally {
+        picking.value = false;
+        focusField();
+    }
 }
 
 function choose(type: ValueType) {
@@ -165,7 +220,7 @@ function closeLarge() {
         @dblclick.stop
         @focusout="onFocusOut"
         @keydown.esc="onEscape"
-        class="flex items-center min-w-0 bg-surface-variant"
+        class="relative flex items-center min-w-0 bg-surface-variant"
     >
         <CodeEditor
             v-if="suggest"
@@ -192,6 +247,54 @@ function closeLarge() {
             class="grow min-w-0 h-full bg-transparent outline-none font-mono"
             spellcheck="false"
         />
+        <!--: a calendar for a date, open and save a file for binary data. -->
+        <template v-if="draft.type === 'date'">
+            <input
+                ref="datePicker"
+                @change="pickDate"
+                aria-hidden="true"
+                class="absolute right-12 bottom-0 w-0 h-0 opacity-0"
+                step="0.001"
+                tabindex="-1"
+                type="datetime-local"
+            />
+            <ButtonRoot
+                @click="openCalendar"
+                @mousedown.prevent
+                :ariaLabel="$t('edit.calendar')"
+                :title="$t('edit.calendar')"
+                class="shrink-0 w-4.5 h-full inline-flex items-center justify-center text-on-surface-variant hover:text-on-surface-strong hover:bg-on-surface/10"
+                data-testid="edit-calendar"
+                tabindex="-1"
+            >
+                <span class="i-lucide-calendar size-3" />
+            </ButtonRoot>
+        </template>
+        <template v-if="draft.type === 'binary'">
+            <ButtonRoot
+                @click="loadFile"
+                @mousedown.prevent
+                :ariaLabel="$t('edit.openFile')"
+                :title="$t('edit.openFile')"
+                class="shrink-0 w-4.5 h-full inline-flex items-center justify-center text-on-surface-variant hover:text-on-surface-strong hover:bg-on-surface/10"
+                data-testid="edit-open-file"
+                tabindex="-1"
+            >
+                <span class="i-lucide-folder-open size-3" />
+            </ButtonRoot>
+            <ButtonRoot
+                @click="saveFile"
+                @mousedown.prevent
+                :ariaLabel="$t('edit.saveFile')"
+                :disabled="!draft.text"
+                :title="$t('edit.saveFile')"
+                class="shrink-0 w-4.5 h-full inline-flex items-center justify-center text-on-surface-variant hover:text-on-surface-strong hover:bg-on-surface/10 disabled:opacity-40"
+                data-testid="edit-save-file"
+                tabindex="-1"
+            >
+                <span class="i-lucide-save size-3" />
+            </ButtonRoot>
+        </template>
         <ButtonRoot
             @click="openTypes"
             @mousedown.prevent

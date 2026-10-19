@@ -83,7 +83,9 @@ pub fn run() {
             gridfs::gridfs_upload,
             gridfs::gridfs_download,
             files::read_text_file,
-            files::write_text_file
+            files::write_text_file,
+            files::read_base64_file,
+            files::write_base64_file
         ])
         .build(tauri::generate_context!())
         .expect("error while building QueryMaster")

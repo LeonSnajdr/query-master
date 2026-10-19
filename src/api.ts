@@ -200,6 +200,9 @@ export interface Backend {
     /** Files the user picked in a file dialog. */
     readTextFile: (path: string) => Promise<string>;
     writeTextFile: (path: string, text: string) => Promise<void>;
+    /** A file as Base64, and Base64 into a file: binary values of documents. */
+    readBase64File: (path: string) => Promise<string>;
+    writeBase64File: (path: string, data: string) => Promise<void>;
     /** Runs a script in the engine of the Rust side; `runId` names the run for `stopRun`. */
     /** `output` gets what the script prints while it runs. */
     runScript: (id: string, runId: string, database: string, source: string, readonly: boolean, output: (text: string) => void) => Promise<ScriptResult>;
@@ -273,6 +276,8 @@ const tauriBackend: Backend = {
     runCursorCommand: (id, database, command, limit, runId) => invoke("run_cursor_command", { id, database, command, limit, runId }),
     readTextFile: path => invoke("read_text_file", { path }),
     writeTextFile: (path, text) => invoke("write_text_file", { path, text }),
+    readBase64File: path => invoke("read_base64_file", { path }),
+    writeBase64File: (path, data) => invoke("write_base64_file", { path, data }),
     runScript: (id, runId, database, source, readonly, output) => {
         const onOutput = new Channel<string>();
         onOutput.onmessage = output;
