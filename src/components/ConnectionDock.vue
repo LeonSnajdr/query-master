@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ButtonRoot, PopoverActivator, PopoverContent, PopoverRoot } from "@vuetify/v0";
-import { computed, nextTick, onBeforeUnmount, shallowRef, useTemplateRef, watch } from "vue";
+import { ButtonRoot, PopoverActivator, PopoverContent, PopoverRoot, useEventListener } from "@vuetify/v0";
+import { computed, nextTick, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { errorMessage } from "@/api";
 import type { Profile } from "@/api";
@@ -473,20 +473,27 @@ function toggleGroup(name: string) {
 }
 const pickedProfile = computed(() => connections.saved.find(profile => profile.id === picked.value));
 
-// A modal dialog opened from the list (a folder name, a question, a connection) closes it: the
-// browser hides every popover for a modal. The list comes back when that dialog is done.
-// A dialog may leave the page without a `close` event, so its going is watched for.
-let waitForDialog: ReturnType<typeof setInterval> | undefined;
-watch(listOpen, (open) => {
-    clearInterval(waitForDialog);
-    if (open || !document.querySelector("dialog:modal")) return;
-    waitForDialog = setInterval(() => {
-        if (document.querySelector("dialog:modal")) return;
-        clearInterval(waitForDialog);
-        listOpen.value = true;
-    }, 100);
-});
-onBeforeUnmount(() => clearInterval(waitForDialog));
+/**
+ * The list is a manual popover: a modal dialog opened from it (a name, a question, a connection)
+ * does not hide it, so after Cancel the work goes on where it was. A click outside or Escape
+ * closes it, as an automatic popover would; not while a dialog is open over it.
+ */
+function dismissList(event: Event) {
+    if (!listOpen.value || document.querySelector("dialog:modal")) return;
+    const panel = document.querySelector("[data-testid=connection-panel]");
+    const target = event.target instanceof Node ? event.target : null;
+    if (event instanceof KeyboardEvent) {
+        // Escape closes an open menu of the list first.
+        if (event.key !== "Escape" || panel?.querySelector("[popover]:popover-open")) return;
+    } else {
+        // Inside the list, on its button, or in a menu or card above it: not outside.
+        const inPopover = target instanceof Element && target.closest("[popover]:popover-open") !== null;
+        if (!target || panel?.contains(target) || inPopover || (target instanceof Element && target.closest("[data-testid=connection-list]"))) return;
+    }
+    listOpen.value = false;
+}
+useEventListener(document, "pointerdown", dismissList, { capture: true });
+useEventListener(document, "keydown", dismissList);
 
 // Color and read-only of a connection show in the list before it is connected. The search has
 // the focus, so typing filters at once (the arrow keys still pick from there).
@@ -502,14 +509,12 @@ watch(listOpen, (open) => {
 function editPicked() {
     const profile = pickedProfile.value;
     if (!profile) return;
-    listOpen.value = false;
     dialogs.editConnection(profile);
 }
 
 function deletePicked() {
     const profile = pickedProfile.value;
     if (!profile) return;
-    listOpen.value = false;
     void actions.deleteConnection(profile);
 }
 
@@ -517,29 +522,24 @@ const listMenu = useTemplateRef("listMenu");
 const listSearchInput = useTemplateRef("listSearchInput");
 
 function uriOf(profile: Profile) {
-    listOpen.value = false;
     void actions.viewUri({ connectionId: profile.id });
 }
 
 /** The menu of a connection in the list: everything for it. */
 function openListMenu(event: MouseEvent, profile: Profile) {
     event.stopPropagation();
-    const close = (action: () => void) => () => {
-        listOpen.value = false;
-        action();
-    };
     const head: MenuEntry[] = [
         { label: t("connection.connect"), icon: "i-lucide-plug", hotkey: "Enter", action: () => profile && void choose(profile), disabled: !profile },
         "separator",
-        { label: t("connection.add"), icon: "i-lucide-plus", command: "connection.add", action: close(() => actions.newConnection()) },
-        { label: t("connection.addFromUri"), icon: "i-lucide-link", command: "connection.addUri", action: close(() => void actions.addFromUri()) }
+        { label: t("connection.add"), icon: "i-lucide-plus", command: "connection.add", action: () => actions.newConnection() },
+        { label: t("connection.addFromUri"), icon: "i-lucide-link", command: "connection.addUri", action: () => void actions.addFromUri() }
     ];
     const find: MenuEntry = { label: t("connection.find"), icon: "i-lucide-search", hotkey: "Ctrl + F", action: () => listSearchInput.value?.focus() };
     picked.value = profile.id;
     const at = { connectionId: profile.id };
     void listMenu.value?.open(event, [
         ...head,
-        { label: t("connection.clone"), icon: "i-lucide-copy", action: close(() => dialogs.cloneConnection(profile)) },
+        { label: t("connection.clone"), icon: "i-lucide-copy", action: () => dialogs.cloneConnection(profile) },
         { label: t("connection.group.move"), icon: "i-lucide-folder", children: moveEntries(profile) },
         "separator",
         { label: t("connection.edit"), icon: "i-lucide-pencil", hotkey: "Ctrl + E", action: () => editPicked() },
@@ -554,16 +554,12 @@ function openListMenu(event: MouseEvent, profile: Profile) {
 
 /** Right click on the free space of the list: what needs no chosen connection. */
 function openListSpaceMenu(event: MouseEvent) {
-    const close = (action: () => void) => () => {
-        listOpen.value = false;
-        action();
-    };
     void listMenu.value?.open(event, [
         { label: t("connection.connect"), icon: "i-lucide-plug", hotkey: "Enter", action: () => undefined, disabled: true },
         "separator",
-        { label: t("connection.add"), icon: "i-lucide-plus", command: "connection.add", action: close(() => actions.newConnection()) },
-        { label: t("connection.addFromUri"), icon: "i-lucide-link", command: "connection.addUri", action: close(() => void actions.addFromUri()) },
-        { label: `${t("connection.connectFromUri")} …`, icon: "i-lucide-globe", action: close(() => void actions.connectFromUri()) },
+        { label: t("connection.add"), icon: "i-lucide-plus", command: "connection.add", action: () => actions.newConnection() },
+        { label: t("connection.addFromUri"), icon: "i-lucide-link", command: "connection.addUri", action: () => void actions.addFromUri() },
+        { label: `${t("connection.connectFromUri")} …`, icon: "i-lucide-globe", action: () => void actions.connectFromUri() },
         { label: `${t("connection.folder.add")} …`, icon: "i-lucide-folder-plus", command: "folder.add", action: () => void actions.addConnectionFolder() },
         "separator",
         { label: t("connection.find"), icon: "i-lucide-search", hotkey: "Ctrl + F", action: () => listSearchInput.value?.focus() }
@@ -657,7 +653,7 @@ function openGroupMenu(event: MouseEvent, path: string, where: "list" | "tree") 
         { label: t("connection.folder.connectAll"), icon: "i-lucide-plug", action: leave(() => void Promise.all(inside.filter(profile => !connections.sessions[profile.id]).map(profile => actions.connect(profile)))), disabled: inside.length === open.length },
         { label: t("connection.folder.disconnectAll"), icon: "i-lucide-unplug", action: () => void actions.disconnectMany(open.map(profile => ({ connectionId: profile.id }))), disabled: open.length === 0 },
         "separator",
-        { label: t("connection.folder.newConnection"), icon: "i-lucide-plus", action: leave(() => dialogs.newConnectionIn(path)) },
+        { label: t("connection.folder.newConnection"), icon: "i-lucide-plus", action: () => dialogs.newConnectionIn(path) },
         { label: `${t("folder.addInside")} …`, icon: "i-lucide-folder-plus", action: () => void actions.addConnectionFolder(path) },
         { label: `${t("connection.folder.rename")} …`, icon: "i-lucide-pencil", action: () => void renameConnectionFolder(path) },
         { label: t("connection.folder.delete"), icon: "i-lucide-folder-x", danger: true, action: () => void connections.deleteGroup(path).catch(report) }
@@ -1165,11 +1161,12 @@ defineExpose({
                 <PopoverContent
                     class="menu-panel w-[340px] h-[530px] min-w-64 min-h-48 max-w-[90vw] max-h-[85vh] resize overflow-hidden flex-col [&:popover-open]:flex"
                     data-testid="connection-panel"
+                    popover="manual"
                     positionArea="bottom span-right"
                 >
                     <div class="h-10 shrink-0 flex items-center gap-0.5 px-4">
                         <IconButton
-                            @click="listOpen = false; actions.newConnection()"
+                            @click="actions.newConnection()"
                             :label="keymap.titled($t('connection.add'), 'connection.add')"
                             icon="i-lucide-plus"
                             tint="text-success"
@@ -1178,7 +1175,7 @@ defineExpose({
                         </IconButton>
                         <span class="toolbar-rule" />
                         <IconButton
-                            @click="listOpen = false; actions.connectFromUri()"
+                            @click="actions.connectFromUri()"
                             :label="$t('connection.connectFromUri')"
                             icon="i-lucide-globe"
                         />
