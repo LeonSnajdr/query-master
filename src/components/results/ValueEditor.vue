@@ -4,7 +4,9 @@ import { computed, nextTick, onMounted, ref, shallowRef, useTemplateRef } from "
 import { useI18n } from "vue-i18n";
 import { backend } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
+import DatePicker from "@/components/DatePicker.vue";
 import MenuList from "@/components/MenuList.vue";
+import { preferences } from "@/composables/appearance";
 import { useMessages } from "@/composables/messages";
 import { pickFilePath, pickSavePath } from "@/files";
 import type { MenuEntry } from "@/menu";
@@ -86,7 +88,14 @@ function measureRoom() {
 
 /** Shift+Enter, as in DataGrip: the value in the large editor. */
 function onShiftEnter(event: KeyboardEvent) {
-    if (event.key !== "Enter" || !event.shiftKey || expanded.value) return;
+    // Alt+↓, as in a date field of the system: the calendar.
+    if (event.key === "ArrowDown" && event.altKey && draft.value.type === "date" && !calendarOpen.value) {
+        event.preventDefault();
+        event.stopPropagation();
+        void openCalendar();
+        return;
+    }
+    if (event.key !== "Enter" || !event.shiftKey || expanded.value || calendarOpen.value) return;
     event.preventDefault();
     event.stopPropagation();
     void openLarge();
@@ -126,23 +135,40 @@ function onFocusOut(event: FocusEvent) {
 
 /** A file dialog of *Open file* or *Save file* is open. */
 const picking = shallowRef(false);
-const datePicker = useTemplateRef<HTMLInputElement>("datePicker");
+const calendar = useTemplateRef<HTMLDivElement>("calendar");
+const calendarAt = shallowRef({ left: 0, top: 0 });
+const calendarOpen = shallowRef(false);
+/** The moment the calendar starts on: the value, or now when the text is no date. */
+const calendarValue = shallowRef(0);
 
-/** calendar: the browser's date and time picker, in local time. */
-function openCalendar() {
-    const input = datePicker.value;
-    if (!input) return;
-    const at = new Date(draft.value.text);
-    const local = Number.isNaN(at.getTime()) ? new Date() : at;
-    input.value = new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString().slice(0, 23);
-    input.showPicker();
+/** The app's own calendar below the field (above it at the bottom of the window). */
+async function openCalendar() {
+    const element = calendar.value;
+    const field = root.value?.getBoundingClientRect();
+    if (!element || !field) return;
+    closeTypes();
+    const at = Date.parse(draft.value.text);
+    calendarValue.value = Number.isNaN(at) ? Date.now() : at;
+    calendarOpen.value = true;
+    element.showPopover();
+    await nextTick();
+    const { width, height } = element.getBoundingClientRect();
+    calendarAt.value = {
+        left: Math.max(4, Math.min(field.left, window.innerWidth - width - 4)),
+        top: field.bottom + height > window.innerHeight - 4 ? Math.max(4, field.top - height - 2) : field.bottom + 2
+    };
 }
 
-function pickDate() {
-    const value = datePicker.value?.value;
-    if (!value) return;
-    const at = new Date(value);
-    if (!Number.isNaN(at.getTime())) draft.value = { ...draft.value, text: at.toISOString() };
+function closeCalendar() {
+    calendarOpen.value = false;
+    calendar.value?.hidePopover();
+    focusField();
+}
+
+/** The chosen moment into the field, as MongoDB keeps it: UTC with milliseconds. */
+function applyDate(milliseconds: number) {
+    draft.value = { ...draft.value, text: new Date(milliseconds).toISOString() };
+    closeCalendar();
 }
 
 /** *Open file*: the bytes of a file become the binary value. */
@@ -284,15 +310,6 @@ function closeLarge() {
         />
         <!--: a calendar for a date, open and save a file for binary data. -->
         <template v-if="draft.type === 'date'">
-            <input
-                ref="datePicker"
-                @change="pickDate"
-                aria-hidden="true"
-                class="absolute right-12 bottom-0 w-0 h-0 opacity-0"
-                step="0.001"
-                tabindex="-1"
-                type="datetime-local"
-            />
             <ButtonRoot
                 @click="openCalendar"
                 @mousedown.prevent
@@ -352,6 +369,22 @@ function closeLarge() {
         >
             <span class="i-lucide-maximize-2 size-3" />
         </ButtonRoot>
+        <!-- The calendar of a date (Alt+↓ or the button), in the zone of the display settings. -->
+        <div
+            ref="calendar"
+            :style="{ left: `${calendarAt.left}px`, top: `${calendarAt.top}px` }"
+            class="menu-panel fixed [inset:auto] m-0 p-0"
+            data-testid="edit-calendar-panel"
+            popover="manual"
+        >
+            <DatePicker
+                v-if="calendarOpen"
+                @apply="applyDate"
+                @cancel="closeCalendar"
+                :value="calendarValue"
+                :zone="preferences.timeZone"
+            />
+        </div>
         <div
             ref="types"
             @mousedown.prevent
