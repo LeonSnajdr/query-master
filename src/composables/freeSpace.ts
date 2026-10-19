@@ -1,10 +1,13 @@
 /** What counts as a row: the items of a tree, a list box or a table. */
 export const ROWS = "[role=treeitem], [role=option], [role=row]";
 
-/** Whether a click hit the free space of a list, outside every row (an element matching `rows`). */
-export function isFreeSpace(event: Pick<MouseEvent, "target">, rows = ROWS): boolean {
+/** Controls in or around a list: a click on one is meant for it, never for the free space. */
+const CONTROLS = "button, input, textarea, select, a, [role=button], [contenteditable], .cm-editor";
+
+/** Whether a click hit the free space of a list, outside every row (an element matching `rows`) and control. */
+export function isFreeSpace(event: { target: unknown }, rows = ROWS): boolean {
     const target = event.target as { closest?: (selector: string) => unknown } | null;
-    return !target?.closest?.(rows);
+    return !target?.closest?.(rows) && !target?.closest?.(CONTROLS);
 }
 
 /**

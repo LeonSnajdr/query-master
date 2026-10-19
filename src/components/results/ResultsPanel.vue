@@ -10,6 +10,7 @@ import ErrorState from "@/components/ErrorState.vue";
 import IconButton from "@/components/IconButton.vue";
 import { preferences } from "@/composables/appearance";
 import { useDialogs } from "@/composables/dialogs";
+import { useFreeSpace } from "@/composables/freeSpace";
 import { useMessages } from "@/composables/messages";
 import { useExportWizard } from "@/composables/exportWizard";
 import type { ExportFormat } from "@/transfer/export";
@@ -610,6 +611,41 @@ async function clipboardHasDocuments(): Promise<boolean> {
     }
 }
 
+/** The menu of the free space below the documents: what needs no document. */
+async function openSpaceMenu(event: MouseEvent) {
+    const pasteable = await clipboardHasDocuments();
+    const locked = collection.value === undefined || tabs.locked(tab.value);
+    void menu.value?.open(event, [
+        { label: t("document.add"), icon: "i-lucide-file-plus-2", action: addDocument, disabled: locked },
+        { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", command: "result.importClipboard", action: () => void importClipboard(), disabled: locked || !pasteable },
+        { label: t("result.import"), icon: "i-lucide-download", command: "result.import", action: () => void importDocuments(), disabled: locked },
+        { label: t("export.menu"), icon: "i-lucide-upload", command: "result.export", action: () => void openExport(), disabled: !result.value },
+        "separator",
+        { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void tabs.refresh(tab.value) }
+    ]);
+}
+
+/**
+ * Clicks below the documents of the tree and the table, as in Windows Explorer: the chosen
+ * documents and field are let go, and a right click opens the menu of the space. The Json view
+ * and the plan are no lists: they keep their own clicks.
+ */
+const space = useFreeSpace(() => {
+    selected.value = undefined;
+    selectedPath.value = "";
+    marked.value = new Set();
+    tab.value.fieldPath = undefined;
+}, { rows: "[role=treeitem], tr", menu: event => void openSpaceMenu(event) });
+const isList = computed(() => tab.value.view === "tree" || tab.value.view === "table");
+
+function onSpaceClick(event: MouseEvent) {
+    if (isList.value) space.onClick(event);
+}
+
+function onSpaceMenu(event: MouseEvent) {
+    if (isList.value) space.onContextMenu(event);
+}
+
 function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = []) {
     void clipboardHasDocuments().then(pasteable => showMenu(event, target, extra, pasteable));
 }
@@ -923,6 +959,8 @@ provideResultContext({ editable, selected, selectedPath, marked, choose, fold, p
         </div>
         <!-- Focusable for F7 ("Set focus to results"); the keys of the tree are handled here. -->
         <div
+            @click="onSpaceClick"
+            @contextmenu="onSpaceMenu"
             @keydown="onResultKey"
             :class="tab.running && result ? 'opacity-60' : ''"
             class="grow min-h-0 overflow-auto pb-2 font-mono text-[13px] leading-[19px] select-text outline-none transition-opacity"

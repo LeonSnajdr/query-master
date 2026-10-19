@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogRoot, DialogTitle, SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
-import { computed, ref, shallowRef, watch } from "vue";
+import { computed, ref, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { namesAsChoices } from "@/choice";
 import FormError from "@/components/FormError.vue";
 import IconButton from "@/components/IconButton.vue";
 import ChoiceField from "@/components/ChoiceField.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
+import ContextMenu from "@/components/ContextMenu.vue";
 import { useExportWizard } from "@/composables/exportWizard";
+import { useFreeSpace } from "@/composables/freeSpace";
 import { CSV_FILES, JSON_FILES, pickFolder, pickSavePath, SQL_FILES } from "@/files";
 import type { FileKind } from "@/files";
 import { useConnectionsStore } from "@/stores/connections";
@@ -106,6 +108,19 @@ function clickRow(event: MouseEvent, index: number) {
     }
     selected.value = index;
 }
+const spaceMenu = useTemplateRef("spaceMenu");
+
+/** Below the rows, as in Windows Explorer: the choice goes away; the menu offers adding one. */
+const rowSpace = useFreeSpace(() => {
+    selected.value = undefined;
+    marked.value = new Set();
+}, {
+    rows: "[data-testid=export-row], thead",
+    menu: event => void spaceMenu.value?.open(event, [
+        { label: t("export.addCollection"), icon: "i-lucide-file-plus-2", action: () => openForm() }
+    ])
+});
+
 /** The form of "Add collection", also for editing a row (`editing` is its index). */
 const form = ref<{ database: string; collection: string; output: string; filter: string; editing?: number }>();
 const formDatabase = computed(() => connections.sessions[state.value.connectionId]?.databases.find(database => database.name === form.value?.database));
@@ -397,6 +412,8 @@ watch(() => wizard.runId, () => (failure.value = undefined));
 
                     <!-- Del removes the selected rows Remove. -->
                     <div
+                        @click="rowSpace.onClick"
+                        @contextmenu="rowSpace.onContextMenu"
                         @keydown.delete.self="removeRow"
                         class="grow min-h-0 overflow-auto rounded-sm bg-background border border-divider focus-visible:outline-1 focus-visible:outline-primary"
                         tabindex="0"
@@ -673,6 +690,8 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                     </DialogClose>
                 </footer>
             </div>
+            <!-- Inside the dialog, so that its menu is not behind the dialog's backdrop. -->
+            <ContextMenu ref="spaceMenu" />
         </DialogContent>
     </DialogRoot>
 </template>

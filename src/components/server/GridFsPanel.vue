@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import { ButtonContent, ButtonRoot } from "@vuetify/v0";
-import { computed, onMounted, ref, shallowRef } from "vue";
+import { computed, onMounted, ref, shallowRef, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage, inApp } from "@/api";
 import ChoiceField from "@/components/ChoiceField.vue";
 import CodeEditor from "@/components/CodeEditor.vue";
+import ContextMenu from "@/components/ContextMenu.vue";
 import ErrorState from "@/components/ErrorState.vue";
 import FormError from "@/components/FormError.vue";
 import IconButton from "@/components/IconButton.vue";
 import { useDialogs } from "@/composables/dialogs";
+import { useFreeSpace } from "@/composables/freeSpace";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
 import { useTask } from "@/composables/task";
 import { pickFilePath, pickSavePath } from "@/files";
+import type { MenuEntry } from "@/menu";
 import { isDoc, preview, toNumber, toShell } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
@@ -253,6 +256,23 @@ async function renameBucket() {
         report(cause);
     }
 }
+
+const spaceMenu = useTemplateRef("spaceMenu");
+
+/** Below the files, as in Windows Explorer: the choice goes away; the menu offers what needs no file. */
+const fileSpace = useFreeSpace(() => (selected.value = undefined), {
+    // The details below the list belong to the chosen file: a click there keeps it.
+    rows: "tbody tr, thead, [data-testid=gridfs-details]",
+    menu: (event) => {
+        const entries: MenuEntry[] = [
+            { label: `${t("gridfs.upload")} …`, icon: "i-lucide-upload", action: () => void upload(), disabled: locked.value },
+            { label: t("action.refresh"), icon: "i-lucide-refresh-cw", action: () => void load(), disabled: loading.value },
+            "separator",
+            { label: `${t("gridfs.renameBucket")} …`, icon: "i-lucide-folder-pen", action: () => void renameBucket(), disabled: locked.value }
+        ];
+        void spaceMenu.value?.open(event, entries);
+    }
+});
 
 /** The whole entry of the file in `.files` *File info*. */
 const details = computed(() => (current.value ? toShell(current.value) : undefined));
@@ -514,7 +534,10 @@ onMounted(load);
 
         <div
             v-else
+            @click="fileSpace.onClick"
+            @contextmenu="fileSpace.onContextMenu"
             class="grow min-h-0 overflow-auto px-5 pb-4"
+            data-testid="gridfs-list"
         >
             <table
                 class="plain-table"
@@ -585,5 +608,6 @@ onMounted(load);
                 </div>
             </div>
         </div>
+        <ContextMenu ref="spaceMenu" />
     </section>
 </template>

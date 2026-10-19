@@ -16,6 +16,11 @@ describe("free space of a list", () => {
         expect(isFreeSpace({ target: null })).toBe(true);
     });
 
+    it("leaves a click on a control to the control", () => {
+        const onButton = { target: { closest: (selector: string) => (selector.includes("button") ? {} : null) } };
+        expect(isFreeSpace(onButton)).toBe(false);
+    });
+
     it("clears the selection on a left click into the space, not on a row", () => {
         const clear = vi.fn();
         const space = useFreeSpace(clear);
