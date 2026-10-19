@@ -82,6 +82,84 @@ pub async fn set_group(pool: &SqlitePool, id: Uuid, group: &str) -> Result<()> {
     Ok(())
 }
 
+/// Every folder of the connections: those kept in `connection_folder` and those connections name.
+pub async fn folders(pool: &SqlitePool) -> Result<Vec<String>> {
+    let names = sqlx::query_scalar!(
+        r#"
+            select name as "name!" from connection_folder
+            union
+            select group_name as "name!" from connection where group_name <> ''
+            order by 1
+        "#
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(names)
+}
+
+pub async fn add_folder(pool: &SqlitePool, name: &str) -> Result<()> {
+    sqlx::query!(
+        "insert or ignore into connection_folder (name) values ($1)",
+        name
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Gives the folder `from` and all folders in it the path `to` instead, with their connections.
+/// `to` empty takes the folder away: what lay in it lies one level up then.
+pub async fn move_folder(pool: &SqlitePool, from: &str, to: &str) -> Result<()> {
+    let mut transaction = pool.begin().await?;
+    // `from/x` becomes `to/x`, or `x` when the folder goes; `from` itself becomes `to`.
+    sqlx::query!(
+        r#"
+            update connection
+            set group_name = case
+                when group_name = $1 then $2
+                when $2 = '' then substr(group_name, length($1) + 2)
+                else $2 || substr(group_name, length($1) + 1)
+            end
+            where group_name = $1 or substr(group_name, 1, length($1) + 1) = $1 || '/'
+        "#,
+        from,
+        to
+    )
+    .execute(&mut *transaction)
+    .await?;
+    let inside = sqlx::query_scalar!(
+        r#"
+            select name as "name!" from connection_folder
+            where name = $1 or substr(name, 1, length($1) + 1) = $1 || '/'
+        "#,
+        from
+    )
+    .fetch_all(&mut *transaction)
+    .await?;
+    for name in inside {
+        sqlx::query!("delete from connection_folder where name = $1", name)
+            .execute(&mut *transaction)
+            .await?;
+        let moved = if name == from {
+            to.to_string()
+        } else if to.is_empty() {
+            name[from.len() + 1..].to_string()
+        } else {
+            format!("{to}{}", &name[from.len()..])
+        };
+        if !moved.is_empty() {
+            sqlx::query!(
+                "insert or ignore into connection_folder (name) values ($1)",
+                moved
+            )
+            .execute(&mut *transaction)
+            .await?;
+        }
+    }
+    transaction.commit().await?;
+    Ok(())
+}
+
 pub async fn set_environment(pool: &SqlitePool, id: Uuid, environment: Option<&str>) -> Result<()> {
     sqlx::query!(
         "update connection set environment = $2 where id = $1",
@@ -280,5 +358,58 @@ mod tests {
         set_ssh(&pool, atlas.id, Some(&row)).await.unwrap();
         delete(&pool, atlas.id).await.unwrap();
         assert!(ssh(&pool, atlas.id).await.unwrap().is_none());
+    }
+
+    /// The folder of each connection, by name, sorted.
+    async fn groups(pool: &SqlitePool) -> Vec<(String, String)> {
+        let mut pairs: Vec<_> = list(pool)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|connection| (connection.name, connection.group_name))
+            .collect();
+        pairs.sort();
+        pairs
+    }
+
+    #[tokio::test]
+    async fn keeps_empty_and_nested_folders_and_moves_their_connections() {
+        use crate::connection::{add_folder, delete_folder, folders as all, rename_folder};
+        let pool = db::memory_pool().await;
+        let prod = Connection {
+            group_name: "Kunden/Produktion".into(),
+            ..connection("Prod")
+        };
+        let test = Connection {
+            group_name: "Kunden".into(),
+            ..connection("Test")
+        };
+        upsert(&pool, &prod).await.unwrap();
+        upsert(&pool, &test).await.unwrap();
+        // Parts are trimmed; an empty folder stays; a connection's folder needs no row.
+        add_folder(&pool, " Intern / ").await.unwrap();
+        assert!(add_folder(&pool, " / ").await.is_err());
+        assert_eq!(all(&pool).await.unwrap(), ["Intern", "Kunden", "Kunden/Produktion"]);
+
+        // Renaming takes the folders and connections inside along.
+        rename_folder(&pool, "Kunden", "Partner").await.unwrap();
+        assert_eq!(
+            groups(&pool).await,
+            [("Prod".into(), "Partner/Produktion".into()), ("Test".into(), "Partner".into())]
+        );
+        assert!(rename_folder(&pool, "Partner", "Partner/Neu").await.is_err());
+        // Moving a folder into another is renaming it with the whole path.
+        rename_folder(&pool, "Partner/Produktion", "Intern/Produktion").await.unwrap();
+        assert_eq!(groups(&pool).await[0], ("Prod".into(), "Intern/Produktion".into()));
+
+        // Deleting puts what lay in it one level up; nothing is lost.
+        delete_folder(&pool, "Intern/Produktion").await.unwrap();
+        assert_eq!(groups(&pool).await[0], ("Prod".into(), "Intern".into()));
+        delete_folder(&pool, "Intern").await.unwrap();
+        assert_eq!(
+            groups(&pool).await,
+            [("Prod".into(), String::new()), ("Test".into(), "Partner".into())]
+        );
+        assert_eq!(all(&pool).await.unwrap(), ["Partner"]);
     }
 }

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            select name as \"name!\" from connection_folder\n            where name = $1 or substr(name, 1, length($1) + 1) = $1 || '/'\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "name!",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "e844b6739f40da0feeb6113eb2376016b9430057da9f8e534b9bc48a3488c2c1"
+}

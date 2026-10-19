@@ -372,9 +372,20 @@ export function useActions() {
      * databases, on a database (or a collection in it) the collections of that database.
      */
     async function addFolder(at = target.value, parent?: string) {
-        if (!at) return;
+        // Nothing chosen (a click into the free space): a folder for connections.
+        if (!at) return addConnectionFolder();
         const name = await askFolderName({ title: t(parent === undefined ? "folder.add" : "folder.addInside"), label: t("folder.name"), action: t("action.create") });
         if (name) await notes.addFolder(at.connectionId, at.database ?? "", parent === undefined ? name : `${parent}/${name}`).catch(report);
+    }
+
+    /** A folder of connections, in the list (F2) and the tree; `parent` puts it inside another. */
+    async function addConnectionFolder(parent = ""): Promise<string | undefined> {
+        const name = await askFolderName({ title: t(parent ? "folder.addInside" : "connection.folder.add"), label: t("folder.name"), action: t("action.create") });
+        if (!name) return undefined;
+        return connections.addGroup(name, parent).catch((error: unknown) => {
+            report(error);
+            return undefined;
+        });
     }
 
     /** A name for a folder; `/` separates folders in folders, so it is not part of a name. */
@@ -573,7 +584,7 @@ export function useActions() {
     }
 
     return {
-        replicaSet, firstOpen, target, hasConnection, hasDatabase, hasCollection, onView, anyOpen,
+        replicaSet, firstOpen, addConnectionFolder, target, hasConnection, hasDatabase, hasCollection, onView, anyOpen,
         openShell, browse, schema, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, clearCollection, duplicateCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,

@@ -151,6 +151,52 @@ pub async fn set_group(pool: &SqlitePool, id: Uuid, group: &str) -> Result<()> {
     repository::set_group(pool, id, group.trim()).await
 }
 
+/// A folder path as kept: its parts trimmed, empty parts dropped, joined with `/`.
+pub(crate) fn folder_path(name: &str) -> String {
+    name.split('/')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// The folder a folder lies in; empty at the top.
+fn parent_folder(path: &str) -> &str {
+    path.rsplit_once('/').map_or("", |(parent, _)| parent)
+}
+
+/// The folders of the connections, also empty ones and those only a connection names.
+pub async fn folders(pool: &SqlitePool) -> Result<Vec<String>> {
+    repository::folders(pool).await
+}
+
+/// Keeps a folder even while no connection lies in it; nested ones with `/`.
+pub async fn add_folder(pool: &SqlitePool, name: &str) -> Result<()> {
+    let path = folder_path(name);
+    if path.is_empty() {
+        return Err(Error::FolderName);
+    }
+    repository::add_folder(pool, &path).await
+}
+
+/// Renames or moves a folder (`to` is its whole new path) with all folders and connections in it.
+pub async fn rename_folder(pool: &SqlitePool, from: &str, to: &str) -> Result<()> {
+    let (from, to) = (folder_path(from), folder_path(to));
+    if from.is_empty() || to.is_empty() {
+        return Err(Error::FolderName);
+    }
+    if to == from || to.starts_with(&format!("{from}/")) {
+        return Err(Error::FolderIntoItself);
+    }
+    repository::move_folder(pool, &from, &to).await
+}
+
+/// Takes a folder away; its connections and folders lie in the folder above it then.
+pub async fn delete_folder(pool: &SqlitePool, name: &str) -> Result<()> {
+    let path = folder_path(name);
+    repository::move_folder(pool, &path, parent_folder(&path)).await
+}
+
 pub async fn mark_used(pool: &SqlitePool, id: Uuid) -> Result<()> {
     repository::set_last_used(pool, id, Utc::now()).await
 }

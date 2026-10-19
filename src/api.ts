@@ -182,6 +182,13 @@ export interface Backend {
     connectionSsh: (id: string) => Promise<SshSettings | null>;
     /** Moves a saved connection into a group of the list; empty for none. */
     setConnectionGroup: (id: string, group: string) => Promise<void>;
+    /** Every folder of the connections, also empty ones; nested with "/". */
+    listConnectionFolders: () => Promise<string[]>;
+    addConnectionFolder: (name: string) => Promise<void>;
+    /** Renames or moves a folder (`to` is its whole path) with what lies in it. */
+    renameConnectionFolder: (from: string, to: string) => Promise<void>;
+    /** Takes a folder away; what lay in it lies one level up then. */
+    deleteConnectionFolder: (name: string) => Promise<void>;
     saveConnection: (input: ProfileInput) => Promise<Profile>;
     /** Marks a saved connection as development, test or production; `null` takes the mark away. */
     setConnectionEnvironment: (id: string, environment: Environment | null) => Promise<void>;
@@ -264,6 +271,10 @@ const tauriBackend: Backend = {
     connectionUri: id => invoke("connection_uri", { id }),
     connectionSsh: id => invoke("connection_ssh", { id }),
     setConnectionGroup: (id, group) => invoke("connection_set_group", { id, group }),
+    listConnectionFolders: () => invoke("connection_folder_list"),
+    addConnectionFolder: name => invoke("connection_folder_add", { name }),
+    renameConnectionFolder: (from, to) => invoke("connection_folder_rename", { from, to }),
+    deleteConnectionFolder: name => invoke("connection_folder_delete", { name }),
     saveConnection: input => invoke("connection_save", { input }),
     setConnectionEnvironment: (id, environment) => invoke("connection_set_environment", { id, environment }),
     deleteConnection: id => invoke("connection_delete", { id }),

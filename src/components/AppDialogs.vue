@@ -404,6 +404,7 @@ function copyText() {
     <ConnectionDialog
         v-model="state.connectionOpen"
         :clone="state.connectionClone"
+        :group="state.connectionGroup"
         :profile="state.connection"
     />
     <CollectionDialog

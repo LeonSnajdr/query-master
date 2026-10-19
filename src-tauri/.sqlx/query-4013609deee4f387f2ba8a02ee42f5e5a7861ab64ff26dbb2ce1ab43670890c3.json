@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "insert or ignore into connection_folder (name) values ($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "4013609deee4f387f2ba8a02ee42f5e5a7861ab64ff26dbb2ce1ab43670890c3"
+}

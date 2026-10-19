@@ -106,6 +106,8 @@ const state = reactive({
     collectionOpen: false,
     collection: undefined as CollectionRequest | undefined,
     connection: undefined as Profile | undefined,
+    /** A new connection: the folder it starts in. */
+    connectionGroup: "",
     /** The dialog starts from `connection` but saves a new one. */
     connectionClone: false
 });
@@ -135,8 +137,15 @@ export function useDialogs() {
     /** Opens the connection dialog for a new connection, or for the one given. */
     function editConnection(profile?: Profile): void {
         state.connection = profile;
+        state.connectionGroup = "";
         state.connectionClone = false;
         state.connectionOpen = true;
+    }
+
+    /** Opens the connection dialog for a new connection in the folder `group`. */
+    function newConnectionIn(group: string): void {
+        editConnection();
+        state.connectionGroup = group;
     }
 
     /** Opens the connection dialog for a new connection that starts as a copy of the one given. */
@@ -179,7 +188,7 @@ export function useDialogs() {
         state.help = page;
     }
 
-    return { ask, confirm, showText, editConnection, cloneConnection, editCollection, editIndex, saveQuery, openSettings, openHelp };
+    return { ask, confirm, showText, editConnection, newConnectionIn, cloneConnection, editCollection, editIndex, saveQuery, openSettings, openHelp };
 }
 
 /** For `AppDialogs.vue` only. */

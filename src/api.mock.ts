@@ -1,4 +1,5 @@
 import type { Backend, Profile, SavedQuery, SessionTab, Setting, TreeFolder, TreeNote } from "./api";
+import { allFolders, folderPath, parentFolder as parentConnectionFolder, within } from "./connection/folders";
 import { folderWithin, parentFolder } from "./tree/folders";
 import { isDoc, toNumber } from "./shell/ejson";
 import type { Doc, Json } from "./shell/ejson";
@@ -12,6 +13,20 @@ const profiles: Profile[] = [
     // A server that is not there: shows how a connection that fails stays in the tree.
     { id: "offline", name: "Offline (unreachable)", address: "mongodb://10.0.0.1:27017" }
 ];
+/** Folders of the connections kept while empty, as the table `connection_folder`. */
+const connectionFolders = new Set<string>();
+
+/** `from` and what lies in it get the path `to` (empty: one level up), as the backend does. */
+function moveConnectionFolder(from: string, to: string) {
+    const moved = (path: string) => (path === from ? to : to ? `${to}${path.slice(from.length)}` : path.slice(from.length + 1));
+    for (const profile of profiles) {
+        if (profile.groupName && within(profile.groupName, from)) profile.groupName = moved(profile.groupName);
+    }
+    for (const path of [...connectionFolders].filter(path => within(path, from))) {
+        connectionFolders.delete(path);
+        if (moved(path)) connectionFolders.add(moved(path));
+    }
+}
 
 const COLLECTIONS: Record<string, string[]> = {
     shop: ["orders", "customers", "order-items"],
@@ -95,6 +110,13 @@ export const mockBackend: Backend = {
         const profile = profiles.find(item => item.id === id);
         if (profile) profile.groupName = group;
     },
+    // As the backend: kept folders and those the connections name; moving takes both along.
+    listConnectionFolders: async () => allFolders([...connectionFolders], profiles),
+    addConnectionFolder: async (name) => {
+        connectionFolders.add(folderPath(name));
+    },
+    renameConnectionFolder: async (from, to) => moveConnectionFolder(folderPath(from), folderPath(to)),
+    deleteConnectionFolder: async name => moveConnectionFolder(folderPath(name), parentConnectionFolder(folderPath(name))),
     saveConnection: async (input) => {
         const profile = {
             id: input.id ?? `mock-${profiles.length}`,

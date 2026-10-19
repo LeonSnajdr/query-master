@@ -24,6 +24,8 @@ import { useConnectionsStore } from "@/stores/connections";
 const props = defineProps<{
     profile?: Profile;
     clone?: boolean;
+    /** A new connection: the folder it starts in. */
+    group?: string;
 }>();
 const open = defineModel<boolean>({ default: false });
 
@@ -102,7 +104,7 @@ watch(open, async (isOpen) => {
     name.value = props.profile ? (props.clone ? t("connection.clone.name", { name: props.profile.name }) : props.profile.name) : "";
     environment.value = props.profile?.environment ?? "none";
     visibleDatabases.value = props.profile?.visibleDatabases ?? "";
-    groupName.value = props.profile?.groupName ?? "";
+    groupName.value = props.profile?.groupName ?? props.group ?? "";
     fields.value = emptyFields();
     ssh.value = emptySsh();
     sshChoice.value = "none";

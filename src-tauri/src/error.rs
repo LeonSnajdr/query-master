@@ -52,6 +52,10 @@ pub enum Error {
     Environment(String),
     #[error("a saved query needs a name")]
     QueryName,
+    #[error("a folder needs a name")]
+    FolderName,
+    #[error("a folder can not be moved into itself")]
+    FolderIntoItself,
     #[error("the local database reported an error: {0}")]
     Database(#[from] sqlx::Error),
     #[error(transparent)]
@@ -89,6 +93,8 @@ impl Error {
             Self::SameTarget => Some("error.transfer.sameTarget"),
             Self::Environment(_) => Some("error.backend.environment"),
             Self::QueryName => Some("error.backend.queryName"),
+            Self::FolderName => Some("error.backend.folderName"),
+            Self::FolderIntoItself => Some("error.backend.folderIntoItself"),
             Self::Mongo(_) | Self::Io(_) | Self::Script(_) => None,
         }
     }
@@ -108,7 +114,9 @@ impl Error {
             | Self::WritingPipeline
             | Self::ClipboardTooLarge
             | Self::SameTarget
-            | Self::QueryName => None,
+            | Self::QueryName
+            | Self::FolderName
+            | Self::FolderIntoItself => None,
             Self::OutputName(name) | Self::ImportText(name) => Some(name.clone()),
             Self::CollectionMissing(name) => Some(name.clone()),
             Self::Ssh(message) => Some(message.clone()),

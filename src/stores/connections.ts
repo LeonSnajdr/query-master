@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, reactive, ref, shallowReactive, shallowRef, watch } from "vue";
 import { backend, errorMessage } from "@/api";
 import type { Profile, ProfileInput } from "@/api";
+import { allFolders, folderPath } from "@/connection/folders";
 import { isDoc, scalar } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 import type { Environment } from "@/shell/guard";
@@ -109,6 +110,7 @@ export const useConnectionsStore = defineStore("connections", () => {
 
     async function load(): Promise<void> {
         profiles.value = [...await backend.listConnections(), ...transient];
+        await loadFolders();
     }
 
     /** The saved connections, without those from a typed string. */
@@ -185,8 +187,34 @@ export const useConnectionsStore = defineStore("connections", () => {
         await load();
     }
 
-    /** The groups of the saved connections, by name. */
-    const groups = computed(() => [...new Set(saved.value.map(profile => profile.groupName?.trim() ?? "").filter(Boolean))].sort((a, b) => a.localeCompare(b)));
+    /** The folders kept by the backend, also empty ones; with those the connections name: `groups`. */
+    const keptFolders = ref<string[]>([]);
+    /** Every folder of the saved connections, nested with "/", sorted. */
+    const groups = computed(() => allFolders(keptFolders.value, saved.value));
+
+    async function loadFolders(): Promise<void> {
+        keptFolders.value = await backend.listConnectionFolders();
+    }
+
+    /** A folder of connections, kept while it is empty; `parent` puts it inside another. */
+    async function addGroup(name: string, parent = ""): Promise<string> {
+        const path = folderPath(parent ? `${parent}/${name}` : name);
+        await backend.addConnectionFolder(path);
+        await loadFolders();
+        return path;
+    }
+
+    /** Renames or moves a folder with all it holds; `to` is its whole new path. */
+    async function renameGroup(from: string, to: string): Promise<void> {
+        await backend.renameConnectionFolder(from, to);
+        await Promise.all([load(), loadFolders()]);
+    }
+
+    /** Takes a folder away; its connections and folders lie one level up then. */
+    async function deleteGroup(name: string): Promise<void> {
+        await backend.deleteConnectionFolder(name);
+        await Promise.all([load(), loadFolders()]);
+    }
 
     async function setEnvironment(id: string, environment: Environment | null): Promise<void> {
         await backend.setConnectionEnvironment(id, environment);
@@ -420,5 +448,5 @@ export const useConnectionsStore = defineStore("connections", () => {
         return sampleValues.get(`${id}/${database}/${collection}`)?.get(field);
     }
 
-    return { profiles, saved, recent, groups, setGroup, sessions, connecting, failed, selected, marked, inTree, load, save, setEnvironment, environmentOf, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, rememberSample, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
+    return { profiles, saved, recent, groups, setGroup, addGroup, renameGroup, deleteGroup, sessions, connecting, failed, selected, marked, inTree, load, save, setEnvironment, environmentOf, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, rememberSample, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
 });
