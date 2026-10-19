@@ -23,7 +23,7 @@ import { parseStatements, statementAt } from "@/shell/parse";
 import { optionsOf, stagesOf } from "@/shell/pipeline";
 import { useConnectionsStore } from "@/stores/connections";
 import { useTabsStore } from "@/stores/tabs";
-import { useKeymap } from "@/keys/keymap";
+import { useKeymap, useShortcut } from "@/keys/keymap";
 
 /** A shell: a script above, the output of the statement that ran below. */
 const props = defineProps<{
@@ -154,6 +154,12 @@ async function saveScript(ask = false) {
     }
 }
 
+// Ctrl+S, Ctrl+Shift+S and Ctrl+O, as in every editor: for the shell tab in front.
+const inFront = () => tabs.activeId === tab.value.id;
+useShortcut("script.save", () => void saveScript(), inFront);
+useShortcut("script.saveAs", () => void saveScript(true), inFront);
+useShortcut("script.open", () => void openScript(), inFront);
+
 /** The folder a file lies in, by its name: `C:\scripts\orders.js` → `scripts`. */
 function folderOf(path: string): string {
     return fileName(path.slice(0, Math.max(0, path.length - fileName(path).length - 1)));
@@ -164,7 +170,7 @@ const recentEntries = computed<MenuEntry[]>(() => [
         ? [{ label: t("script.recent.empty"), action: () => undefined, disabled: true }]
         : recent.files.value.map((path): MenuEntry => ({ label: fileName(path), hotkey: folderOf(path), checked: path === tab.value.file, action: () => void openPath(path) }))),
     "separator",
-    { label: t("script.saveAs"), icon: "i-lucide-save-all", action: () => void saveScript(true) }
+    { label: t("script.saveAs"), icon: "i-lucide-save-all", command: "script.saveAs", action: () => void saveScript(true) }
 ]);
 
 /** The `aggregate` statement at the cursor, as rows of the aggregation builder. */
@@ -238,12 +244,12 @@ function openInBuilder() {
             <span class="toolbar-rule" />
             <IconButton
                 @click="openScript"
-                :label="$t('script.open')"
+                :label="keymap.titled($t('script.open'), 'script.open')"
                 icon="i-lucide-folder-open"
             />
             <IconButton
                 @click="saveScript()"
-                :label="tab.file ? `${$t('script.save')} (${tab.file})` : $t('script.save')"
+                :label="keymap.titled(tab.file ? `${$t('script.save')} (${tab.file})` : $t('script.save'), 'script.save')"
                 icon="i-lucide-save"
             />
             <DropMenu

@@ -527,13 +527,16 @@ const runHint = computed(() => {
     const keys = keymap.spoken("query.run", t("keys.or"));
     return keys === undefined ? t("query.hint.noKey") : t("query.hint", { keys });
 });
-useShortcut("result.export", () => void openExport(), () => inFront.value);
+// Export and import of the window act on this result while the focus is in it.
+const root = useTemplateRef<HTMLElement>("root");
+const focusedHere = () => root.value?.contains(document.activeElement) === true;
+useShortcut("export.wizard", () => void openExport(), () => inFront.value && focusedHere());
 const searchInput = useTemplateRef<HTMLInputElement>("searchInput");
 useShortcut("result.search", () => {
     searchInput.value?.focus();
     searchInput.value?.select();
 }, () => inFront.value);
-useShortcut("result.import", () => void importDocuments(), () => inFront.value && collection.value !== undefined);
+useShortcut("import.wizard", () => void importDocuments(), () => inFront.value && collection.value !== undefined && focusedHere());
 useShortcut("result.importClipboard", () => void importClipboard(), () => inFront.value && collection.value !== undefined);
 
 /** Documents copied somewhere else: JSON, JSON Lines or shell notation, inserted after asking. */
@@ -618,8 +621,8 @@ async function openSpaceMenu(event: MouseEvent) {
     void menu.value?.open(event, [
         { label: t("document.add"), icon: "i-lucide-file-plus-2", action: addDocument, disabled: locked },
         { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", command: "result.importClipboard", action: () => void importClipboard(), disabled: locked || !pasteable },
-        { label: t("result.import"), icon: "i-lucide-download", command: "result.import", action: () => void importDocuments(), disabled: locked },
-        { label: t("export.menu"), icon: "i-lucide-upload", command: "result.export", action: () => void openExport(), disabled: !result.value },
+        { label: t("result.import"), icon: "i-lucide-download", command: "import.wizard", action: () => void importDocuments(), disabled: locked },
+        { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void openExport(), disabled: !result.value },
         "separator",
         { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void tabs.refresh(tab.value) }
     ]);
@@ -700,8 +703,8 @@ function showMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[], p
                 { label: t("document.refresh"), icon: "i-lucide-rotate-cw", action: () => void tabs.refreshDocument(tab.value, target.index).catch(report), disabled: !document || collection.value === undefined },
                 "separator",
                 { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", command: "result.importClipboard", action: () => void importClipboard(), disabled: locked || !pasteable },
-                { label: t("result.import"), icon: "i-lucide-download", command: "result.import", action: () => void importDocuments(), disabled: locked },
-                { label: t("export.menu"), icon: "i-lucide-upload", command: "result.export", action: () => void openExport() },
+                { label: t("result.import"), icon: "i-lucide-download", command: "import.wizard", action: () => void importDocuments(), disabled: locked },
+                { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void openExport() },
                 // A result the wizard can not read again is saved as shown, whatever the format.
                 ...(inApp && wizardFilter() ? [exportWizard.exportAsGroup(format => void openExport(format))] : [])
             ]
@@ -766,7 +769,10 @@ provideResultContext({ editable, selected, selectedPath, marked, choose, fold, p
 </script>
 
 <template>
-    <section class="h-full min-h-0 flex flex-col">
+    <section
+        ref="root"
+        class="h-full min-h-0 flex flex-col"
+    >
         <div
             class="h-8 shrink-0 flex items-center gap-0.5 px-3.5"
             data-testid="results-toolbar"
@@ -874,7 +880,7 @@ provideResultContext({ editable, selected, selectedPath, marked, choose, fold, p
             <IconButton
                 @click="openExport"
                 :disabled="!result"
-                :label="keymap.titled($t('export.menu'), 'result.export')"
+                :label="keymap.titled($t('export.menu'), 'export.wizard')"
                 data-testid="result-export"
                 icon="i-lucide-upload"
                 tint="text-warning"

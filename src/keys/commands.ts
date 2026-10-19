@@ -79,7 +79,8 @@ const LIST = [
 
     command({ id: "users.manage", label: "users.manage", group: "manage", scope: "global", keys: ["ctrl+alt+u"] }),
     command({ id: "roles.manage", label: "roles.manage", group: "manage", scope: "global", keys: ["ctrl+alt+r"] }),
-    command({ id: "export.wizard", label: "export.menu", group: "manage", scope: "global", keys: ["ctrl+shift+s"] }),
+    // Export: the result of the tab while the focus is in it, else what the tree has chosen.
+    command({ id: "export.wizard", label: "export.menu", group: "manage", scope: "global", keys: ["ctrl+e"] }),
     command({ id: "import.wizard", label: "import.menu", group: "manage", scope: "global", keys: ["ctrl+shift+o"] }),
     command({ id: "tree.collapse", label: "tree.collapse", group: "manage", scope: "global", keys: ["ctrl+shift+u"] }),
     command({ id: "settings.open", label: "settings.open", group: "manage", scope: "global", keys: ["ctrl+alt+p"] }),
@@ -100,6 +101,10 @@ const LIST = [
     command({ id: "query.run", label: "shortcut.run", group: "editor", scope: "editor", keys: ["ctrl+enter", "f5"] }),
     // Ctrl+S is the export: saving a query is a bookmark, as in a browser.
     command({ id: "query.save", label: "savedQuery.title", group: "editor", scope: "global", keys: ["ctrl+d"] }),
+    // The script of a shell tab as a file, with the keys every editor has for it.
+    command({ id: "script.save", label: "script.save", group: "editor", scope: "global", keys: ["ctrl+s"] }),
+    command({ id: "script.saveAs", label: "script.saveAs", group: "editor", scope: "global", keys: ["ctrl+shift+s"] }),
+    command({ id: "script.open", label: "script.open", group: "editor", scope: "global", keys: ["ctrl+o"] }),
     //: stops a running query or script of the tab in front, also in the editor.
     command({ id: "query.stop", label: "query.stop", group: "editor", scope: "global", keys: ["shift+f5"] }),
     // As in VS Code; through the editor's keymap, so the editor with the focus is formatted.
@@ -117,8 +122,6 @@ const LIST = [
     command({ id: "editor.cursorAbove", label: "shortcut.cursorAbove", group: "editor", scope: "editor", keys: ["ctrl+alt+up"], fixed: true }),
     command({ id: "editor.cursorBelow", label: "shortcut.cursorBelow", group: "editor", scope: "editor", keys: ["ctrl+alt+down"], fixed: true }),
 
-    command({ id: "result.export", label: "result.export", group: "results", scope: "results", keys: ["ctrl+s"] }),
-    command({ id: "result.import", label: "result.import", group: "results", scope: "results", keys: ["ctrl+o"] }),
     // Outside text fields only: in an editor Ctrl+F is its own search.
     command({ id: "result.search", label: "result.search.focus", group: "results", scope: "results", keys: ["ctrl+f"], inputs: false }),
     command({ id: "result.importClipboard", label: "result.importClipboard", group: "results", scope: "results", keys: ["ctrl+shift+v"], inputs: false }),
