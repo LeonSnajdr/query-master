@@ -56,7 +56,7 @@ const current = shallowRef<number>();
 /** The row of options (`allowDiskUse`, `maxTimeMS` …) shows; it does by itself when it holds some. */
 const showOptions = shallowRef((tab.value.aggregateOptions ?? "").replace(/[\s{}]/g, "") !== "");
 const options = computed({
-    get: () => tab.value.aggregateOptions ?? "{ }",
+    get: () => tab.value.aggregateOptions ?? "{}",
     set: (text: string) => (tab.value.aggregateOptions = text)
 });
 const wholeStatement = () => stagesStatement(tab.value);
@@ -176,7 +176,7 @@ async function formatStages() {
 
 /** The stages a new tab of this kind starts with; runs again. */
 function resetStages() {
-    tab.value.pipeline = isBrowse.value ? browseStages() : [newStage("$match", "{ }")];
+    tab.value.pipeline = isBrowse.value ? browseStages() : [newStage("$match", "{}")];
     tab.value.aggregateOptions = undefined;
     showOptions.value = false;
     current.value = undefined;
@@ -207,7 +207,7 @@ function toggleCollapsed(stage: PipelineStage) {
 
 /** The text of a collapsed stage on one line. */
 function preview(stage: PipelineStage): string {
-    return stage.text.replace(/\s+/g, " ").trim() || "{ }";
+    return stage.text.replace(/\s+/g, " ").trim() || "{}";
 }
 
 const root = useTemplateRef<HTMLElement>("root");

@@ -10,6 +10,7 @@ import NoticeStack from "@/components/NoticeStack.vue";
 import StagesPanel from "@/components/StagesPanel.vue";
 import StatusMessage from "@/components/StatusMessage.vue";
 import ConnectionDock from "@/components/ConnectionDock.vue";
+import DragGhost from "@/components/DragGhost.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import IconButton from "@/components/IconButton.vue";
 import SchemaPanel from "@/components/SchemaPanel.vue";
@@ -473,5 +474,6 @@ onMounted(async () => {
         <AppDialogs />
         <CommandPalette v-model="paletteOpen" />
         <NoticeStack />
+        <DragGhost />
     </div>
 </template>

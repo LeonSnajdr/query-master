@@ -46,7 +46,7 @@ describe("stageTemplate", () => {
         expect(stageTemplate("$limit")).toBe("10");
         expect(stageTemplate("$unwind")).toBe("\"$field\"");
         expect(stageTemplate("$group")).toBe("{\n    _id: \"$field\",\n    count: { $sum: 1 }\n}");
-        expect(stageTemplate("$unknownStage")).toBe("{ }");
+        expect(stageTemplate("$unknownStage")).toBe("{}");
     });
 });
 

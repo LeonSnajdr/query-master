@@ -64,7 +64,7 @@ const tabs = useTabsStore();
 
 const files = shallowRef<Doc[]>([]);
 /** The query of the list filter, sort, skip and limit above it. */
-const query = ref({ filter: "{ }", sort: "{ uploadDate: -1 }", skip: 0, limit: LISTED });
+const query = ref({ filter: "{}", sort: "{ uploadDate: -1 }", skip: 0, limit: LISTED });
 /** A filter or sort that does not read: said beside the fields, the list stays. */
 const queryError = shallowRef<string>();
 const draft = ref<UploadDraft>();
@@ -206,7 +206,7 @@ function editMetadata() {
     if (!file) return;
     dialogs.showText({
         title: t("gridfs.metadata.edit", { name: nameOf(file) }),
-        text: isDoc(file.metadata) ? toShell(file.metadata) : "{ }",
+        text: isDoc(file.metadata) ? toShell(file.metadata) : "{}",
         action: t("action.save"),
         submit: async (text) => {
             try {

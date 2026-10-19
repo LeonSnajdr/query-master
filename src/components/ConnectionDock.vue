@@ -12,6 +12,7 @@ import NoteMarks from "@/components/NoteMarks.vue";
 import { useActions } from "@/composables/actions";
 import { useCopy } from "@/composables/copy";
 import { useDialogs } from "@/composables/dialogs";
+import { useDragGhost } from "@/composables/dragGhost";
 import { useFreeSpace } from "@/composables/freeSpace";
 import { useExportWizard } from "@/composables/exportWizard";
 import { preferences } from "@/composables/appearance";
@@ -193,7 +194,7 @@ function openFolderMenu(event: MouseEvent, profile: Profile, database: DatabaseN
         { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(at), disabled: notes.isReadonly(at) },
         "separator",
         { label: t("folder.add"), icon: "i-lucide-folder-plus", command: "folder.add", action: () => void actions.addFolder(at) },
-        { label: t("folder.addInside"), icon: "i-lucide-folder-tree", action: () => void actions.addFolder(at, folder) },
+        { label: t("folder.addInside"), icon: "i-lucide-folder-plus", action: () => void actions.addFolder(at, folder) },
         { label: t("folder.rename"), icon: "i-lucide-pencil", action: () => void actions.renameFolder(at, folder) },
         ...(targets.length > 0 ? [{ label: t("folder.moveFolder"), icon: "i-lucide-folder", children: targets }] : []),
         { label: t("folder.delete"), icon: "i-lucide-folder-x", danger: true, action: () => void actions.deleteFolder(at, folder) },
@@ -317,6 +318,22 @@ const DRAG_DISTANCE = 5;
 const dragging = shallowRef(false);
 let dropRow: HTMLElement | undefined;
 
+const ghost = useDragGhost();
+
+/** What the card at the pointer shows for rows of a connection: a folder, databases or collections. */
+function draggedRows(source: DragSource): { icon: string; label: string; count: number } {
+    if (source.folder !== undefined) return { icon: "i-lucide-folder text-warning", label: source.folder.split("/").at(-1)!, count: 1 };
+    const names = source.names ?? [];
+    return { icon: source.scope === "" ? "i-lucide-database" : "i-lucide-file-text", label: names[0] ?? "", count: names.length };
+}
+
+/** Where a drop of rows lands, in words: into a folder, or out of all of them into the database or connection. */
+function dropText(target: DropTarget): string {
+    if (target.folder !== undefined) return t("drag.into", { name: target.folder.split("/").at(-1) });
+    const name = target.scope || connections.profiles.find(profile => profile.id === target.connectionId)?.name || "";
+    return t("drag.outOfFolders", { name });
+}
+
 /** Collections, databases or a folder dragged onto a folder, or onto their database or connection to leave it. */
 function startDrag(event: PointerEvent, source: DragSource): void {
     if (event.button !== 0 || event.ctrlKey || event.shiftKey || event.metaKey) return;
@@ -332,17 +349,20 @@ function startDrag(event: PointerEvent, source: DragSource): void {
         if (!dragging.value) {
             if (Math.hypot(moved.clientX - start.x, moved.clientY - start.y) < DRAG_DISTANCE) return;
             dragging.value = true;
+            ghost.show(draggedRows(source), moved.clientX, moved.clientY);
         }
         const row = document.elementFromPoint(moved.clientX, moved.clientY)?.closest<HTMLElement>("[data-drop-connection]") ?? undefined;
         const over = row ? dropTargetOf(row) : undefined;
         target = over && canDrop(source, over) ? over : undefined;
         light(target ? row : undefined);
+        ghost.move(moved.clientX, moved.clientY, target ? dropText(target) : undefined);
     };
     const end = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", end);
         window.removeEventListener("pointercancel", cancel);
         light(undefined);
+        ghost.hide();
         if (!dragging.value) return;
         // The click that ends a drag selects nothing.
         window.addEventListener("click", stop => stop.stopPropagation(), { capture: true, once: true });
@@ -424,9 +444,6 @@ function holdsConnections(path: string): boolean {
     return connections.saved.some(profile => profile.groupName && within(folderPath(profile.groupName), path));
 }
 
-/** Folders of the tree closed by a click; all are open at first. */
-const closedTreeFolders = shallowRef(new Set<string>());
-
 /**
  * The rows of the tree: the open connections in their folders, those in none at the top. The tree
  * is about open connections: a folder shows while one lies in it, or while it is still empty.
@@ -434,14 +451,11 @@ const closedTreeFolders = shallowRef(new Set<string>());
 const treeRows = computed(() => {
     const { folders, top } = folderTree(connections.groups, connected.value);
     const shown = pruneFolders(folders, node => node.items.length > 0 || !holdsConnections(node.path));
-    return groupRows(shown, top, closedTreeFolders.value);
+    return groupRows(shown, top, connections.closedFolders);
 });
 
 function toggleTreeFolder(path: string) {
-    const next = new Set(closedTreeFolders.value);
-    if (next.has(path)) next.delete(path);
-    else next.add(path);
-    closedTreeFolders.value = next;
+    connections.toggleFolderOpen(path);
 }
 
 /** Behind the name of a folder in the tree: its open connections, or that it is empty. */
@@ -547,7 +561,7 @@ function openListSpaceMenu(event: MouseEvent) {
         "separator",
         { label: t("connection.add"), icon: "i-lucide-plus", command: "connection.add", action: close(() => actions.newConnection()) },
         { label: t("connection.addFromUri"), icon: "i-lucide-link", command: "connection.addUri", action: close(() => void actions.addFromUri()) },
-        { label: `${t("connection.fromUri.title")} …`, icon: "i-lucide-globe", action: close(() => void actions.connectFromUri()) },
+        { label: `${t("connection.connectFromUri")} …`, icon: "i-lucide-globe", action: close(() => void actions.connectFromUri()) },
         { label: `${t("connection.folder.add")} …`, icon: "i-lucide-folder-plus", command: "folder.add", action: () => void actions.addConnectionFolder() },
         "separator",
         { label: t("connection.find"), icon: "i-lucide-search", hotkey: "Ctrl + F", action: () => listSearchInput.value?.focus() }
@@ -673,17 +687,20 @@ function startGroupDrag(event: PointerEvent, source: { profile?: Profile; folder
         if (!dragging.value) {
             if (Math.hypot(moved.clientX - start.x, moved.clientY - start.y) < DRAG_DISTANCE) return;
             dragging.value = true;
+            ghost.show(source.profile ? { icon: "i-lucide-server", label: source.profile.name } : { icon: "i-lucide-folder text-warning", label: (folder ?? "").split("/").at(-1)! }, moved.clientX, moved.clientY);
         }
         const element = document.elementFromPoint(moved.clientX, moved.clientY)?.closest<HTMLElement>("[data-group-drop]") ?? undefined;
         const path = element?.dataset.groupDrop;
         target = path !== undefined && allowed(path) ? path : undefined;
         light(target !== undefined && element?.classList.contains("tree-row") ? element : undefined);
+        ghost.move(moved.clientX, moved.clientY, target === undefined ? undefined : target ? t("drag.into", { name: target.split("/").at(-1) }) : t("drag.top"));
     };
     const end = () => {
         window.removeEventListener("pointermove", move);
         window.removeEventListener("pointerup", end);
         window.removeEventListener("pointercancel", cancel);
         light(undefined);
+        ghost.hide();
         if (!dragging.value) return;
         window.addEventListener("click", stop => stop.stopPropagation(), { capture: true, once: true });
         setTimeout(() => (dragging.value = false));
@@ -1151,7 +1168,7 @@ defineExpose({
                         <IconButton
                             @click="listOpen = false; actions.connectFromUri()"
                             :label="$t('connection.connectFromUri')"
-                            icon="i-lucide-link"
+                            icon="i-lucide-globe"
                         />
                         <span class="toolbar-rule" />
                         <IconButton
@@ -1376,7 +1393,7 @@ defineExpose({
                     @contextmenu="openGroupMenu($event, entry.node.path, 'tree')"
                     @keydown.enter.self="toggleTreeFolder(entry.node.path)"
                     @pointerdown="startGroupDrag($event, { folder: entry.node.path })"
-                    :aria-expanded="!closedTreeFolders.has(entry.node.path)"
+                    :aria-expanded="!connections.closedFolders.has(entry.node.path)"
                     :data-group-drop="entry.node.path"
                     :style="indent(0.875 + entry.depth)"
                     class="tree-row"
@@ -1385,11 +1402,11 @@ defineExpose({
                     tabindex="0"
                 >
                     <span
-                        :class="closedTreeFolders.has(entry.node.path) ? '' : 'rotate-90'"
+                        :class="connections.closedFolders.has(entry.node.path) ? '' : 'rotate-90'"
                         class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
                     />
                     <span
-                        :class="closedTreeFolders.has(entry.node.path) ? 'i-lucide-folder' : 'i-lucide-folder-open'"
+                        :class="connections.closedFolders.has(entry.node.path) ? 'i-lucide-folder' : 'i-lucide-folder-open'"
                         class="size-4 shrink-0 text-warning"
                     />
                     <span class="truncate text-on-surface-strong">{{ entry.node.name }}</span>

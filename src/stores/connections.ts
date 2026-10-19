@@ -336,7 +336,20 @@ export const useConnectionsStore = defineStore("connections", () => {
     }
 
     /** Folds every connection, database and collection of the tree. */
+    /** Folders of connections closed in the tree; all are open at first. */
+    const closedFolders = shallowRef(new Set<string>());
+
+    function toggleFolderOpen(path: string): void {
+        const next = new Set(closedFolders.value);
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+        closedFolders.value = next;
+    }
+
+    /** Folds the whole tree: folders of connections, connections, databases, their folders, collections. */
     function collapseAll(): void {
+        closedFolders.value = new Set(groups.value);
+        useNotesStore().closeFolders();
         for (const session of Object.values(sessions)) {
             session.open = false;
             for (const database of session.databases) {
@@ -448,5 +461,5 @@ export const useConnectionsStore = defineStore("connections", () => {
         return sampleValues.get(`${id}/${database}/${collection}`)?.get(field);
     }
 
-    return { profiles, saved, recent, groups, setGroup, addGroup, renameGroup, deleteGroup, sessions, connecting, failed, selected, marked, inTree, load, save, setEnvironment, environmentOf, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, rememberSample, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
+    return { profiles, saved, recent, groups, setGroup, addGroup, renameGroup, deleteGroup, sessions, connecting, failed, selected, marked, inTree, load, save, setEnvironment, environmentOf, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, rememberSample, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll, closedFolders, toggleFolderOpen };
 });

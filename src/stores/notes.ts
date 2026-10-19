@@ -141,6 +141,11 @@ export const useNotesStore = defineStore("notes", () => {
         return openFolders.has(folderKey(connectionId, database, name));
     }
 
+    /** Folds every folder of every database and connection ("Collapse tree"). */
+    function closeFolders(): void {
+        openFolders.clear();
+    }
+
     function toggleFolder(connectionId: string, database: string, name: string): void {
         const key = folderKey(connectionId, database, name);
         if (openFolders.has(key)) openFolders.delete(key);
@@ -216,5 +221,5 @@ export const useNotesStore = defineStore("notes", () => {
         await load(connectionId);
     }
 
-    return { notes, folders, load, noteOf, isReadonly, change, rename, remove, foldersOf, isOpen, toggleFolder, addFolder, renameFolder, moveFolder, deleteFolder };
+    return { notes, folders, load, noteOf, isReadonly, change, rename, remove, foldersOf, isOpen, closeFolders, toggleFolder, addFolder, renameFolder, moveFolder, deleteFolder };
 });

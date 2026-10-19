@@ -45,7 +45,7 @@ const metaField = shallowRef("");
 const granularity = shallowRef<typeof GRANULARITIES[number]>("seconds");
 const level = shallowRef<typeof LEVELS[number]>("off");
 const action = shallowRef<typeof ACTIONS[number]>("error");
-const validator = shallowRef("{\n    \n}");
+const validator = shallowRef("{}");
 const collation = ref<CollationForm>(emptyCollation());
 const viewOn = shallowRef("");
 const pipeline = shallowRef("[\n    \n]");
@@ -86,7 +86,7 @@ watch([open, () => props.request], async ([isOpen]) => {
     metaField.value = "";
     level.value = mode.value === "validator" ? "strict" : "off";
     action.value = "error";
-    validator.value = "{\n    \n}";
+    validator.value = "{}";
     collation.value = emptyCollation();
     viewOn.value = props.request.collection ?? collections.value[0] ?? "";
     pipeline.value = props.request.pipeline ?? "[\n    \n]";

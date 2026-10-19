@@ -313,7 +313,7 @@ export const useTabsStore = defineStore("tabs", () => {
 
     /** The aggregation builder on a collection, with the stages given or one empty $match. */
     function openAggregate(target: { connectionId: string; database: string; collection: string; pipeline?: PipelineStage[]; aggregateOptions?: string }): WorkTab {
-        return create("aggregate", { ...target, pipeline: target.pipeline ?? [newStage("$match", "{ }")] });
+        return create("aggregate", { ...target, pipeline: target.pipeline ?? [newStage("$match", "{}")] });
     }
 
     /**
@@ -775,7 +775,7 @@ export const useTabsStore = defineStore("tabs", () => {
         // The documents are those of the collection: the filter goes into the $match in front.
         if (tab.kind === "browse" || tab.kind === "aggregate") {
             const stages = tab.pipeline ?? [];
-            if (stages[0]?.operator !== "$match") tab.pipeline = [newStage("$match", "{ }"), ...stages];
+            if (stages[0]?.operator !== "$match") tab.pipeline = [newStage("$match", "{}"), ...stages];
             // The store's own object, so the row shows the change.
             const stage = tab.pipeline![0]!;
             // Switched off, the filter in it did not apply: it starts anew.
