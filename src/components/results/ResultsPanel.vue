@@ -18,7 +18,7 @@ import { useNotices } from "@/composables/notices";
 import { useKeymap, useShortcut } from "@/keys/keymap";
 import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
-import { isDoc, scalar, toShell } from "@/shell/ejson";
+import { isDoc, keyText, scalar, toShell } from "@/shell/ejson";
 import { toRelaxed } from "@/shell/display";
 import { filterPath, valueAtPath } from "@/shell/values";
 import type { ValueField } from "@/shell/values";
@@ -34,7 +34,7 @@ import { CODE_LANGUAGES, queryCode } from "@/shell/code";
 import { isWrite } from "@/shell/plan";
 import { PAGE_SIZES, useTabsStore } from "@/stores/tabs";
 import type { ResultView } from "@/stores/tabs";
-import { noFold, provideResultContext } from "./result-context";
+import { displayText, noFold, provideResultContext } from "./result-context";
 import type { Fold, ResultTarget } from "./result-context";
 import PlanView from "./PlanView.vue";
 import ResultTable from "./ResultTable.vue";
@@ -128,7 +128,9 @@ function togglePin(path: string) {
  * Ctrl+Shift+J folds it, Ctrl+P pins the chosen field). The table has keys of its own.
  */
 function onResultKey(event: KeyboardEvent) {
-    if (tab.value.view !== "tree" || selected.value === undefined) return;
+    if (tab.value.view !== "tree") return;
+    if (treeKey(event)) return;
+    if (selected.value === undefined) return;
     if (keymap.matches(event, "result.expand")) setFold(true, selected.value, selectedPath.value);
     else if (keymap.matches(event, "result.collapse")) setFold(false, selected.value, selectedPath.value);
     else if (keymap.matches(event, "result.pin") && selectedPath.value !== "") togglePin(selectedPath.value);
@@ -136,6 +138,70 @@ function onResultKey(event: KeyboardEvent) {
     else return;
     // Without it the web view opens its downloads (Ctrl+J) or prints (Ctrl+P).
     event.preventDefault();
+}
+
+/**
+ * The tree by keys, as a tree view: up and down go from line to line, right unfolds (or goes to
+ * the first child), left folds (or goes to the parent), Enter edits the value in place, Shift+Enter
+ * renames the field, Del deletes it (asking first). True when a key acted.
+ */
+function treeKey(event: KeyboardEvent): boolean {
+    if (event.ctrlKey || event.metaKey || event.altKey) return false;
+    const area = event.currentTarget as HTMLElement;
+    const lines = [...area.querySelectorAll<HTMLElement>("[data-testid=tree-row]")];
+    const at = lines.findIndex(line => Number(line.dataset.index) === selected.value && (line.dataset.path ?? "") === selectedPath.value);
+    const line = lines[at];
+    const go = (target: HTMLElement | undefined) => {
+        if (!target) return;
+        choose(Number(target.dataset.index), undefined, target.dataset.path ?? "");
+        target.scrollIntoView({ block: "nearest" });
+    };
+    const toggle = line?.querySelector<HTMLElement>("button");
+    const isOpen = toggle?.querySelector(".rotate-90") !== null;
+    const hasChildren = toggle !== null && toggle !== undefined && !toggle.classList.contains("invisible");
+    switch (event.key) {
+        case "ArrowDown":
+            go(at === -1 ? lines[0] : lines[at + 1]);
+            break;
+        case "ArrowUp":
+            go(at === -1 ? lines[0] : lines[Math.max(0, at - 1)]);
+            break;
+        case "ArrowRight":
+            if (!line || !hasChildren) return false;
+            if (isOpen) go(lines[at + 1]);
+            else toggle?.click();
+            break;
+        case "ArrowLeft": {
+            if (!line) return false;
+            if (hasChildren && isOpen) {
+                toggle?.click();
+                break;
+            }
+            const path = line.dataset.path ?? "";
+            const parent = path.includes(".") ? path.slice(0, path.lastIndexOf(".")) : "";
+            go(lines.find(other => other.dataset.index === line.dataset.index && (other.dataset.path ?? "") === parent));
+            break;
+        }
+        case "Enter":
+            if (!line) return false;
+            if (event.shiftKey) {
+                if (!selectedPath.value || selectedPath.value === "_id" || !editable.value) return false;
+                const document = documentAt(selected.value);
+                if (document) openField("rename", { index: selected.value!, path: selectedPath.value, value: valueAtPath(document, selectedPath.value) ?? null });
+            } else {
+                line.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+            }
+            break;
+        case "Delete": {
+            if (!line || !selectedPath.value || selectedPath.value === "_id" || !editable.value) return false;
+            const document = documentAt(selected.value);
+            if (document) openField("remove", { index: selected.value!, path: selectedPath.value, value: valueAtPath(document, selectedPath.value) ?? null });
+            break;
+        }
+        default: return false;
+    }
+    event.preventDefault();
+    return true;
 }
 
 /** The keys of the field dialogs on the chosen field (adding also on the document); true when one acted. */
@@ -603,7 +669,10 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
             label: t("menu.copy"),
             icon: "i-lucide-copy",
             children: [
-                { label: t("copy.value"), icon: "i-lucide-copy", action: () => void copy(toShell(target.value)) },
+                //: the value as text (no quotes), as the shell writes it, the field with its name.
+                { label: t("copy.text"), icon: "i-lucide-copy", action: () => void copy(displayText(target.value)) },
+                { label: t("copy.value"), action: () => void copy(toShell(target.value)) },
+                { label: t("copy.field"), action: () => void copy(`${keyText(target.path.split(".").at(-1) ?? "")}: ${toShell(target.value)}`), disabled: !field },
                 { label: t("copy.path"), action: () => void copy(target.path), disabled: !field },
                 { label: t("copy.document"), action: () => void copy(toShell(document ?? target.value)) },
                 { label: t("copy.json"), action: () => void copy(JSON.stringify(document ?? target.value, null, 2)) },
@@ -635,7 +704,7 @@ function suggest(path: string): ValueField | undefined {
     return { collection, field, values: valueSources, search: valueSearch };
 }
 
-provideResultContext({ editable, selected, marked, choose, fold, pinned, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument, suggest });
+provideResultContext({ editable, selected, selectedPath, marked, choose, fold, pinned, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument, suggest });
 </script>
 
 <template>

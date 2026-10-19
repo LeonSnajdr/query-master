@@ -138,6 +138,13 @@ const LIST = [
     command({ id: "table.hide", label: "table.hide", group: "table", scope: "table", keys: ["ctrl+k"] }),
     command({ id: "table.hideOthers", label: "table.hideOthers", group: "table", scope: "table", keys: ["ctrl+alt+k"] }),
     command({ id: "table.showAll", label: "table.showAll", group: "table", scope: "table", keys: ["ctrl+shift+k"] }),
+    // Sorting, moving and sizing columns, with the keys.
+    command({ id: "table.sortAsc", label: "table.sortAsc", group: "table", scope: "table", keys: ["ctrl+["] }),
+    command({ id: "table.sortDesc", label: "table.sortDesc", group: "table", scope: "table", keys: ["ctrl+]"] }),
+    command({ id: "table.moveLeft", label: "table.moveLeft", group: "table", scope: "table", keys: ["ctrl+alt+arrowleft"] }),
+    command({ id: "table.moveRight", label: "table.moveRight", group: "table", scope: "table", keys: ["ctrl+alt+arrowright"] }),
+    command({ id: "table.autosize", label: "table.autosize", group: "table", scope: "table", keys: ["ctrl+'"] }),
+    command({ id: "table.autosizeAll", label: "table.autosizeAll", group: "table", scope: "table", keys: ["ctrl+shift+'"] }),
 
     command({ id: "tree.drop", label: "keys.command.drop", group: "tree", scope: "tree", keys: ["delete"], fixed: true }),
     command({ id: "tree.copy", label: "collection.copy", group: "tree", scope: "tree", keys: ["ctrl+c"], fixed: true }),

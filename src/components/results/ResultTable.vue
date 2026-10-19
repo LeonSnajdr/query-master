@@ -53,6 +53,33 @@ function at(value: Json | undefined, segments: string[]): Json | undefined {
 
 const levels = computed(() => props.rows.map(row => ({ index: row.index, value: at(row.item, stack.value) })));
 
+/** Sorting by a column *Sort asc/desc*: the documents of the page, not the query. */
+const sortBy = shallowRef<{ column: string; descending: boolean }>();
+/** Order of values of different types: missing last, then numbers, text, dates, the rest as text. */
+function sortKey(value: Json | undefined): [number, number | string] {
+    if (value === undefined) return [9, ""];
+    const type = typeOf(value);
+    if (type === "int" || type === "long" || type === "double" || type === "decimal") return [1, Number(isDoc(value) ? value.$numberInt ?? value.$numberLong ?? value.$numberDouble ?? value.$numberDecimal : value)];
+    if (type === "date" && isDoc(value)) return [3, Number((value.$date as { $numberLong?: string } | undefined)?.$numberLong ?? Date.parse(String(value.$date)))];
+    if (type === "null") return [0, ""];
+    return [2, displayText(value)];
+}
+/** The rows in the order shown: sorted when asked, else as the server gave them. */
+const shown = computed(() => {
+    const by = sortBy.value;
+    if (!by) return levels.value;
+    return [...levels.value].sort((a, b) => {
+        const [rankA, keyA] = sortKey(cell(a.value, by.column));
+        const [rankB, keyB] = sortKey(cell(b.value, by.column));
+        // Missing values stay last either way.
+        if (rankA !== rankB) return rankA === 9 ? 1 : rankB === 9 ? -1 : (rankA - rankB) * (by.descending ? -1 : 1);
+        const order = typeof keyA === "number" && typeof keyB === "number" ? keyA - keyB : String(keyA).localeCompare(String(keyB), undefined, { numeric: true });
+        return by.descending ? -order : order;
+    });
+});
+/** Columns moved left or right by hand, in their order; the others follow as they come. */
+const order = ref<string[]>([]);
+
 const columns = computed(() => {
     const names: string[] = [];
     const seen = new Set<string>();
@@ -71,8 +98,9 @@ const columns = computed(() => {
     for (const column of embedded.value) {
         if (!names.some(name => name.startsWith(`${column}.`)) && !seen.has(column)) names.push(column);
     }
-    const order = [...pinned.value.filter(name => names.includes(name)), ...names.filter(name => !pinned.value.includes(name))];
-    return order.filter(name => !hidden.value.has(name)).slice(0, MAX_COLUMNS);
+    const placed = order.value.length === 0 ? names : [...order.value.filter(name => names.includes(name)), ...names.filter(name => !order.value.includes(name))];
+    const arranged = [...pinned.value.filter(name => placed.includes(name)), ...placed.filter(name => !pinned.value.includes(name))];
+    return arranged.filter(name => !hidden.value.has(name)).slice(0, MAX_COLUMNS);
 });
 
 function cell(value: Json | undefined, column: string): Json | undefined {
@@ -94,9 +122,12 @@ function label(column: string): string {
 }
 
 function typeLabel(column: string): string {
-    const value = levels.value.map(level => cell(level.value, column)).find(item => item !== undefined);
+    const values = levels.value.map(level => cell(level.value, column)).filter((item): item is Json => item !== undefined);
+    const value = values[0];
     if (value === undefined) return "";
     const type = typeOf(value);
+    //: values of different types make the column `mixed` (null aside).
+    if (values.some(item => typeOf(item) !== type && typeOf(item) !== "null")) return t("result.type.mixed");
     return type === "date" ? t("result.type.datetime") : t(`result.type.${type}`);
 }
 
@@ -150,6 +181,8 @@ function stepBack(): void {
 
 function restore(): void {
     stack.value = [];
+    sortBy.value = undefined;
+    order.value = [];
     embedded.value = new Set();
     pinned.value = [];
     hidden.value = new Set();
@@ -244,8 +277,26 @@ const commands = {
     togglePin: (column: string) => (pinned.value = pinned.value.includes(column) ? pinned.value.filter(name => name !== column) : [...pinned.value, column]),
     hide: (column: string) => (hidden.value = toggle(hidden.value, column, true)),
     hideOthers: (column: string) => (hidden.value = new Set(columns.value.filter(name => name !== column))),
-    showAll: () => (hidden.value = new Set())
+    showAll: () => (hidden.value = new Set()),
+    sort: (column: string, descending: boolean) => (sortBy.value = { column, descending }),
+    unsort: () => (sortBy.value = undefined),
+    move: (column: string, by: -1 | 1) => {
+        const list = [...columns.value];
+        const from = list.indexOf(column);
+        const to = from + by;
+        if (from === -1 || to < 0 || to >= list.length) return;
+        [list[from], list[to]] = [list[to]!, list[from]!];
+        order.value = list;
+    },
+    autosize: (column: string) => (widths.value = { ...widths.value, [column]: fitWidth(column) }),
+    autosizeAll: () => (widths.value = Object.fromEntries(columns.value.map(column => [column, fitWidth(column)])))
 };
+
+/** A width that fits the head and every cell of the column on the page, as *Auto-size column*. */
+function fitWidth(column: string): number {
+    const longest = Math.max(label(column).length, typeLabel(column).length, ...levels.value.map(level => cellText(cell(level.value, column)).length));
+    return Math.min(640, Math.max(MIN_WIDTH, Math.round(longest * 7 + 20)));
+}
 
 function openMenu(event: MouseEvent, index: number, column: string) {
     select(index, column);
@@ -265,6 +316,16 @@ function openMenu(event: MouseEvent, index: number, column: string) {
         { label: t("table.hide"), command: "table.hide", action: () => commands.hide(column) },
         { label: t("table.hideOthers"), command: "table.hideOthers", action: () => commands.hideOthers(column) },
         { label: t("table.showAll"), icon: "i-lucide-eye", command: "table.showAll", disabled: hidden.value.size === 0, action: commands.showAll },
+        "separator",
+        { label: t("table.sortAsc"), icon: "i-lucide-arrow-down-a-z", command: "table.sortAsc", action: () => commands.sort(column, false) },
+        { label: t("table.sortDesc"), icon: "i-lucide-arrow-down-z-a", command: "table.sortDesc", action: () => commands.sort(column, true) },
+        { label: t("table.sortReset"), disabled: !sortBy.value, action: commands.unsort },
+        "separator",
+        { label: t("table.moveLeft"), icon: "i-lucide-arrow-left-to-line", command: "table.moveLeft", disabled: columns.value.indexOf(column) <= 0, action: () => commands.move(column, -1) },
+        { label: t("table.moveRight"), icon: "i-lucide-arrow-right-to-line", command: "table.moveRight", disabled: columns.value.indexOf(column) >= columns.value.length - 1, action: () => commands.move(column, 1) },
+        { label: t("table.autosize"), command: "table.autosize", action: () => commands.autosize(column) },
+        { label: t("table.autosizeAll"), command: "table.autosizeAll", action: commands.autosizeAll },
+        "separator",
         { label: t("table.restore"), action: restore }
     ];
     context.menu(event, { index, path: fullPath(column), value: value ?? null }, extra);
@@ -282,7 +343,7 @@ function onKey(event: KeyboardEvent) {
     if (keymap.matches(event, "table.stepBack") && stack.value.length > 0) {
         stepBack();
     } else if (!control && at && ["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
-        const rows = levels.value.map(level => level.index);
+        const rows = shown.value.map(level => level.index);
         const row = rows.indexOf(at.index) + (key === "arrowdown" ? 1 : key === "arrowup" ? -1 : 0);
         const column = columns.value.indexOf(at.column) + (key === "arrowright" ? 1 : key === "arrowleft" ? -1 : 0);
         const index = rows[Math.min(Math.max(row, 0), rows.length - 1)];
@@ -306,6 +367,18 @@ function onKey(event: KeyboardEvent) {
         commands.hide(at.column);
     } else if (at && keymap.matches(event, "table.pin")) {
         commands.togglePin(at.column);
+    } else if (at && keymap.matches(event, "table.sortAsc")) {
+        commands.sort(at.column, false);
+    } else if (at && keymap.matches(event, "table.sortDesc")) {
+        commands.sort(at.column, true);
+    } else if (at && keymap.matches(event, "table.moveLeft")) {
+        commands.move(at.column, -1);
+    } else if (at && keymap.matches(event, "table.moveRight")) {
+        commands.move(at.column, 1);
+    } else if (at && keymap.matches(event, "table.autosize")) {
+        commands.autosize(at.column);
+    } else if (keymap.matches(event, "table.autosizeAll")) {
+        commands.autosizeAll();
     } else {
         return;
     }
@@ -372,7 +445,7 @@ function onKey(event: KeyboardEvent) {
             </thead>
             <tbody>
                 <tr
-                    v-for="{ value, index } in levels"
+                    v-for="{ value, index } in shown"
                     :key="index"
                     :class="context.marked.value.has(index) && context.marked.value.size > 1 ? 'bg-primary/15' : context.selected.value === index ? 'bg-on-surface/5' : 'hover:bg-on-surface/4'"
                     data-testid="table-row"

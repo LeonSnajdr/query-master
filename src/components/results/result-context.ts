@@ -21,6 +21,8 @@ export interface ResultContext {
     editable: Ref<boolean>;
     /** Index of the selected document on the page. */
     selected: Ref<number | undefined>;
+    /** The field chosen in the selected document; empty for the document itself. */
+    selectedPath: Ref<string>;
     /** Indexes of the documents marked together (Ctrl or Shift click); the selected one among them. */
     marked: Ref<Set<number>>;
     /**
