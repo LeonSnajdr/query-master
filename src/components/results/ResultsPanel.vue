@@ -913,10 +913,19 @@ provideResultContext({ editable, selected, selectedPath, marked, choose, fold, p
             </ToggleGroup>
         </div>
 
+        <!-- While a query runs again the last result stays, faint, under a bar: it is not the new one yet. -->
+        <div class="relative shrink-0 h-0.5 overflow-hidden">
+            <div
+                v-if="tab.running"
+                class="h-full w-1/3 bg-primary animate-pulse"
+                data-testid="results-running"
+            />
+        </div>
         <!-- Focusable for F7 ("Set focus to results"); the keys of the tree are handled here. -->
         <div
             @keydown="onResultKey"
-            class="grow min-h-0 overflow-auto pb-2 font-mono text-[13px] leading-[19px] select-text outline-none"
+            :class="tab.running && result ? 'opacity-60' : ''"
+            class="grow min-h-0 overflow-auto pb-2 font-mono text-[13px] leading-[19px] select-text outline-none transition-opacity"
             data-testid="query-result"
             tabindex="-1"
         >
@@ -958,9 +967,11 @@ provideResultContext({ editable, selected, selectedPath, marked, choose, fold, p
                 class="px-2 pt-1"
                 role="tree"
             >
+                <!-- A faint line between documents. -->
                 <TreeRow
                     v-for="row in rows"
                     :key="`${result.offset}-${row.index}`"
+                    :class="row.index > 0 ? 'border-t border-divider/50' : ''"
                     :expanded="preferences.autoExpand === 'all' || preferences.autoExpand === 'first' && row.index === 0"
                     :index="row.index"
                     :number="result.offset + row.index + 1"

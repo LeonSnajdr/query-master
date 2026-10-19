@@ -284,10 +284,10 @@ onMounted(load);
             </div>
             <div class="flex items-center gap-2">
                 <ButtonRoot
+                    @click="add"
                     :disabled="busy || !config"
                     class="btn-primary"
                     data-testid="replica-add"
-                    type="submit"
                 >
                     <ButtonContent>{{ $t("replicaSet.add") }}</ButtonContent>
                 </ButtonRoot>
