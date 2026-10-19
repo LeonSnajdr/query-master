@@ -573,7 +573,7 @@ export function useActions() {
     }
 
     return {
-        replicaSet, target, hasConnection, hasDatabase, hasCollection, onView, anyOpen,
+        replicaSet, firstOpen, target, hasConnection, hasDatabase, hasCollection, onView, anyOpen,
         openShell, browse, schema, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, clearCollection, duplicateCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,

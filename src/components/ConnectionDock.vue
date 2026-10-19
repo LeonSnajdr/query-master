@@ -495,6 +495,60 @@ function openListMenu(event: MouseEvent, profile?: Profile, group?: string) {
     ]);
 }
 
+/**
+ * Right click on the free space of the list: what needs no chosen connection. Rows open their own
+ * menu and stop the event, so only a click on the free space comes here.
+ */
+function openListSpaceMenu(event: MouseEvent) {
+    event.preventDefault();
+    const close = (action: () => void) => () => {
+        listOpen.value = false;
+        action();
+    };
+    void listMenu.value?.open(event, [
+        { label: t("connection.connect"), icon: "i-lucide-plug", hotkey: "Enter", action: () => undefined, disabled: true },
+        "separator",
+        { label: t("connection.add"), icon: "i-lucide-plus", command: "connection.add", action: close(() => actions.newConnection()) },
+        { label: t("connection.addFromUri"), icon: "i-lucide-link", command: "connection.addUri", action: close(() => void actions.addFromUri()) },
+        { label: `${t("connection.fromUri.title")} …`, icon: "i-lucide-globe", action: close(() => void actions.connectFromUri()) },
+        "separator",
+        { label: t("connection.find"), icon: "i-lucide-search", hotkey: "Ctrl + F", action: () => listSearchInput.value?.focus() }
+    ]);
+}
+
+/**
+ * Right click on the free space of the tree, below the connections or with none open: connecting,
+ * the recent connections, and what acts on every open connection at once.
+ */
+function openTreeSpaceMenu(event: MouseEvent) {
+    if (event.target instanceof Element && event.target.closest("[data-testid=connection]")) return;
+    event.preventDefault();
+    const rows = connected.value.filter(profile => connections.sessions[profile.id]).map(profile => ({ connectionId: profile.id }));
+    const recent: MenuEntry[] = connections.recent.slice(0, 10).map(profile => ({
+        label: profile.name,
+        icon: connections.sessions[profile.id] ? "i-lucide-check" : "i-lucide-plug",
+        action: () => void actions.connect(profile),
+        disabled: connections.sessions[profile.id] !== undefined
+    }));
+    const first = actions.firstOpen();
+    void menu.value?.open(event, [
+        { label: `${t("connection.connect")} …`, icon: "i-lucide-plug", command: "connection.list", action: () => (listOpen.value = true) },
+        { label: t("connection.add"), icon: "i-lucide-plus", command: "connection.add", action: () => actions.newConnection() },
+        { label: t("connection.addFromUri"), icon: "i-lucide-link", command: "connection.addUri", action: () => void actions.addFromUri() },
+        recent.length > 0
+            ? { label: t("start.recent"), icon: "i-lucide-history", children: recent }
+            : { label: t("start.recent"), icon: "i-lucide-history", action: () => undefined, disabled: true },
+        "separator",
+        { label: t("tree.refreshAll"), icon: "i-lucide-refresh-cw", action: () => void actions.refreshMany(rows), disabled: rows.length === 0 },
+        { label: t("tree.collapse"), icon: "i-lucide-chevrons-down-up", command: "tree.collapse", action: () => connections.collapseAll(), disabled: rows.length === 0 },
+        { label: t("tree.search"), icon: "i-lucide-search", action: () => (searching.value = true), disabled: rows.length === 0 },
+        "separator",
+        { label: t("import.menu"), icon: "i-lucide-download", command: "import.wizard", action: () => actions.importWizard(first), disabled: first === undefined },
+        "separator",
+        { label: t("tree.disconnectAll"), icon: "i-lucide-unplug", action: () => void actions.disconnectMany(rows), disabled: rows.length === 0 }
+    ]);
+}
+
 async function moveToGroup(profile: Profile, group: string) {
     await connections.setGroup(profile.id, group).catch(report);
 }
@@ -994,6 +1048,7 @@ defineExpose({
                         />
                     </label>
                     <div
+                        @contextmenu="openListSpaceMenu"
                         @keydown="onListKey"
                         class="grow min-h-0 overflow-auto pb-2 text-[13px]"
                         role="tree"
@@ -1148,6 +1203,7 @@ defineExpose({
 
         <div
             ref="tree"
+            @contextmenu="openTreeSpaceMenu"
             @keydown="onTreeKey"
             aria-multiselectable="true"
             class="grow min-h-0 overflow-y-auto pt-2 pb-2 text-[13px]"
