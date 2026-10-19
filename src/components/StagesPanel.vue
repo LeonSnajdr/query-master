@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
+import { SplitterHandle, SplitterPanel, SplitterRoot, SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
 import { computed, reactive, shallowRef } from "vue";
 import { backend } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
@@ -413,9 +413,17 @@ function createView() {
                     icon="i-lucide-list-restart"
                 />
             </div>
+        </template>
 
-            <div
-                class="shrink-0 max-h-[50vh] overflow-y-auto mx-5 mt-1.5 mb-1 border-t border-divider"
+        <SplitterRoot
+            class="grow min-h-0"
+            orientation="vertical"
+        >
+            <SplitterPanel
+                v-if="layout !== 'results'"
+                :defaultSize="30"
+                :minSize="8"
+                class="min-h-0 overflow-y-auto mx-5 mt-1.5 mb-1 border-t border-divider"
                 data-stage-list
             >
                 <div
@@ -511,13 +519,25 @@ function createView() {
                         singleLine
                     />
                 </div>
-            </div>
-        </template>
-
-        <ResultsPanel
-            v-if="layout !== 'editor'"
-            :tabId
-            class="grow"
-        />
+            </SplitterPanel>
+            <SplitterHandle
+                v-if="layout === 'default'"
+                :label="$t('layout.resize')"
+                class="relative z-10 h-1.5 -my-[3px] shrink-0 flex items-center justify-center border-t border-divider cursor-row-resize text-on-surface-variant hover:bg-primary/25"
+            >
+                <span class="i-lucide-ellipsis size-3.5" />
+            </SplitterHandle>
+            <SplitterPanel
+                v-if="layout !== 'editor'"
+                :defaultSize="70"
+                :minSize="10"
+                class="min-h-0 flex flex-col"
+            >
+                <ResultsPanel
+                    :tabId
+                    class="grow"
+                />
+            </SplitterPanel>
+        </SplitterRoot>
     </section>
 </template>

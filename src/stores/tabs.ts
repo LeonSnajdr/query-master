@@ -35,6 +35,10 @@ const STRUCTURE_COMMANDS = ["create", "drop", "dropDatabase", "renameCollection"
 
 export type ResultView = "tree" | "table" | "json" | "plan";
 
+/** How much `explain` reports, as the server's verbosity names it. */
+export type ExplainVerbosity = "queryPlanner" | "executionStats" | "allPlansExecution";
+export const EXPLAIN_VERBOSITIES: ExplainVerbosity[] = ["queryPlanner", "executionStats", "allPlansExecution"];
+
 /** The plan of the query a tab shows, as the view "Plan" draws it (stage 19). */
 export interface TabExplain {
     /** The statement explained; a new result of another one makes the plan stale. */
@@ -42,6 +46,8 @@ export interface TabExplain {
     /** The index forced with `hint`, by name; absent: the server chose. */
     hint?: string;
     plan: ExplainResult;
+    /** How much the server was asked for; absent: the result was a plan itself. */
+    verbosity?: ExplainVerbosity;
     /** The response of the server, for the details and the export. */
     reply: Json;
     /** The time before the hint changed, to compare. */
@@ -665,17 +671,18 @@ export const useTabsStore = defineStore("tabs", () => {
     }
 
     /**
-     * Reads the plan of the query the tab shows (`explain("executionStats")`), for the view "Plan".
-     * `hint` forces an index by name (`null`: the server chooses again). A result that is a plan
-     * itself (`.explain()` typed in the shell) is read as it is.
+     * Reads the plan of the query the tab shows (`explain("executionStats")` unless `verbosity`
+     * says otherwise), for the view "Plan". `hint` forces an index by name (`null`: the server
+     * chooses again). A result that is a plan itself (`.explain()` typed in the shell) is read as it
+     * is, until another verbosity is asked for.
      */
-    function explainResult(tab: WorkTab, hint?: string | null): Promise<boolean> {
+    function explainResult(tab: WorkTab, hint?: string | null, verbosity?: ExplainVerbosity): Promise<boolean> {
         return guarded(tab, async () => {
             const result = tab.result;
             if (!result) return;
             const before = tab.explain;
             const first = result.items[0];
-            if (result.items.length === 1 && isExplain(first)) {
+            if (verbosity === undefined && result.items.length === 1 && isExplain(first)) {
                 const plan = readExplain(first, tab.collection ?? "");
                 if (plan) tab.explain = markRaw({ statement: result.statement, plan: { ...plan, hints: hintsOf(plan, tab.plan?.command ?? {}) }, reply: first });
                 return;
@@ -685,7 +692,8 @@ export const useTabsStore = defineStore("tabs", () => {
             const modifiers = statement.modifiers.filter(modifier => modifier.name !== "explain" && modifier.name !== "hint");
             const forced = hint === undefined ? before?.hint : hint ?? undefined;
             if (forced) modifiers.push({ name: "hint", args: [forced] });
-            modifiers.push({ name: "explain", args: ["executionStats"] });
+            const scope = verbosity ?? before?.verbosity ?? "executionStats";
+            modifiers.push({ name: "explain", args: [scope] });
             const plan = planStatement({ ...statement, modifiers }, tab.database);
             const reply = await backend.runCommand(tab.connectionId, plan.database, plan.command);
             const failure = replyError(reply);
@@ -695,6 +703,7 @@ export const useTabsStore = defineStore("tabs", () => {
             tab.explain = markRaw({
                 statement: result.statement,
                 hint: forced,
+                verbosity: scope,
                 plan: { ...read, hints: hintsOf(read, plan.command) },
                 reply,
                 previousMs: hint !== undefined && before ? before.plan.ms : before?.previousMs
