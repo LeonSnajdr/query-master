@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { roleCommand, roleFormOf, userCommand, userFormErrors, userFormOf } from "./users";
+import { generatePassword, roleCommand, roleFormOf, userCommand, userFormErrors, userFormOf } from "./users";
 
 describe("userCommand", () => {
     it("creates a user with two roles; a role without database is one of this database", () => {
@@ -59,5 +59,21 @@ describe("roleCommand", () => {
             roles: [{ role: "read", db: "shop" }]
         });
         expect(roleCommand(form, "shop", true).updateRole).toBe("reporter");
+    });
+});
+
+describe("any resource and generated passwords", () => {
+    it("writes and reads a privilege on any resource", () => {
+        const command = roleCommand({ role: "auditor", privileges: [{ kind: "any", db: "", collection: "", actions: ["find"] }], roles: [] }, "admin", false);
+        expect(command.privileges).toEqual([{ resource: { anyResource: true }, actions: ["find"] }]);
+        expect(roleFormOf({ role: "auditor", privileges: [{ resource: { anyResource: true }, actions: ["find"] }], roles: [] }).privileges[0]?.kind).toBe("any");
+    });
+
+    it("generates passwords of the asked length that differ", () => {
+        const first = generatePassword();
+        expect(first).toHaveLength(20);
+        expect(first).toMatch(/^[\w.~!*-]+$/);
+        expect(generatePassword(32)).toHaveLength(32);
+        expect(generatePassword()).not.toBe(first);
     });
 });

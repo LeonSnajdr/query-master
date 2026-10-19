@@ -555,6 +555,7 @@ const manageEntries = computed<MenuEntry[]>(() => [
     { label: t("database.collectionsStats"), action: () => actions.collectionsStats(), disabled: !actions.hasDatabase.value },
     { label: t("connection.status"), icon: "i-lucide-activity", action: () => actions.serverStatus(), disabled: !actions.hasConnection.value },
     { label: t("connection.log"), icon: "i-lucide-scroll-text", action: () => actions.serverLog(), disabled: !actions.hasConnection.value },
+    { label: t("replicaSet.manage"), icon: "i-lucide-server-cog", action: () => actions.replicaSet(), disabled: !actions.hasConnection.value },
     "separator",
     { label: t("users.manage"), icon: "i-lucide-users", command: "users.manage", action: () => actions.manageUsers(), disabled: !actions.hasConnection.value },
     { label: t("roles.manage"), icon: "i-lucide-shield", command: "roles.manage", action: () => actions.manageRoles(), disabled: !actions.hasConnection.value }
@@ -892,6 +893,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
             "separator",
             { label: t("connection.status"), icon: "i-lucide-activity", action: () => actions.serverStatus(at) },
             { label: t("connection.log"), icon: "i-lucide-scroll-text", action: () => actions.serverLog(at) },
+            { label: t("replicaSet.manage"), icon: "i-lucide-server-cog", action: () => actions.replicaSet(at) },
             { label: t("users.manage"), icon: "i-lucide-users", command: "users.manage", action: () => actions.manageUsers(at) },
             { label: t("roles.manage"), icon: "i-lucide-shield", command: "roles.manage", action: () => actions.manageRoles(at) },
             "separator",

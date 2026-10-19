@@ -56,7 +56,7 @@ const tabMenu = useTemplateRef("tabMenu");
 
 const TAB_ICONS = { start: "i-lucide-house", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", sql: "i-lucide-file-code-2", server: "i-lucide-activity", schema: "i-lucide-chart-column" } as const;
 
-const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield", gridfs: "i-lucide-folder-archive" } as const;
+const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield", gridfs: "i-lucide-folder-archive", replicaSet: "i-lucide-server-cog" } as const;
 
 function iconOf(tab: WorkTab): string {
     return tab.kind === "server" ? SERVER_ICONS[tab.page ?? "status"] : TAB_ICONS[tab.kind];

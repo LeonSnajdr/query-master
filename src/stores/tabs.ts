@@ -69,7 +69,7 @@ export interface TabSchema {
 }
 /** What a server tab shows. */
 /** What a server tab shows; `gridfs` the files of the bucket named in `collection`. */
-export type ServerPage = "status" | "log" | "users" | "roles" | "gridfs";
+export type ServerPage = "status" | "log" | "users" | "roles" | "gridfs" | "replicaSet";
 export interface QueryResult {
     /** Documents of a cursor, the elements of an array, or one value. */
     items: Json[];
@@ -672,6 +672,27 @@ export const useTabsStore = defineStore("tabs", () => {
         return run(tab, 0, undefined, true);
     }
 
+    /** Closes the result of one statement; the one shown keeps its page, or its neighbour shows. */
+    function closeResult(tab: WorkTab, index: number): void {
+        const results = tab.results;
+        if (!results?.[index] || tab.running) return;
+        const shown = tab.resultIndex ?? 0;
+        if (shown !== index && results[shown] && tab.result && tab.plan) results[shown] = { ...results[shown], result: tab.result, plan: tab.plan };
+        results.splice(index, 1);
+        if (results.length === 0) {
+            tab.results = undefined;
+            tab.resultIndex = undefined;
+            tab.result = undefined;
+            tab.plan = undefined;
+            return;
+        }
+        const next = shown > index ? shown - 1 : Math.min(shown, results.length - 1);
+        tab.resultIndex = next;
+        tab.result = results[next]!.result;
+        tab.plan = results[next]!.plan;
+        tab.error = undefined;
+    }
+
     /**
      * Reads the plan of the query the tab shows (`explain("executionStats")` unless `verbosity`
      * says otherwise), for the view "Plan". `hint` forces an index by name (`null`: the server
@@ -867,7 +888,7 @@ export const useTabsStore = defineStore("tabs", () => {
     return {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, move, step,
-        openSchema, analyzeSchema, browseFiltered, restoreTab, run, showResult, explainResult, stop, runStages, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
+        openSchema, analyzeSchema, browseFiltered, restoreTab, run, showResult, closeResult, explainResult, stop, runStages, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
         insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument, write
     };
 });

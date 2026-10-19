@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { SplitterHandle, SplitterPanel, SplitterRoot, TabsItem, TabsList, TabsRoot } from "@vuetify/v0";
-import { computed, useTemplateRef } from "vue";
+import { ButtonRoot, SplitterHandle, SplitterPanel, SplitterRoot, TabsItem, TabsList, TabsRoot } from "@vuetify/v0";
+import { computed, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import CodeEditor from "@/components/CodeEditor.vue";
 import DropMenu from "@/components/DropMenu.vue";
@@ -59,6 +59,28 @@ const shownResult = computed({
     get: () => tab.value.resultIndex ?? 0,
     set: (index: number) => tabs.showResult(tab.value, index)
 });
+
+/**
+ * The tab *Text*: what the script printed, on the whole height. It shows by
+ * itself when a run printed and gave no result; a new run shows its result again.
+ */
+const textShown = shallowRef(false);
+watch(() => [tab.value.output, tab.value.results, tab.value.result] as const, ([output, , result]) => {
+    textShown.value = output !== undefined && result === undefined;
+});
+const shownTab = computed<number | "text">({
+    get: () => (textShown.value && tab.value.output !== undefined ? "text" : shownResult.value),
+    set: (value) => {
+        textShown.value = value === "text";
+        if (value !== "text") shownResult.value = value;
+    }
+});
+const hasTabs = computed(() => tab.value.output !== undefined || (tab.value.results?.length ?? 0) > 1);
+
+/** The output on the whole tab *Maximize*; again: both halves. */
+function toggleMaximized() {
+    layout.value = layout.value === "results" ? "default" : "results";
+}
 
 const values = useValueSources(() => tab.value);
 const search = useValueSearch(() => tab.value);
@@ -293,39 +315,81 @@ function openInBuilder() {
                 :minSize="10"
                 class="min-h-0 flex flex-col"
             >
-                <TabsRoot
-                    v-if="tab.results && tab.results.length > 1"
-                    v-model="shownResult"
-                    mandatory
-                >
-                    <TabsList
-                        :label="$t('query.output')"
-                        class="shrink-0 flex gap-0.5 px-5.5 pt-2 overflow-x-auto"
+                <div class="shrink-0 flex items-end pr-3">
+                    <TabsRoot
+                        v-if="hasTabs"
+                        v-model="shownTab"
+                        class="min-w-0"
+                        mandatory
                     >
-                        <TabsItem
-                            v-for="(entry, index) in tab.results"
-                            :key="index"
-                            :title="tab.text.slice(entry.start, entry.start + 200)"
-                            :value="index"
-                            class="shrink-0 px-3 pb-1.5 border-b border-transparent text-[13px] text-on-surface whitespace-nowrap hover:text-on-surface-strong data-[selected]:text-primary data-[selected]:border-primary"
-                            data-testid="statement-result"
+                        <TabsList
+                            :label="$t('query.output')"
+                            class="flex gap-0.5 px-5.5 pt-2 overflow-x-auto"
                         >
-                            {{ index + 1 }} · {{ entry.label }}
-                        </TabsItem>
-                    </TabsList>
-                </TabsRoot>
-                <div
-                    v-else
-                    class="shrink-0 px-5.5 pt-2"
-                >
-                    <span class="inline-block px-3 pb-1.5 border-b border-primary text-[13px] text-primary">{{ $t("query.output") }}</span>
+                            <TabsItem
+                                v-if="tab.output !== undefined"
+                                class="shrink-0 px-3 pb-1.5 border-b border-transparent text-[13px] text-on-surface whitespace-nowrap hover:text-on-surface-strong data-[selected]:text-primary data-[selected]:border-primary"
+                                data-testid="script-text-tab"
+                                value="text"
+                            >
+                                {{ $t("query.output.text") }}
+                            </TabsItem>
+                            <TabsItem
+                                v-if="!tab.results?.length"
+                                :value="0"
+                                class="shrink-0 px-3 pb-1.5 border-b border-transparent text-[13px] text-on-surface whitespace-nowrap hover:text-on-surface-strong data-[selected]:text-primary data-[selected]:border-primary"
+                                data-testid="script-result-tab"
+                            >
+                                {{ $t("query.output.result") }}
+                            </TabsItem>
+                            <span
+                                v-for="(entry, index) in tab.results ?? []"
+                                :key="index"
+                                class="group shrink-0 inline-flex items-center"
+                            >
+                                <TabsItem
+                                    :title="tab.text.slice(entry.start, entry.start + 200)"
+                                    :value="index"
+                                    class="pl-3 pr-1 pb-1.5 border-b border-transparent text-[13px] text-on-surface whitespace-nowrap hover:text-on-surface-strong data-[selected]:text-primary data-[selected]:border-primary"
+                                    data-testid="statement-result"
+                                >
+                                    {{ index + 1 }} · {{ entry.label }}
+                                </TabsItem>
+                                <ButtonRoot
+                                    @click="tabs.closeResult(tab, index)"
+                                    :ariaLabel="$t('query.output.close', { name: entry.label })"
+                                    :disabled="tab.running"
+                                    :title="$t('query.output.close', { name: entry.label })"
+                                    class="size-4 mb-1.5 mr-1 inline-flex items-center justify-center rounded-sm text-on-surface-variant opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover:bg-on-surface/15"
+                                    data-testid="statement-result-close"
+                                >
+                                    <span class="i-lucide-x size-3" />
+                                </ButtonRoot>
+                            </span>
+                        </TabsList>
+                    </TabsRoot>
+                    <div
+                        v-else
+                        class="px-5.5 pt-2"
+                    >
+                        <span class="inline-block px-3 pb-1.5 border-b border-primary text-[13px] text-primary">{{ $t("query.output") }}</span>
+                    </div>
+                    <span class="grow" />
+                    <IconButton
+                        @click="toggleMaximized"
+                        :icon="layout === 'results' ? 'i-lucide-minimize-2' : 'i-lucide-maximize-2'"
+                        :label="layout === 'results' ? $t('query.output.restore') : $t('query.output.maximize')"
+                        class="mb-0.5"
+                        data-testid="output-maximize"
+                    />
                 </div>
                 <pre
-                    v-if="tab.output"
-                    class="shrink-0 max-h-[40%] overflow-auto m-0 mx-5.5 mt-2 px-3 py-2 rounded-sm bg-on-surface/5 font-mono text-[13px] leading-[19px] text-on-surface-strong select-text"
+                    v-if="shownTab === 'text'"
+                    class="grow min-h-0 overflow-auto m-0 mx-5.5 my-2 px-3 py-2 rounded-sm bg-on-surface/5 font-mono text-[13px] leading-[19px] text-on-surface-strong select-text"
                     data-testid="script-output"
                 >{{ tab.output }}</pre>
                 <ResultsPanel
+                    v-else
                     :tabId
                     class="grow min-h-0"
                 />

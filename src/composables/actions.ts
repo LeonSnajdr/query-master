@@ -175,6 +175,10 @@ export function useActions() {
         if (at) tabs.openServer(at.connectionId, "log");
     }
 
+    function replicaSet(at = target.value) {
+        if (at) tabs.openServer(at.connectionId, "replicaSet");
+    }
+
     /** Users and roles belong to a database; without one chosen, to `admin`. */
     function manageUsers(at = target.value) {
         if (at) tabs.openServer(at.connectionId, "users", at.database ?? "admin");
@@ -569,7 +573,7 @@ export function useActions() {
     }
 
     return {
-        target, hasConnection, hasDatabase, hasCollection, onView, anyOpen,
+        replicaSet, target, hasConnection, hasDatabase, hasCollection, onView, anyOpen,
         openShell, browse, schema, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, clearCollection, duplicateCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,
