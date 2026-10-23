@@ -408,7 +408,12 @@ const theme = EditorView.theme({
     // One line never scrolls up and down; a pixel of rounding would show a scroll bar otherwise,
     // and no room is kept for one.
     // Across it scrolls with the cursor, without a bar that would cover the one line.
-    ".cm-scroller": props.singleLine ? { overflowY: "hidden", scrollbarGutter: "auto", scrollbarWidth: "none" } : {},
+    ".cm-scroller": {
+        ...(props.singleLine ? { overflowY: "hidden", scrollbarGutter: "auto", scrollbarWidth: "none" } : {}),
+        // The field is taller than the one line: the text stands in its middle, not at its top, as
+        // that of the fields and cells beside it. CodeMirror's own rule is `!important`.
+        ...((props.singleLine || props.compact) && !props.grow ? { alignItems: "center !important" } : {})
+    },
     ...(props.grow
         ? {
                 "&": { height: "auto", fontSize: props.inheritFont ? "inherit" : "var(--editor-font-size, 13px)", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
@@ -418,7 +423,13 @@ const theme = EditorView.theme({
                 ".cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-above": { transform: "translateY(var(--above-field, 0px))" }
             }
         : {}),
-    ".cm-content": { caretColor: "var(--v0-primary)", padding: props.compact ? "0" : props.singleLine ? "5px 0" : "8px 0" },
+    ".cm-content": {
+        caretColor: "var(--v0-primary)",
+        padding: props.compact ? "0" : props.singleLine ? "5px 0" : "8px 0",
+        // The one line is as high as it is, so the scroller can put it in the middle of the field
+        // instead of letting it fill the height and stand at the top.
+        ...((props.singleLine || props.compact) && !props.grow ? { minHeight: "0" } : {})
+    },
     ".cm-line": { padding: props.singleLine ? "0 2px" : "0 6px" },
     ".cm-cursor": { borderLeftColor: "var(--v0-primary)" },
     ".cm-placeholder": { color: "var(--v0-on-surface-variant)", fontStyle: "italic", fontFamily: "\"Open Sans\", system-ui, sans-serif" },
@@ -517,6 +528,11 @@ const fieldEdges = EditorView.updateListener.of((update) => {
     });
 });
 
+/** The text of a single line: line breaks become spaces, as they do when something is pasted. */
+function oneLine(value: string): string {
+    return value.replace(/\s*\n\s*/g, " ");
+}
+
 function extensions(): Extension[] {
     const base: Extension[] = [
         drawSelection(),
@@ -574,7 +590,7 @@ function extensions(): Extension[] {
         // A single line stays one: pasted line breaks become spaces.
         ...(props.singleLine
             ? [EditorState.transactionFilter.of(transaction => (transaction.newDoc.lines > 1
-                    ? [{ changes: { from: 0, to: transaction.startState.doc.length, insert: transaction.newDoc.toString().replace(/\s*\n\s*/g, " ") } }]
+                    ? [{ changes: { from: 0, to: transaction.startState.doc.length, insert: oneLine(transaction.newDoc.toString()) } }]
                     : transaction))]
             : []),
         EditorView.updateListener.of((update) => {
@@ -586,6 +602,9 @@ function extensions(): Extension[] {
 }
 
 onMounted(() => {
+    // The text can come from a query formatted over several lines (the filter of an export row):
+    // one line shows it as one, so its braces stand in the field and not above and below it.
+    if (props.singleLine && oneLine(text.value) !== text.value) text.value = oneLine(text.value);
     view = new EditorView({ parent: host.value!, state: EditorState.create({ doc: text.value, extensions: extensions() }) });
     // One value of a field: ready to type over, its known values open below.
     if (props.valueField) {
