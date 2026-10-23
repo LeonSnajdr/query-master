@@ -9,7 +9,8 @@ import { toShell } from "@/shell/ejson";
 import { NODE_HEIGHT, NODE_WIDTH, layoutPlan, strokeFor } from "@/shell/explain";
 import type { PlanHint, PlanNode } from "@/shell/explain";
 import { useConnectionsStore } from "@/stores/connections";
-import { useTabsStore } from "@/stores/tabs";
+import { EXPLAIN_VERBOSITIES, useTabsStore } from "@/stores/tabs";
+import type { ExplainVerbosity } from "@/stores/tabs";
 
 /**
  * The plan of a query as a flow (stage 19): source → stages → result. Line width is the number of
@@ -142,8 +143,24 @@ watch(collection, (name) => {
 }, { immediate: true });
 const forced = computed({
     get: () => explain.value?.hint ?? "",
-    set: (name: string) => void tabs.explainResult(tab.value, name || null)
+    set: (name: string) => {
+        if (name !== (explain.value?.hint ?? "")) void tabs.explainResult(tab.value, name || null);
+    }
 });
+
+/** How much the server reports; a plan typed in the shell shows its own until another is chosen. */
+const verbosityOptions = computed(() => EXPLAIN_VERBOSITIES.map(value => ({ value, label: t(`explain.mode.${value}`) })));
+const verbosity = computed({
+    get: () => explain.value?.verbosity ?? "",
+    // The list also reports an empty value while it opens; only a real change asks the server again.
+    set: (value: string) => {
+        if (value && value !== explain.value?.verbosity) void tabs.explainResult(tab.value, undefined, value as ExplainVerbosity);
+    }
+});
+
+/** The whole reply of the server beside the drawing. */
+const showRaw = shallowRef(false);
+const raw = computed(() => (showRaw.value && explain.value ? toShell(explain.value.reply) : undefined));
 
 /** The numbers of a hint as the language writes them. */
 function paramsOf(hint: PlanHint): Record<string, string | number> {
@@ -186,15 +203,27 @@ function nodeTip(box: Box): string | undefined {
                     > ({{ $t("explain.before", { ms: format(explain.previousMs) }) }})</span>
                 </span>
                 <span class="grow" />
+                <span class="text-on-surface-variant">{{ $t("explain.mode") }}</span>
+                <div class="w-44">
+                    <ChoiceField
+                        v-model="verbosity"
+                        :disabled="tab.running"
+                        :label="$t('explain.mode')"
+                        :options="verbosityOptions"
+                        data-testid="plan-verbosity"
+                        size="compact"
+                    />
+                </div>
                 <span class="text-on-surface-variant">{{ $t("explain.index") }}</span>
-                <ChoiceField
-                    v-model="forced"
-                    :label="$t('explain.index')"
-                    :options="indexOptions"
-                    class="w-64"
-                    data-testid="plan-index"
-                    size="compact"
-                />
+                <div class="w-64">
+                    <ChoiceField
+                        v-model="forced"
+                        :label="$t('explain.index')"
+                        :options="indexOptions"
+                        data-testid="plan-index"
+                        size="compact"
+                    />
+                </div>
             </div>
 
             <div class="overflow-x-auto">
@@ -423,6 +452,31 @@ function nodeTip(box: Box): string | undefined {
             >
                 {{ $t("explain.clickHint") }}
             </p>
+
+            <ButtonRoot
+                @click="showRaw = !showRaw"
+                class="mt-3 inline-flex items-center gap-1 text-[11.5px] text-on-surface-variant hover:text-on-surface-strong"
+                data-testid="plan-raw-toggle"
+            >
+                <ButtonContent class="inline-flex items-center gap-1">
+                    <span
+                        :class="showRaw ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                        class="size-3.5"
+                    />
+                    {{ showRaw ? $t("explain.raw") : $t("explain.raw.show") }}
+                </ButtonContent>
+            </ButtonRoot>
+            <div
+                v-if="raw"
+                class="mt-1 h-96 border border-divider rounded-sm"
+                data-testid="plan-raw"
+            >
+                <CodeEditor
+                    :label="$t('explain.raw')"
+                    :modelValue="raw"
+                    readonly
+                />
+            </div>
         </template>
     </div>
 </template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ButtonRoot, SplitterHandle, SplitterPanel, SplitterRoot, TabsItem, TabsList, TabsRoot } from "@vuetify/v0";
-import { computed, onMounted, shallowRef, useTemplateRef } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { inApp } from "@/api";
 import AppMenuBar from "@/components/AppMenuBar.vue";
@@ -10,6 +10,7 @@ import NoticeStack from "@/components/NoticeStack.vue";
 import StagesPanel from "@/components/StagesPanel.vue";
 import StatusMessage from "@/components/StatusMessage.vue";
 import ConnectionDock from "@/components/ConnectionDock.vue";
+import DragGhost from "@/components/DragGhost.vue";
 import ContextMenu from "@/components/ContextMenu.vue";
 import IconButton from "@/components/IconButton.vue";
 import SchemaPanel from "@/components/SchemaPanel.vue";
@@ -24,6 +25,7 @@ import { useSession } from "@/composables/session";
 import { watchAppearance } from "@/composables/appearance";
 import { fileName } from "@/composables/recentFiles";
 import { useFocusAreas } from "@/composables/focus";
+import { focusStart, watchDialogFocus } from "@/composables/startFocus";
 import { useLayout } from "@/composables/layout";
 import { useMessages } from "@/composables/messages";
 import type { CommandId } from "@/keys/commands";
@@ -32,6 +34,7 @@ import { appWindow } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { useConnectionsStore } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
+import { useQueriesStore } from "@/stores/queries";
 import { useTabsStore } from "@/stores/tabs";
 import { isQueryTab } from "@/stores/tabs";
 import type { ResultView, WorkTab } from "@/stores/tabs";
@@ -55,7 +58,7 @@ const tabMenu = useTemplateRef("tabMenu");
 
 const TAB_ICONS = { start: "i-lucide-house", browse: "i-lucide-file-text", shell: "i-lucide-square-terminal", aggregate: "i-lucide-network", sql: "i-lucide-file-code-2", server: "i-lucide-activity", schema: "i-lucide-chart-column" } as const;
 
-const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield", gridfs: "i-lucide-folder-archive" } as const;
+const SERVER_ICONS = { status: "i-lucide-activity", log: "i-lucide-scroll-text", users: "i-lucide-users", roles: "i-lucide-shield", gridfs: "i-lucide-folder-archive", replicaSet: "i-lucide-server-cog" } as const;
 
 function iconOf(tab: WorkTab): string {
     return tab.kind === "server" ? SERVER_ICONS[tab.page ?? "status"] : TAB_ICONS[tab.kind];
@@ -66,6 +69,19 @@ const activeTab = computed({
     get: () => tabs.activeId ?? "",
     set: (id: string) => (tabs.activeId = id || undefined)
 });
+
+const queries = useQueriesStore();
+
+/**
+ * A script that would be lost on closing, marked as editors mark an unsaved file: a shell tab
+ * changed since its file was read or written, or a shell or SQL text that is neither a file nor a
+ * saved query.
+ */
+function unsaved(tab: WorkTab): boolean {
+    if (tab.kind !== "shell" && tab.kind !== "sql") return false;
+    if (tab.file !== undefined) return tab.fileText !== undefined && tab.text !== tab.fileText;
+    return tab.text.trim() !== "" && queries.savedFor(tab) === undefined;
+}
 
 function titleOf(tab: WorkTab): string {
     if (tab.kind === "start") return t("start.title");
@@ -158,11 +174,13 @@ function withActive(action: (tab: WorkTab) => void) {
 const SHORTCUTS: Partial<Record<CommandId, () => void>> = {
     "connection.list": () => dock.value?.openList(),
     "connection.add": () => actions.newConnection(),
+    "connection.addUri": () => void actions.addFromUri(),
     "connection.uri": () => void actions.viewUri(),
     "connection.disconnect": () => void actions.disconnect(),
     "tab.browse": () => actions.browse(),
     "tab.schema": () => actions.schema(),
     "query.save": () => withActive(tab => isQueryTab(tab) && dialogs.saveQuery(tab.id)),
+    "query.stop": () => withActive(tab => tabs.stop(tab)),
     "palette.open": () => (paletteOpen.value = true),
     "tab.shell": () => actions.openShell(),
     "tab.aggregation": () => actions.aggregation(),
@@ -201,6 +219,17 @@ const SHORTCUTS: Partial<Record<CommandId, () => void>> = {
 };
 for (const [id, run] of Object.entries(SHORTCUTS) as [CommandId, () => void][]) useShortcut(id, run);
 
+// Dialogs start with the focus in their first field.
+const stopDialogFocus = watchDialogFocus();
+onBeforeUnmount(stopDialogFocus);
+
+// A tab that comes to the front takes the focus where its work starts: the editor of a shell or
+// SQL tab, the first stage of a query. Not while a dialog is open.
+watch(() => tabs.activeId, id => void nextTick(() => {
+    if (id === undefined || document.querySelector("dialog:modal")) return;
+    focusStart(document.querySelector(`[data-testid=tab-panel][data-tab-id="${id}"]`));
+}));
+
 onMounted(async () => {
     tabs.openStart();
     await connections.load().catch(report);
@@ -223,7 +252,8 @@ onMounted(async () => {
 </script>
 
 <template>
-    <div class="h-full overflow-hidden flex flex-col bg-background text-on-surface text-[13px]">
+    <!-- `clip`, not `hidden`: focusing something wider than the window must not scroll the whole app sideways. -->
+    <div class="h-full overflow-clip flex flex-col bg-background text-on-surface text-[13px]">
         <SplitterRoot
             class="grow min-h-0"
             orientation="horizontal"
@@ -306,6 +336,12 @@ onMounted(async () => {
                                         class="size-4 shrink-0"
                                     />
                                     <span class="truncate">{{ titleOf(tab) }}</span>
+                                    <span
+                                        v-if="unsaved(tab)"
+                                        :title="$t('tab.unsaved')"
+                                        class="size-1.5 shrink-0 rounded-full bg-on-surface-variant"
+                                        data-testid="tab-unsaved"
+                                    />
                                 </TabsItem>
                                 <ButtonRoot
                                     @click="tabs.close(tab.id)"
@@ -354,6 +390,7 @@ onMounted(async () => {
                     v-for="tab in tabs.tabs"
                     v-show="tab.id === tabs.activeId"
                     :key="tab.id"
+                    :data-tab-id="tab.id"
                     class="grow min-h-0"
                     data-testid="tab-panel"
                 >
@@ -415,6 +452,7 @@ onMounted(async () => {
             <StatusMessage />
             <span class="grow" />
             <span
+                v-if="tabs.active?.result"
                 class="tabular-nums text-on-surface-variant"
                 data-testid="status-time"
             >{{ $t("status.seconds", { seconds }) }}</span>
@@ -422,18 +460,21 @@ onMounted(async () => {
             <IconButton
                 @click="layout = 'default'"
                 :active="layout === 'default'"
+                :disabled="!isQueryTab(tabs.active)"
                 :label="$t('layout.default')"
                 icon="i-lucide-rows-2"
             />
             <IconButton
                 @click="layout = 'results'"
                 :active="layout === 'results'"
+                :disabled="!isQueryTab(tabs.active)"
                 :label="$t('layout.results')"
                 icon="i-lucide-panel-top-close"
             />
             <IconButton
                 @click="layout = 'editor'"
                 :active="layout === 'editor'"
+                :disabled="!isQueryTab(tabs.active)"
                 :label="$t('layout.editor')"
                 icon="i-lucide-panel-bottom-close"
             />
@@ -446,5 +487,6 @@ onMounted(async () => {
         <AppDialogs />
         <CommandPalette v-model="paletteOpen" />
         <NoticeStack />
+        <DragGhost />
     </div>
 </template>

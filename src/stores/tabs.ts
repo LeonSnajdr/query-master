@@ -35,6 +35,10 @@ const STRUCTURE_COMMANDS = ["create", "drop", "dropDatabase", "renameCollection"
 
 export type ResultView = "tree" | "table" | "json" | "plan";
 
+/** How much `explain` reports, as the server's verbosity names it. */
+export type ExplainVerbosity = "queryPlanner" | "executionStats" | "allPlansExecution";
+export const EXPLAIN_VERBOSITIES: ExplainVerbosity[] = ["queryPlanner", "executionStats", "allPlansExecution"];
+
 /** The plan of the query a tab shows, as the view "Plan" draws it (stage 19). */
 export interface TabExplain {
     /** The statement explained; a new result of another one makes the plan stale. */
@@ -42,6 +46,8 @@ export interface TabExplain {
     /** The index forced with `hint`, by name; absent: the server chose. */
     hint?: string;
     plan: ExplainResult;
+    /** How much the server was asked for; absent: the result was a plan itself. */
+    verbosity?: ExplainVerbosity;
     /** The response of the server, for the details and the export. */
     reply: Json;
     /** The time before the hint changed, to compare. */
@@ -63,7 +69,7 @@ export interface TabSchema {
 }
 /** What a server tab shows. */
 /** What a server tab shows; `gridfs` the files of the bucket named in `collection`. */
-export type ServerPage = "status" | "log" | "users" | "roles" | "gridfs";
+export type ServerPage = "status" | "log" | "users" | "roles" | "gridfs" | "replicaSet";
 export interface QueryResult {
     /** Documents of a cursor, the elements of an array, or one value. */
     items: Json[];
@@ -96,6 +102,8 @@ export interface WorkTab {
     text: string;
     /** Shell tabs: the file the script was opened from or saved to; the tab carries its name. */
     file?: string;
+    /** Shell tabs: the text as last read from or written to `file`; a different text is unsaved. */
+    fileText?: string;
     view: ResultView;
     pageSize: number;
     /** Writes are refused. */
@@ -305,7 +313,7 @@ export const useTabsStore = defineStore("tabs", () => {
 
     /** The aggregation builder on a collection, with the stages given or one empty $match. */
     function openAggregate(target: { connectionId: string; database: string; collection: string; pipeline?: PipelineStage[]; aggregateOptions?: string }): WorkTab {
-        return create("aggregate", { ...target, pipeline: target.pipeline ?? [newStage("$match", "{ }")] });
+        return create("aggregate", { ...target, pipeline: target.pipeline ?? [newStage("$match", "{}")] });
     }
 
     /**
@@ -427,27 +435,49 @@ export const useTabsStore = defineStore("tabs", () => {
         const started = performance.now();
         let items: Json[];
         let hasMore = false;
-        if (plan.cursor) {
-            const command = pageCommand(plan, offset, tab.pageSize);
-            const paged = plan.paging !== undefined && !plan.shape;
-            const page = command
-                ? await backend.runCursorCommand(tab.connectionId, plan.database, command, paged ? tab.pageSize : UNPAGED_LIMIT)
-                : { documents: [], hasMore: false };
-            const shaped = plan.shape ? plan.shape(page.documents) : page.documents;
-            items = Array.isArray(shaped) ? shaped : [shaped];
-            hasMore = paged && page.hasMore;
-        } else {
-            const reply = await backend.runCommand(tab.connectionId, plan.database, plan.command);
-            const failure = replyError(reply);
-            if (failure) throw new ReplyError(failure);
-            const shaped = plan.shape ? plan.shape(reply) : reply;
-            items = Array.isArray(shaped) ? shaped : [shaped];
-            const name = Object.keys(plan.command)[0] ?? "";
-            if (STRUCTURE_COMMANDS.includes(name)) void connections.loadDatabases(tab.connectionId).catch(() => undefined);
+        // The run can be stopped (Stop, Shift+F5); inside a script the script's run id stays.
+        const own = tab.runId === undefined;
+        const runId = tab.runId ?? `${tab.id}-query-${Date.now()}`;
+        tab.runId = runId;
+        try {
+            if (plan.cursor) {
+                const command = withComment(pageCommand(plan, offset, tab.pageSize), runId);
+                const paged = plan.paging !== undefined && !plan.shape;
+                const page = command
+                    ? await backend.runCursorCommand(tab.connectionId, plan.database, command, paged ? tab.pageSize : UNPAGED_LIMIT, own ? runId : undefined)
+                    : { documents: [], hasMore: false };
+                const shaped = plan.shape ? plan.shape(page.documents) : page.documents;
+                items = Array.isArray(shaped) ? shaped : [shaped];
+                hasMore = paged && page.hasMore;
+            } else {
+                items = await commandItems(tab, plan, own ? runId : undefined);
+            }
+        } finally {
+            if (own) tab.runId = undefined;
         }
         tab.plan = markRaw(plan);
         tab.result = markRaw({ items, offset, hasMore, statement, milliseconds: Math.round(performance.now() - started) });
         if (tab.explain?.statement !== statement) tab.explain = undefined;
+    }
+
+    /**
+     * `find` and `aggregate` carry the run id as their comment, so a stop can find them on the
+     * server (`currentOp`) and end them; a comment of their own stays.
+     */
+    function withComment(command: Doc | undefined, runId: string): Doc | undefined {
+        if (!command || command.comment !== undefined || (command.find === undefined && command.aggregate === undefined)) return command;
+        return { ...command, comment: runId };
+    }
+
+    /** A command with one reply, as the items of the result. */
+    async function commandItems(tab: WorkTab, plan: Plan, runId: string | undefined): Promise<Json[]> {
+        const reply = await backend.runCommand(tab.connectionId, plan.database, plan.command, runId);
+        const failure = replyError(reply);
+        if (failure) throw new ReplyError(failure);
+        const shaped = plan.shape ? plan.shape(reply) : reply;
+        const name = Object.keys(plan.command)[0] ?? "";
+        if (STRUCTURE_COMMANDS.includes(name)) void connections.loadDatabases(tab.connectionId).catch(() => undefined);
+        return Array.isArray(shaped) ? shaped : [shaped];
     }
 
     async function guarded(tab: WorkTab, work: () => Promise<void>): Promise<boolean> {
@@ -516,7 +546,7 @@ export const useTabsStore = defineStore("tabs", () => {
         }
     }
 
-    /** Asks a running script to stop; it ends with an error saying so. */
+    /** Asks a running script or query to stop; it ends with an error saying so. */
     function stop(tab: WorkTab): void {
         if (tab.runId) void backend.stopRun(tab.runId);
     }
@@ -642,18 +672,40 @@ export const useTabsStore = defineStore("tabs", () => {
         return run(tab, 0, undefined, true);
     }
 
+    /** Closes the result of one statement; the one shown keeps its page, or its neighbour shows. */
+    function closeResult(tab: WorkTab, index: number): void {
+        const results = tab.results;
+        if (!results?.[index] || tab.running) return;
+        const shown = tab.resultIndex ?? 0;
+        if (shown !== index && results[shown] && tab.result && tab.plan) results[shown] = { ...results[shown], result: tab.result, plan: tab.plan };
+        results.splice(index, 1);
+        if (results.length === 0) {
+            tab.results = undefined;
+            tab.resultIndex = undefined;
+            tab.result = undefined;
+            tab.plan = undefined;
+            return;
+        }
+        const next = shown > index ? shown - 1 : Math.min(shown, results.length - 1);
+        tab.resultIndex = next;
+        tab.result = results[next]!.result;
+        tab.plan = results[next]!.plan;
+        tab.error = undefined;
+    }
+
     /**
-     * Reads the plan of the query the tab shows (`explain("executionStats")`), for the view "Plan".
-     * `hint` forces an index by name (`null`: the server chooses again). A result that is a plan
-     * itself (`.explain()` typed in the shell) is read as it is.
+     * Reads the plan of the query the tab shows (`explain("executionStats")` unless `verbosity`
+     * says otherwise), for the view "Plan". `hint` forces an index by name (`null`: the server
+     * chooses again). A result that is a plan itself (`.explain()` typed in the shell) is read as it
+     * is, until another verbosity is asked for.
      */
-    function explainResult(tab: WorkTab, hint?: string | null): Promise<boolean> {
+    function explainResult(tab: WorkTab, hint?: string | null, verbosity?: ExplainVerbosity): Promise<boolean> {
         return guarded(tab, async () => {
             const result = tab.result;
             if (!result) return;
             const before = tab.explain;
             const first = result.items[0];
-            if (result.items.length === 1 && isExplain(first)) {
+            if (verbosity === undefined && result.items.length === 1 && isExplain(first)) {
                 const plan = readExplain(first, tab.collection ?? "");
                 if (plan) tab.explain = markRaw({ statement: result.statement, plan: { ...plan, hints: hintsOf(plan, tab.plan?.command ?? {}) }, reply: first });
                 return;
@@ -663,7 +715,8 @@ export const useTabsStore = defineStore("tabs", () => {
             const modifiers = statement.modifiers.filter(modifier => modifier.name !== "explain" && modifier.name !== "hint");
             const forced = hint === undefined ? before?.hint : hint ?? undefined;
             if (forced) modifiers.push({ name: "hint", args: [forced] });
-            modifiers.push({ name: "explain", args: ["executionStats"] });
+            const scope = verbosity ?? before?.verbosity ?? "executionStats";
+            modifiers.push({ name: "explain", args: [scope] });
             const plan = planStatement({ ...statement, modifiers }, tab.database);
             const reply = await backend.runCommand(tab.connectionId, plan.database, plan.command);
             const failure = replyError(reply);
@@ -673,6 +726,7 @@ export const useTabsStore = defineStore("tabs", () => {
             tab.explain = markRaw({
                 statement: result.statement,
                 hint: forced,
+                verbosity: scope,
                 plan: { ...read, hints: hintsOf(read, plan.command) },
                 reply,
                 previousMs: hint !== undefined && before ? before.plan.ms : before?.previousMs
@@ -721,7 +775,7 @@ export const useTabsStore = defineStore("tabs", () => {
         // The documents are those of the collection: the filter goes into the $match in front.
         if (tab.kind === "browse" || tab.kind === "aggregate") {
             const stages = tab.pipeline ?? [];
-            if (stages[0]?.operator !== "$match") tab.pipeline = [newStage("$match", "{ }"), ...stages];
+            if (stages[0]?.operator !== "$match") tab.pipeline = [newStage("$match", "{}"), ...stages];
             // The store's own object, so the row shows the change.
             const stage = tab.pipeline![0]!;
             // Switched off, the filter in it did not apply: it starts anew.
@@ -741,7 +795,15 @@ export const useTabsStore = defineStore("tabs", () => {
     async function count(tab: WorkTab): Promise<number | undefined> {
         const plan = tab.plan;
         const collection = sourceCollection(tab);
-        if (!plan || collection === undefined || plan.command.find === undefined) return undefined;
+        if (!plan || collection === undefined) return undefined;
+        // A pipeline counts what comes out of its stages; one that writes is not run a second time.
+        const stages = plan.command.pipeline;
+        if (plan.command.aggregate !== undefined && Array.isArray(stages)) {
+            if (stages.some(stage => isDoc(stage) && ("$out" in stage || "$merge" in stage))) return undefined;
+            const page = await backend.runCursorCommand(tab.connectionId, plan.database, { aggregate: plan.command.aggregate, pipeline: [...stages, { $count: "n" }], cursor: {} }, 1);
+            return toNumber(page.documents[0]?.n) ?? 0;
+        }
+        if (plan.command.find === undefined) return undefined;
         const filter = plan.command.filter ?? {};
         // Without a filter the collection's own count answers at once, instead of reading every document.
         if (isDoc(filter) && Object.keys(filter).length === 0 && plan.command.skip === undefined && plan.command.limit === undefined) {
@@ -826,7 +888,7 @@ export const useTabsStore = defineStore("tabs", () => {
     return {
         tabs, activeId, active, historyOf, clearHistory,
         openStart, openBrowse, openShell, openAggregate, openSql, openServer, duplicate, close, closeOthers, closeAll, closeConnection, move, step,
-        openSchema, analyzeSchema, browseFiltered, restoreTab, run, showResult, explainResult, stop, runStages, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
-        insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument
+        openSchema, analyzeSchema, browseFiltered, restoreTab, run, showResult, closeResult, explainResult, stop, runStages, runSql, runTab, showPage, refresh, count, filterByValue, sourceCollection, editable, locked, lockedByTree, resultText,
+        insertDocuments, replaceDocument, removeDocuments, setField, removeField, refreshDocument, write
     };
 });

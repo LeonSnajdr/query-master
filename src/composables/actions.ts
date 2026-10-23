@@ -18,6 +18,7 @@ import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
 import { useNotesStore } from "@/stores/notes";
 import { folderLabel, parentFolder } from "@/tree/folders";
+import { parseUri, uriVariants } from "@/connection/uri";
 import { isQueryTab, useTabsStore } from "@/stores/tabs";
 
 /** The script behind "Collections statistics"; views have no storage and are left out. */
@@ -60,6 +61,14 @@ export function useActions() {
     const hasConnection = computed(() => target.value !== undefined && connections.sessions[target.value.connectionId] !== undefined);
     const hasDatabase = computed(() => hasConnection.value && target.value?.database !== undefined);
     const hasCollection = computed(() => hasDatabase.value && target.value?.collection !== undefined);
+    /** Whether the row is a view: it takes no documents, indexes or validator. */
+    function isView(at: TreeSelection | undefined): boolean {
+        const database = at && connections.sessions[at.connectionId]?.databases.find(item => item.name === at.database);
+        return at?.collection !== undefined && database?.types[at.collection] === "view";
+    }
+    const onView = computed(() => isView(target.value));
+    /** Some connection is open: the wizards can start without a selection. */
+    const anyOpen = computed(() => Object.keys(connections.sessions).length > 0);
 
     /**
      * Whether the row may be changed; a row marked read-only in the tree, or one below such a row,
@@ -117,14 +126,23 @@ export function useActions() {
         tabs.openSql({ connectionId: at.connectionId, database, collection: at.collection });
     }
 
+    /** The first open connection, for the wizards when nothing is selected. */
+    function firstOpen(): TreeSelection | undefined {
+        const id = connections.profiles.find(profile => connections.sessions[profile.id])?.id;
+        return id === undefined ? undefined : { connectionId: id };
+    }
+
     /** The export wizard with the rows of the selection: the server's, a database's, one collection or several. */
     async function exportWizard(at: TreeSelection | TreeSelection[] | undefined = target.value, filter?: string, format?: ExportFormat) {
-        if (at) await wizardOf.openExport(at, filter, format);
+        // Without a selection: the first open connection.
+        const chosen = at ?? firstOpen();
+        if (chosen) await wizardOf.openExport(chosen, filter, format);
     }
 
     /** The import wizard on the server of the selection; a collection chosen there takes every file. */
     function importWizard(at = target.value) {
-        void importOf.openImport(at);
+        if (isView(at)) return;
+        void importOf.openImport(at ?? firstOpen());
     }
 
     /** A shell that runs one statement right away (statistics, server status …). */
@@ -155,6 +173,10 @@ export function useActions() {
 
     function serverLog(at = target.value) {
         if (at) tabs.openServer(at.connectionId, "log");
+    }
+
+    function replicaSet(at = target.value) {
+        if (at) tabs.openServer(at.connectionId, "replicaSet");
     }
 
     /** Users and roles belong to a database; without one chosen, to `admin`. */
@@ -199,7 +221,7 @@ export function useActions() {
     }
 
     function editValidator(at = target.value) {
-        if (at?.database !== undefined && at.collection !== undefined && writable(at)) {
+        if (at?.database !== undefined && at.collection !== undefined && !isView(at) && writable(at)) {
             dialogs.editCollection({ mode: "validator", connectionId: at.connectionId, database: at.database, collection: at.collection });
         }
     }
@@ -237,6 +259,23 @@ export function useActions() {
         await notes.remove(at.connectionId, `${at.database}/${at.collection}`).catch(report);
     }
 
+    /** *Clear collection*: every document goes, the collection with its indexes stays. */
+    async function clearCollection(at = target.value) {
+        if (at?.database === undefined || at.collection === undefined || isView(at) || !writable(at)) return;
+        const confirmed = writeGuard.guards(at.connectionId) || await dialogs.confirm({
+            title: t("collection.clear.title"),
+            text: t("collection.clear.text", { name: at.collection, database: at.database }),
+            action: t("collection.clear")
+        });
+        if (confirmed) await command(at.connectionId, at.database, { delete: at.collection, deletes: [{ q: {}, limit: 0 }] });
+    }
+
+    /** *Duplicate collection*: the wizard copies it into its database under `<name>_copy`, with options and indexes. */
+    function duplicateCollection(at = target.value) {
+        if (at?.database === undefined || at.collection === undefined) return;
+        void wizardOf.openExport(at, undefined, undefined, { connectionId: at.connectionId, database: at.database });
+    }
+
     async function dropDatabase(at = target.value) {
         if (at?.database === undefined || !writable({ connectionId: at.connectionId, database: at.database })) return;
         const confirmed = writeGuard.guards(at.connectionId) || await dialogs.confirm({ title: t("database.drop.title"), text: t("database.drop.text", { name: at.database }), action: t("action.drop") });
@@ -246,7 +285,7 @@ export function useActions() {
     }
 
     function createIndex(at = target.value) {
-        if (at?.database !== undefined && at.collection !== undefined && writable(at)) {
+        if (at?.database !== undefined && at.collection !== undefined && !isView(at) && writable(at)) {
             dialogs.editIndex({ connectionId: at.connectionId, database: at.database, collection: at.collection });
         }
     }
@@ -332,9 +371,20 @@ export function useActions() {
      * databases, on a database (or a collection in it) the collections of that database.
      */
     async function addFolder(at = target.value, parent?: string) {
-        if (!at) return;
+        // Nothing chosen (a click into the free space): a folder for connections.
+        if (!at) return addConnectionFolder();
         const name = await askFolderName({ title: t(parent === undefined ? "folder.add" : "folder.addInside"), label: t("folder.name"), action: t("action.create") });
         if (name) await notes.addFolder(at.connectionId, at.database ?? "", parent === undefined ? name : `${parent}/${name}`).catch(report);
+    }
+
+    /** A folder of connections, in the list (F2) and the tree; `parent` puts it inside another. */
+    async function addConnectionFolder(parent = ""): Promise<string | undefined> {
+        const name = await askFolderName({ title: t(parent ? "folder.addInside" : "connection.folder.add"), label: t("folder.name"), action: t("action.create") });
+        if (!name) return undefined;
+        return connections.addGroup(name, parent).catch((error: unknown) => {
+            report(error);
+            return undefined;
+        });
     }
 
     /** A name for a folder; `/` separates folders in folders, so it is not part of a name. */
@@ -482,6 +532,22 @@ export function useActions() {
         await connections.connectUri(uri).catch(report);
     }
 
+    /**
+     * *Add connection from URI* (`Ctrl+Shift+F2`): the string becomes a saved
+     * connection, named after its first host, and is opened.
+     */
+    async function addFromUri() {
+        const uri = await dialogs.ask({ title: t("connection.addFromUri"), label: t("connection.fromUri.label"), value: "mongodb://", action: t("connection.saveConnect"), code: true });
+        if (!uri) return;
+        try {
+            const host = parseUri(uri).hosts[0]?.host ?? "";
+            const profile = await connections.save({ name: host || t("connection.unnamed"), uri: uri.trim() });
+            await connect(profile);
+        } catch (error) {
+            report(error);
+        }
+    }
+
     async function disconnect(at = target.value) {
         if (!at) return;
         tabs.closeConnection(at.connectionId);
@@ -491,7 +557,8 @@ export function useActions() {
     async function viewUri(at = target.value) {
         if (!at) return;
         try {
-            dialogs.showText({ title: t("connection.uri.title"), text: await backend.connectionUri(at.connectionId) });
+            const uri = await backend.connectionUri(at.connectionId);
+            dialogs.showText({ title: t("connection.uri.title"), text: uri, variants: uriVariants(uri, t) });
         } catch (error) {
             report(error);
         }
@@ -514,12 +581,12 @@ export function useActions() {
     }
 
     return {
-        target, hasConnection, hasDatabase, hasCollection,
+        replicaSet, firstOpen, addConnectionFolder, target, hasConnection, hasDatabase, hasCollection, onView, anyOpen,
         openShell, browse, schema, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
-        createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
+        createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, clearCollection, duplicateCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
         setColor, editComment, removeComment, setReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,
         dropMany, browseMany, setColorMany, setReadonlyMany, moveManyToFolder, toggleIndexesHidden, refreshMany, disconnectMany,
-        refresh, connect, reconnect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
+        refresh, connect, reconnect, connectFromUri, addFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };
 }

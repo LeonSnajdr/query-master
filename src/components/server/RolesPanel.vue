@@ -43,7 +43,15 @@ const busy = shallowRef(false);
 
 const existing = computed(() => selected.value !== undefined);
 const databases = computed(() => connections.sessions[props.tab.connectionId]?.databases.map(database => database.name) ?? []);
-const kindOptions = computed(() => (["namespace", "cluster"] as const).map(value => ({ value, label: t(`roles.resource.${value}`) })));
+const kindOptions = computed(() => (["namespace", "cluster", "any"] as const).map(value => ({ value, label: t(`roles.resource.${value}`) })));
+const databaseOptions = computed(() => databases.value.map(name => ({ value: name, label: name })));
+
+/** The collections of the database a privilege names, read when first asked, as choices. */
+function collectionOptions(database: string) {
+    const name = database.trim();
+    if (!name) return [];
+    return connections.collectionsOf(props.tab.connectionId, name).map(collection => ({ value: collection, label: collection }));
+}
 const actionChoices = PRIVILEGE_ACTIONS.map(action => ({ value: action, label: action }));
 const unknownActions = computed(() => actionTexts.value.flatMap(splitActions).filter(action => !PRIVILEGE_ACTIONS.includes(action)));
 
@@ -58,6 +66,9 @@ function addAction(position: number, action: string) {
     actionTexts.value[position] = actions.join(", ");
 }
 
+/** Until the first answer the list says it loads, not that there is nothing. */
+const loaded = shallowRef(false);
+
 async function load() {
     try {
         const reply = await backend.runCommand(props.tab.connectionId, props.tab.database, { rolesInfo: 1, showPrivileges: true, showBuiltinRoles: false });
@@ -66,6 +77,8 @@ async function load() {
         loadError.value = undefined;
     } catch (cause) {
         loadError.value = say(errorMessage(cause));
+    } finally {
+        loaded.value = true;
     }
 }
 
@@ -188,7 +201,7 @@ onMounted(async () => {
                     v-if="roles.length === 0"
                     class="px-3 py-2 text-on-surface-variant"
                 >
-                    {{ $t("roles.none") }}
+                    {{ $t(loaded ? "roles.none" : "choice.loading") }}
                 </li>
             </ul>
         </aside>
@@ -230,20 +243,24 @@ onMounted(async () => {
                             />
                         </div>
                         <template v-if="privilege.kind === 'namespace'">
-                            <input
-                                v-model="privilege.db"
-                                :aria-label="$t('roles.database')"
-                                :placeholder="$t('roles.database.any')"
-                                class="field w-44"
-                                spellcheck="false"
-                            />
-                            <input
-                                v-model="privilege.collection"
-                                :aria-label="$t('roles.collection')"
-                                :placeholder="$t('roles.collection.any')"
-                                class="field grow"
-                                spellcheck="false"
-                            />
+                            <div class="w-44">
+                                <ChoiceField
+                                    v-model="privilege.db"
+                                    :label="$t('roles.database')"
+                                    :options="databaseOptions"
+                                    :placeholder="$t('roles.database.any')"
+                                    free
+                                />
+                            </div>
+                            <div class="grow min-w-0">
+                                <ChoiceField
+                                    v-model="privilege.collection"
+                                    :label="$t('roles.collection')"
+                                    :options="collectionOptions(privilege.db)"
+                                    :placeholder="$t('roles.collection.any')"
+                                    free
+                                />
+                            </div>
                         </template>
                         <span
                             v-else
@@ -315,6 +332,7 @@ onMounted(async () => {
                 <ButtonRoot
                     v-if="existing"
                     @click="drop"
+                    :disabled="busy"
                     class="btn-secondary"
                     data-testid="role-drop"
                 >

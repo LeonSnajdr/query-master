@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            update connection\n            set group_name = case\n                when group_name = $1 then $2\n                when $2 = '' then substr(group_name, length($1) + 2)\n                else $2 || substr(group_name, length($1) + 1)\n            end\n            where group_name = $1 or substr(group_name, 1, length($1) + 1) = $1 || '/'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "ad11f248b8296bc6ce717f57081d9ffc9b393d09583b3aa0c8562d97c2be12ff"
+}

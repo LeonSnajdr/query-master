@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { ButtonContent, ButtonRoot } from "@vuetify/v0";
-import { computed, ref, shallowRef, useTemplateRef } from "vue";
+import { computed, ref, shallowRef, useTemplateRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { preferences } from "@/composables/appearance";
 import { useKeymap } from "@/keys/keymap";
 import type { MenuEntry } from "@/menu";
 import { isDoc, preview, scalar, typeOf } from "@/shell/ejson";
 import type { Json } from "@/shell/ejson";
 import { isLink, openLink } from "@/links";
-import { dateFormat, dateText, displayText, useResultContext } from "./result-context";
+import { displayText, settingText, useResultContext } from "./result-context";
 import ValueEditor from "./ValueEditor.vue";
 
 /**
@@ -30,7 +30,8 @@ const context = useResultContext();
 const keymap = useKeymap();
 
 /** The path stepped into, segment by segment; empty at the top of the documents. */
-const stack = ref<string[]>([]);
+/** The path the table stepped into; the toolbar of the results shows the way back. */
+const stack = context.tableStack;
 /** Columns (relative to `stack`) whose embedded fields are shown as columns. */
 const embedded = ref(new Set<string>());
 const pinned = ref<string[]>([]);
@@ -52,6 +53,33 @@ function at(value: Json | undefined, segments: string[]): Json | undefined {
 
 const levels = computed(() => props.rows.map(row => ({ index: row.index, value: at(row.item, stack.value) })));
 
+/** Sorting by a column *Sort asc/desc*: the documents of the page, not the query. */
+const sortBy = shallowRef<{ column: string; descending: boolean }>();
+/** Order of values of different types: missing last, then numbers, text, dates, the rest as text. */
+function sortKey(value: Json | undefined): [number, number | string] {
+    if (value === undefined) return [9, ""];
+    const type = typeOf(value);
+    if (type === "int" || type === "long" || type === "double" || type === "decimal") return [1, Number(isDoc(value) ? value.$numberInt ?? value.$numberLong ?? value.$numberDouble ?? value.$numberDecimal : value)];
+    if (type === "date" && isDoc(value)) return [3, Number((value.$date as { $numberLong?: string } | undefined)?.$numberLong ?? Date.parse(String(value.$date)))];
+    if (type === "null") return [0, ""];
+    return [2, displayText(value)];
+}
+/** The rows in the order shown: sorted when asked, else as the server gave them. */
+const shown = computed(() => {
+    const by = sortBy.value;
+    if (!by) return levels.value;
+    return [...levels.value].sort((a, b) => {
+        const [rankA, keyA] = sortKey(cell(a.value, by.column));
+        const [rankB, keyB] = sortKey(cell(b.value, by.column));
+        // Missing values stay last either way.
+        if (rankA !== rankB) return rankA === 9 ? 1 : rankB === 9 ? -1 : (rankA - rankB) * (by.descending ? -1 : 1);
+        const order = typeof keyA === "number" && typeof keyB === "number" ? keyA - keyB : String(keyA).localeCompare(String(keyB), undefined, { numeric: true });
+        return by.descending ? -order : order;
+    });
+});
+/** Columns moved left or right by hand, in their order; the others follow as they come. */
+const order = ref<string[]>([]);
+
 const columns = computed(() => {
     const names: string[] = [];
     const seen = new Set<string>();
@@ -70,8 +98,9 @@ const columns = computed(() => {
     for (const column of embedded.value) {
         if (!names.some(name => name.startsWith(`${column}.`)) && !seen.has(column)) names.push(column);
     }
-    const order = [...pinned.value.filter(name => names.includes(name)), ...names.filter(name => !pinned.value.includes(name))];
-    return order.filter(name => !hidden.value.has(name)).slice(0, MAX_COLUMNS);
+    const placed = order.value.length === 0 ? names : [...order.value.filter(name => names.includes(name)), ...names.filter(name => !order.value.includes(name))];
+    const arranged = [...pinned.value.filter(name => placed.includes(name)), ...placed.filter(name => !pinned.value.includes(name))];
+    return arranged.filter(name => !hidden.value.has(name)).slice(0, MAX_COLUMNS);
 });
 
 function cell(value: Json | undefined, column: string): Json | undefined {
@@ -92,19 +121,22 @@ function label(column: string): string {
     return stack.value.length === 0 ? column : `${column} - ${fullPath(column)}`;
 }
 
-const dates = computed(() => dateFormat(locale.value));
-
 function typeLabel(column: string): string {
-    const value = levels.value.map(level => cell(level.value, column)).find(item => item !== undefined);
+    const values = levels.value.map(level => cell(level.value, column)).filter((item): item is Json => item !== undefined);
+    const value = values[0];
     if (value === undefined) return "";
     const type = typeOf(value);
+    //: values of different types make the column `mixed` (null aside).
+    if (values.some(item => typeOf(item) !== type && typeOf(item) !== "null")) return t("result.type.mixed");
     return type === "date" ? t("result.type.datetime") : t(`result.type.${type}`);
 }
 
 function cellText(value: Json | undefined): string {
     if (value === undefined) return t("result.notSet");
     const type = typeOf(value);
-    if (type === "date") return dateText(value, dates.value) ?? displayText(value);
+    const shown = settingText(value, locale.value);
+    if (shown !== undefined) return shown;
+    if (type === "date") return displayText(value);
     // Numbers as digits; the type stands in the column head.
     if ((type === "long" || type === "decimal") && isDoc(value)) return String(value.$numberLong ?? value.$numberDecimal);
     if (type === "array" || type === "object") {
@@ -117,6 +149,8 @@ function cellText(value: Json | undefined): string {
 
 function cellClass(value: Json | undefined): string {
     if (value === undefined) return "italic text-on-surface-variant/60";
+    // Colours by type can be switched off in the settings.
+    if (!preferences.typeColors) return "";
     switch (typeOf(value)) {
         case "int":
         case "long":
@@ -141,12 +175,19 @@ function stepInto(column: string): void {
 
 function stepBack(): void {
     stack.value = stack.value.slice(0, -1);
+}
+
+// A level up, from the keys here or the button of the toolbar: what was set for the level below goes.
+watch(() => stack.value.length, (length, before) => {
+    if (length >= before) return;
     embedded.value = new Set();
     current.value = undefined;
-}
+});
 
 function restore(): void {
     stack.value = [];
+    sortBy.value = undefined;
+    order.value = [];
     embedded.value = new Set();
     pinned.value = [];
     hidden.value = new Set();
@@ -241,8 +282,26 @@ const commands = {
     togglePin: (column: string) => (pinned.value = pinned.value.includes(column) ? pinned.value.filter(name => name !== column) : [...pinned.value, column]),
     hide: (column: string) => (hidden.value = toggle(hidden.value, column, true)),
     hideOthers: (column: string) => (hidden.value = new Set(columns.value.filter(name => name !== column))),
-    showAll: () => (hidden.value = new Set())
+    showAll: () => (hidden.value = new Set()),
+    sort: (column: string, descending: boolean) => (sortBy.value = { column, descending }),
+    unsort: () => (sortBy.value = undefined),
+    move: (column: string, by: -1 | 1) => {
+        const list = [...columns.value];
+        const from = list.indexOf(column);
+        const to = from + by;
+        if (from === -1 || to < 0 || to >= list.length) return;
+        [list[from], list[to]] = [list[to]!, list[from]!];
+        order.value = list;
+    },
+    autosize: (column: string) => (widths.value = { ...widths.value, [column]: fitWidth(column) }),
+    autosizeAll: () => (widths.value = Object.fromEntries(columns.value.map(column => [column, fitWidth(column)])))
 };
+
+/** A width that fits the head and every cell of the column on the page, as *Auto-size column*. */
+function fitWidth(column: string): number {
+    const longest = Math.max(label(column).length, typeLabel(column).length, ...levels.value.map(level => cellText(cell(level.value, column)).length));
+    return Math.min(640, Math.max(MIN_WIDTH, Math.round(longest * 7 + 20)));
+}
 
 function openMenu(event: MouseEvent, index: number, column: string) {
     select(index, column);
@@ -262,6 +321,16 @@ function openMenu(event: MouseEvent, index: number, column: string) {
         { label: t("table.hide"), command: "table.hide", action: () => commands.hide(column) },
         { label: t("table.hideOthers"), command: "table.hideOthers", action: () => commands.hideOthers(column) },
         { label: t("table.showAll"), icon: "i-lucide-eye", command: "table.showAll", disabled: hidden.value.size === 0, action: commands.showAll },
+        "separator",
+        { label: t("table.sortAsc"), icon: "i-lucide-arrow-down-a-z", command: "table.sortAsc", action: () => commands.sort(column, false) },
+        { label: t("table.sortDesc"), icon: "i-lucide-arrow-down-z-a", command: "table.sortDesc", action: () => commands.sort(column, true) },
+        { label: t("table.sortReset"), disabled: !sortBy.value, action: commands.unsort },
+        "separator",
+        { label: t("table.moveLeft"), icon: "i-lucide-arrow-left-to-line", command: "table.moveLeft", disabled: columns.value.indexOf(column) <= 0, action: () => commands.move(column, -1) },
+        { label: t("table.moveRight"), icon: "i-lucide-arrow-right-to-line", command: "table.moveRight", disabled: columns.value.indexOf(column) >= columns.value.length - 1, action: () => commands.move(column, 1) },
+        { label: t("table.autosize"), command: "table.autosize", action: () => commands.autosize(column) },
+        { label: t("table.autosizeAll"), command: "table.autosizeAll", action: commands.autosizeAll },
+        "separator",
         { label: t("table.restore"), action: restore }
     ];
     context.menu(event, { index, path: fullPath(column), value: value ?? null }, extra);
@@ -279,7 +348,7 @@ function onKey(event: KeyboardEvent) {
     if (keymap.matches(event, "table.stepBack") && stack.value.length > 0) {
         stepBack();
     } else if (!control && at && ["arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
-        const rows = levels.value.map(level => level.index);
+        const rows = shown.value.map(level => level.index);
         const row = rows.indexOf(at.index) + (key === "arrowdown" ? 1 : key === "arrowup" ? -1 : 0);
         const column = columns.value.indexOf(at.column) + (key === "arrowright" ? 1 : key === "arrowleft" ? -1 : 0);
         const index = rows[Math.min(Math.max(row, 0), rows.length - 1)];
@@ -303,6 +372,18 @@ function onKey(event: KeyboardEvent) {
         commands.hide(at.column);
     } else if (at && keymap.matches(event, "table.pin")) {
         commands.togglePin(at.column);
+    } else if (at && keymap.matches(event, "table.sortAsc")) {
+        commands.sort(at.column, false);
+    } else if (at && keymap.matches(event, "table.sortDesc")) {
+        commands.sort(at.column, true);
+    } else if (at && keymap.matches(event, "table.moveLeft")) {
+        commands.move(at.column, -1);
+    } else if (at && keymap.matches(event, "table.moveRight")) {
+        commands.move(at.column, 1);
+    } else if (at && keymap.matches(event, "table.autosize")) {
+        commands.autosize(at.column);
+    } else if (keymap.matches(event, "table.autosizeAll")) {
+        commands.autosizeAll();
     } else {
         return;
     }
@@ -320,20 +401,6 @@ function onKey(event: KeyboardEvent) {
         data-testid="result-table-keys"
         tabindex="0"
     >
-        <div
-            v-if="stack.length > 0"
-            class="h-7 flex items-center gap-2 px-2"
-        >
-            <ButtonRoot
-                @click="stepBack"
-                class="h-6 px-1.5 inline-flex items-center gap-1 rounded-sm text-[13px] text-on-surface-strong hover:bg-on-surface/10"
-                data-testid="table-step-back"
-            >
-                <span class="i-lucide-arrow-left size-3.5" />
-                <ButtonContent>{{ $t("table.stepBack") }}</ButtonContent>
-            </ButtonRoot>
-            <span class="font-mono text-[12px] text-on-surface-variant">{{ stack.join(".") }}</span>
-        </div>
         <table
             class="border-separate border-spacing-0 font-sans text-[12.5px]"
             data-testid="result-table"
@@ -369,7 +436,7 @@ function onKey(event: KeyboardEvent) {
             </thead>
             <tbody>
                 <tr
-                    v-for="{ value, index } in levels"
+                    v-for="{ value, index } in shown"
                     :key="index"
                     :class="context.marked.value.has(index) && context.marked.value.size > 1 ? 'bg-primary/15' : context.selected.value === index ? 'bg-on-surface/5' : 'hover:bg-on-surface/4'"
                     data-testid="table-row"
@@ -385,7 +452,8 @@ function onKey(event: KeyboardEvent) {
                         @dblclick="activate(index, column)"
                         :class="[
                             cellClass(cell(value, column)),
-                            current?.index === index && current.column === column ? 'outline outline-1 -outline-offset-1 outline-primary' : '',
+                            // While editing the editor draws the one frame, over the cell.
+                            current?.index === index && current.column === column && !isEditing(index, column) ? 'outline outline-1 -outline-offset-1 outline-primary' : '',
                             // The editor may reach past a narrow cell; the text below it keeps the width.
                             isEditing(index, column) ? 'overflow-visible' : 'truncate'
                         ]"
@@ -401,8 +469,10 @@ function onKey(event: KeyboardEvent) {
                             :label="column"
                             :suggest="context.suggest?.(fullPath(column))"
                             :value="cell(value, column)"
-                            class="absolute left-0 top-0 z-1 h-full min-w-full w-56 pl-2 outline outline-1 -outline-offset-1 outline-primary"
+                            class="absolute! left-0 top-0 z-1 min-h-full w-max items-start! pl-2 bg-background! outline outline-1 -outline-offset-1 outline-primary"
                             testid="table-edit"
+                            grow
+                            inheritFont
                         />
                         <span
                             v-if="isLink(cell(value, column))"

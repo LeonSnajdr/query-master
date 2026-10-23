@@ -24,6 +24,12 @@ pub enum Error {
     ReadOnly,
     #[error("the script was stopped")]
     ScriptStopped,
+    #[error("the query was stopped")]
+    QueryStopped,
+    #[error("the SSH server could not be used: {0}")]
+    Ssh(String),
+    #[error("the SSH server did not accept the login")]
+    SshAuthentication,
     #[error("there is no collection {0}")]
     CollectionMissing(String),
     #[error("the export or import was stopped")]
@@ -46,6 +52,10 @@ pub enum Error {
     Environment(String),
     #[error("a saved query needs a name")]
     QueryName,
+    #[error("a folder needs a name")]
+    FolderName,
+    #[error("a folder can not be moved into itself")]
+    FolderIntoItself,
     #[error("the local database reported an error: {0}")]
     Database(#[from] sqlx::Error),
     #[error(transparent)]
@@ -70,6 +80,9 @@ impl Error {
             Self::Database(_) => Some("error.backend.database"),
             Self::ReadOnly => Some("error.plan.readonly"),
             Self::ScriptStopped => Some("error.script.stopped"),
+            Self::QueryStopped => Some("error.query.stopped"),
+            Self::Ssh(_) => Some("error.backend.ssh"),
+            Self::SshAuthentication => Some("error.backend.sshAuthentication"),
             Self::CollectionMissing(_) => Some("error.copy.missing"),
             Self::TransferStopped => Some("error.transfer.stopped"),
             Self::ImportShape => Some("error.transfer.shape"),
@@ -80,6 +93,8 @@ impl Error {
             Self::SameTarget => Some("error.transfer.sameTarget"),
             Self::Environment(_) => Some("error.backend.environment"),
             Self::QueryName => Some("error.backend.queryName"),
+            Self::FolderName => Some("error.backend.folderName"),
+            Self::FolderIntoItself => Some("error.backend.folderIntoItself"),
             Self::Mongo(_) | Self::Io(_) | Self::Script(_) => None,
         }
     }
@@ -92,14 +107,19 @@ impl Error {
             | Self::CommandDocument
             | Self::ReadOnly
             | Self::ScriptStopped
+            | Self::QueryStopped
+            | Self::SshAuthentication
             | Self::TransferStopped
             | Self::ImportShape
             | Self::WritingPipeline
             | Self::ClipboardTooLarge
             | Self::SameTarget
-            | Self::QueryName => None,
+            | Self::QueryName
+            | Self::FolderName
+            | Self::FolderIntoItself => None,
             Self::OutputName(name) | Self::ImportText(name) => Some(name.clone()),
             Self::CollectionMissing(name) => Some(name.clone()),
+            Self::Ssh(message) => Some(message.clone()),
             Self::Script(message) | Self::Environment(message) => Some(message.clone()),
             Self::ExtendedJson(cause) => Some(cause.clone()),
             Self::Keychain(cause) | Self::KeychainRead(cause) | Self::KeychainWrite(cause) => {

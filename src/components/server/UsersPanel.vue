@@ -13,7 +13,7 @@ import { useMessages } from "@/composables/messages";
 import { isDoc, toShell } from "@/shell/ejson";
 import type { Doc } from "@/shell/ejson";
 import { parseValue } from "@/shell/parse";
-import { BUILTIN_ROLES, roleLabel, userCommand, userFormErrors, userFormOf } from "@/shell/users";
+import { BUILTIN_ROLES, generatePassword, roleLabel, userCommand, userFormErrors, userFormOf } from "@/shell/users";
 import type { UserForm } from "@/shell/users";
 import { useConnectionsStore } from "@/stores/connections";
 import type { WorkTab } from "@/stores/tabs";
@@ -37,6 +37,13 @@ const roleNames = shallowRef<string[]>([]);
 const selected = shallowRef<string>();
 const form = ref<UserForm>({ user: "", password: "", roles: [] });
 const customData = shallowRef("{}");
+/** The password shows as text: to read it back, or after it was generated. */
+const showPassword = shallowRef(false);
+
+function newPassword() {
+    form.value.password = generatePassword();
+    showPassword.value = true;
+}
 /** The list could not be read: said in place of the page. */
 const loadError = shallowRef<string>();
 /** What the server said to the last save, beside the buttons. */
@@ -49,6 +56,9 @@ const existing = computed(() => selected.value !== undefined);
 const databases = computed(() => connections.sessions[props.tab.connectionId]?.databases.map(database => database.name) ?? []);
 const problems = computed(() => userFormErrors(form.value, existing.value));
 
+/** Until the first answer the list says it loads, not that there is nothing. */
+const loaded = shallowRef(false);
+
 async function load() {
     try {
         const reply = await backend.runCommand(props.tab.connectionId, props.tab.database, { usersInfo: 1 });
@@ -59,11 +69,19 @@ async function load() {
         loadError.value = undefined;
     } catch (cause) {
         loadError.value = say(errorMessage(cause));
+    } finally {
+        loaded.value = true;
     }
+}
+
+/** The roles of a user in one line: `readWrite, read@reports`. */
+function rolesOf(user: Doc): string {
+    return userFormOf(user).roles.map(roleLabel).join(", ");
 }
 
 function choose(user?: Doc) {
     selected.value = user ? String(user.user) : undefined;
+    showPassword.value = false;
     form.value = user ? userFormOf(user) : { user: "", password: "", roles: [{ role: "read", db: "" }] };
     customData.value = form.value.customData ? toShell(form.value.customData) : "{}";
     error.value = undefined;
@@ -163,19 +181,28 @@ onMounted(async () => {
                     <button
                         @click="choose(user)"
                         :class="selected === user.user ? 'bg-primary/20 text-on-surface-strong' : 'hover:bg-on-surface/5'"
+                        :title="rolesOf(user)"
                         class="w-full px-3 py-1 flex items-center gap-2 text-left"
                         data-testid="user-item"
                         type="button"
                     >
                         <span class="i-lucide-user size-4 shrink-0" />
-                        <span class="truncate">{{ user.user }}</span>
+                        <span class="min-w-0 flex flex-col">
+                            <span class="truncate">{{ user.user }}</span>
+                            <!-- The roles below the name. -->
+                            <span
+                                v-if="rolesOf(user)"
+                                class="truncate text-[11.5px] text-on-surface-variant"
+                                data-testid="user-item-roles"
+                            >{{ rolesOf(user) }}</span>
+                        </span>
                     </button>
                 </li>
                 <li
                     v-if="users.length === 0"
                     class="px-3 py-2 text-on-surface-variant"
                 >
-                    {{ $t("users.none") }}
+                    {{ $t(loaded ? "users.none" : "choice.loading") }}
                 </li>
             </ul>
         </aside>
@@ -200,16 +227,32 @@ onMounted(async () => {
                     spellcheck="false"
                 />
                 <span>{{ $t(existing ? "users.newPassword" : "users.password") }}:</span>
-                <input
-                    v-model="form.password"
-                    :aria-invalid="missing('users.error.password') || undefined"
-                    :class="missing('users.error.password') ? 'field-invalid' : ''"
-                    :placeholder="existing ? $t('users.password.unchanged') : ''"
-                    autocomplete="new-password"
-                    class="field"
-                    data-testid="user-password"
-                    type="password"
-                />
+                <div class="flex items-center gap-1">
+                    <input
+                        v-model="form.password"
+                        :aria-invalid="missing('users.error.password') || undefined"
+                        :class="missing('users.error.password') ? 'field-invalid' : ''"
+                        :placeholder="existing ? $t('users.password.unchanged') : ''"
+                        :type="showPassword ? 'text' : 'password'"
+                        autocomplete="new-password"
+                        class="field grow min-w-0"
+                        data-testid="user-password"
+                        spellcheck="false"
+                    />
+                    <IconButton
+                        @click="showPassword = !showPassword"
+                        :active="showPassword"
+                        :icon="showPassword ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+                        :label="showPassword ? $t('users.password.hide') : $t('users.password.show')"
+                        data-testid="user-password-show"
+                    />
+                    <IconButton
+                        @click="newPassword"
+                        :label="$t('users.password.generate')"
+                        data-testid="user-password-generate"
+                        icon="i-lucide-dices"
+                    />
+                </div>
             </div>
 
             <div class="flex flex-col gap-1.5">
@@ -251,6 +294,7 @@ onMounted(async () => {
                 <ButtonRoot
                     v-if="existing"
                     @click="drop"
+                    :disabled="busy"
                     class="btn-secondary"
                     data-testid="user-drop"
                 >

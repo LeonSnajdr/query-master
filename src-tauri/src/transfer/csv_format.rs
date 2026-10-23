@@ -40,6 +40,8 @@ pub struct CsvWriter<W: Write> {
     writer: csv::Writer<W>,
     options: CsvOptions,
     columns: Option<Vec<String>>,
+    /// The header's names of the columns, when they differ from the paths.
+    names: Option<Vec<String>>,
     /// The columns were chosen: fields outside them are left out, not reported.
     chosen: bool,
     skipped: BTreeSet<String>,
@@ -51,6 +53,8 @@ impl<W: Write> CsvWriter<W> {
         let writer = csv::WriterBuilder::new()
             .delimiter(u8::try_from(options.delimiter).unwrap_or(b','))
             .quote(u8::try_from(options.quote).unwrap_or(b'"'))
+            // CRLF and Excel expect.
+            .terminator(csv::Terminator::CRLF)
             .from_writer(file);
         let chosen = columns.as_ref().is_some_and(|columns| !columns.is_empty());
         Self {
@@ -58,6 +62,7 @@ impl<W: Write> CsvWriter<W> {
             options,
             columns: columns.filter(|columns| !columns.is_empty()),
             chosen,
+            names: None,
             skipped: BTreeSet::new(),
         }
     }
@@ -68,7 +73,15 @@ impl<W: Write> CsvWriter<W> {
         }
         let columns = self.columns.as_ref().expect("set above");
         if self.options.header {
-            self.writer.write_record(columns).map_err(csv_error)?;
+            match self
+                .names
+                .as_ref()
+                .filter(|names| names.len() == columns.len())
+            {
+                Some(names) => self.writer.write_record(names),
+                None => self.writer.write_record(columns),
+            }
+            .map_err(csv_error)?;
             // Once, before the first row.
             self.options.header = false;
         }
@@ -88,6 +101,12 @@ impl<W: Write> CsvWriter<W> {
             self.writer.write_record(record).map_err(csv_error)?;
         }
         Ok(())
+    }
+
+    /// Names for the header, one per chosen column (renamed on the schema page).
+    pub fn with_names(mut self, names: Option<Vec<String>>) -> Self {
+        self.names = names;
+        self
     }
 
     pub fn finish(mut self) -> Result<Vec<String>> {
@@ -154,6 +173,13 @@ fn cell(value: &Bson) -> String {
         Bson::String(text) => text.clone(),
         Bson::Int32(number) => number.to_string(),
         Bson::Int64(number) => number.to_string(),
+        // `inf` is Rust's spelling; the shell write `Infinity`.
+        Bson::Double(number) if number.is_infinite() => if number.is_sign_positive() {
+            "Infinity"
+        } else {
+            "-Infinity"
+        }
+        .into(),
         Bson::Double(number) => number.to_string(),
         Bson::Decimal128(number) => number.to_string(),
         Bson::Boolean(flag) => flag.to_string(),
@@ -205,9 +231,24 @@ mod tests {
         assert!(writer.finish().unwrap().is_empty());
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
-            "name;customer.city;tags.1;gone\n'a;b';Ulm;y;\nline\\nbreak;;;\n"
+            "name;customer.city;tags.1;gone\r\n'a;b';Ulm;y;\r\nline\\nbreak;;;\r\n"
         );
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn writes_the_names_given_in_the_header() {
+        let mut writer = CsvWriter::with_options(
+            Vec::new(),
+            CsvOptions::default(),
+            Some(vec!["_id".into(), "customer.city".into()]),
+        )
+        .with_names(Some(vec!["id".into(), "Stadt".into()]));
+        writer
+            .write(&[doc! { "_id": 1, "customer": { "city": "Ulm" } }])
+            .unwrap();
+        let bytes = writer.into_inner().unwrap();
+        assert_eq!(String::from_utf8(bytes).unwrap(), "id,Stadt\r\n1,Ulm\r\n");
     }
 
     #[test]
@@ -232,7 +273,7 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         assert_eq!(
             text,
-            "_id,name,at,tags\n64b7f0c2a1b2c3d4e5f60718,\"Anna, \"\"A\"\"\",1970-01-01T00:00:00Z,\n2,\"line\nbreak\",,\"[\"\"a\"\",1]\"\n3,,,\n"
+            "_id,name,at,tags\r\n64b7f0c2a1b2c3d4e5f60718,\"Anna, \"\"A\"\"\",1970-01-01T00:00:00Z,\r\n2,\"line\nbreak\",,\"[\"\"a\"\",1]\"\r\n3,,,\r\n"
         );
         std::fs::remove_file(path).unwrap();
     }

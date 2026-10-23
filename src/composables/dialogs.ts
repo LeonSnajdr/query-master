@@ -51,6 +51,8 @@ export interface TextRequest {
     text: string;
     /** With an action the text can be changed and is handed back. */
     action?: string;
+    /** A second button that hands the text back and keeps the dialog open for another one. */
+    again?: string;
     /** Checks the edited text; a string is shown as the error and the dialog stays open. */
     submit?: (text: string) => Promise<string | undefined> | string | undefined;
     /** Other forms of the text to switch between (the query in other languages); `text` is the first. */
@@ -82,7 +84,7 @@ export interface IndexRequest {
 }
 
 /** The tabs of the settings dialog. */
-export type SettingsPage = "general" | "keys";
+export type SettingsPage = "general" | "display" | "keys";
 
 /** What the Help dialog shows: the keyboard shortcuts (F12) or "About QueryMaster". */
 export type HelpPage = "shortcuts" | "about";
@@ -104,6 +106,8 @@ const state = reactive({
     collectionOpen: false,
     collection: undefined as CollectionRequest | undefined,
     connection: undefined as Profile | undefined,
+    /** A new connection: the folder it starts in. */
+    connectionGroup: "",
     /** The dialog starts from `connection` but saves a new one. */
     connectionClone: false
 });
@@ -133,8 +137,15 @@ export function useDialogs() {
     /** Opens the connection dialog for a new connection, or for the one given. */
     function editConnection(profile?: Profile): void {
         state.connection = profile;
+        state.connectionGroup = "";
         state.connectionClone = false;
         state.connectionOpen = true;
+    }
+
+    /** Opens the connection dialog for a new connection in the folder `group`. */
+    function newConnectionIn(group: string): void {
+        editConnection();
+        state.connectionGroup = group;
     }
 
     /** Opens the connection dialog for a new connection that starts as a copy of the one given. */
@@ -177,7 +188,7 @@ export function useDialogs() {
         state.help = page;
     }
 
-    return { ask, confirm, showText, editConnection, cloneConnection, editCollection, editIndex, saveQuery, openSettings, openHelp };
+    return { ask, confirm, showText, editConnection, newConnectionIn, cloneConnection, editCollection, editIndex, saveQuery, openSettings, openHelp };
 }
 
 /** For `AppDialogs.vue` only. */

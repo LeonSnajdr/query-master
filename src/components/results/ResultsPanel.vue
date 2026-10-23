@@ -8,7 +8,9 @@ import ContextMenu from "@/components/ContextMenu.vue";
 import DropMenu from "@/components/DropMenu.vue";
 import ErrorState from "@/components/ErrorState.vue";
 import IconButton from "@/components/IconButton.vue";
+import { preferences } from "@/composables/appearance";
 import { useDialogs } from "@/composables/dialogs";
+import { useFreeSpace } from "@/composables/freeSpace";
 import { useMessages } from "@/composables/messages";
 import { useExportWizard } from "@/composables/exportWizard";
 import type { ExportFormat } from "@/transfer/export";
@@ -17,7 +19,8 @@ import { useNotices } from "@/composables/notices";
 import { useKeymap, useShortcut } from "@/keys/keymap";
 import { JSON_FILES, openTextFile, saveTextFile } from "@/files";
 import type { MenuEntry } from "@/menu";
-import { isDoc, scalar, toShell } from "@/shell/ejson";
+import { isDoc, keyText, scalar, toShell } from "@/shell/ejson";
+import { toRelaxed } from "@/shell/display";
 import { filterPath, valueAtPath } from "@/shell/values";
 import type { ValueField } from "@/shell/values";
 import { useValueSearch, useValueSources } from "@/composables/values";
@@ -26,15 +29,19 @@ import type { Doc, Json } from "@/shell/ejson";
 import { ShellError } from "@/shell/message";
 import type { Message } from "@/shell/message";
 import { parseValue } from "@/shell/parse";
+import { fieldCommand } from "@/shell/fields";
+import type { FieldChange, FieldCondition, FieldScope } from "@/shell/fields";
 import { CODE_LANGUAGES, queryCode } from "@/shell/code";
 import { isWrite } from "@/shell/plan";
 import { PAGE_SIZES, useTabsStore } from "@/stores/tabs";
 import type { ResultView } from "@/stores/tabs";
-import { noFold, provideResultContext } from "./result-context";
+import { displayText, noFold, provideResultContext } from "./result-context";
 import type { Fold, ResultTarget } from "./result-context";
 import PlanView from "./PlanView.vue";
 import ResultTable from "./ResultTable.vue";
 import TreeRow from "./TreeRow.vue";
+import FieldDialog from "./FieldDialog.vue";
+import type { FieldRequest } from "./FieldDialog.vue";
 
 /** What a query returned: paging, the tools for documents, and the tree, table or JSON view. */
 const props = defineProps<{
@@ -78,11 +85,25 @@ const rows = computed(() => {
     const needle = tab.value.search.trim().toLowerCase();
     return needle ? all.filter(row => toShell(row.item).toLowerCase().includes(needle)) : all;
 });
-const jsonText = computed(() => rows.value.map(row => toShell(row.item, "", true)).join("\n"));
+/** The view Json in the notation of the settings: the shell's, or Extended JSON relaxed or canonical. */
+const jsonText = computed(() => rows.value.map((row) => {
+    if (preferences.jsonView === "canonical") return JSON.stringify(row.item, null, 4);
+    if (preferences.jsonView === "relaxed") return JSON.stringify(toRelaxed(row.item), null, 4);
+    return toShell(row.item, "", true);
+}).join("\n"));
+/** The documents of the page; while searching, how many of them match. */
+const rangeText = computed(() => {
+    const shown = result.value;
+    if (!shown || rows.value.length === 0) return t("result.empty");
+    const range = t("result.range", { from: shown.offset + 1, to: shown.offset + shown.items.length });
+    return rows.value.length === shown.items.length ? range : t("result.rangeMatches", { matches: rows.value.length, range });
+});
 const page = computed(() => (result.value ? Math.floor(result.value.offset / tab.value.pageSize) + 1 : 1));
 const pageSizes = computed<MenuEntry[]>(() => PAGE_SIZES.map(size => ({
     label: String(size),
     checked: size === tab.value.pageSize,
+    // While the tab runs the new page could not be shown: the size waits for the run to end.
+    disabled: tab.value.running,
     action: () => {
         tab.value.pageSize = size;
         void tabs.showPage(tab.value, 0);
@@ -108,13 +129,99 @@ function togglePin(path: string) {
  * Ctrl+Shift+J folds it, Ctrl+P pins the chosen field). The table has keys of its own.
  */
 function onResultKey(event: KeyboardEvent) {
-    if (tab.value.view !== "tree" || selected.value === undefined) return;
+    if (tab.value.view !== "tree") return;
+    if (treeKey(event)) return;
+    if (selected.value === undefined) return;
     if (keymap.matches(event, "result.expand")) setFold(true, selected.value, selectedPath.value);
     else if (keymap.matches(event, "result.collapse")) setFold(false, selected.value, selectedPath.value);
     else if (keymap.matches(event, "result.pin") && selectedPath.value !== "") togglePin(selectedPath.value);
+    else if (fieldKey(event)) return;
     else return;
     // Without it the web view opens its downloads (Ctrl+J) or prints (Ctrl+P).
     event.preventDefault();
+}
+
+/**
+ * The tree by keys, as a tree view: up and down go from line to line, right unfolds (or goes to
+ * the first child), left folds (or goes to the parent), Enter edits the value in place, Shift+Enter
+ * renames the field, Del deletes it (asking first). True when a key acted.
+ */
+function treeKey(event: KeyboardEvent): boolean {
+    if (event.ctrlKey || event.metaKey || event.altKey) return false;
+    const area = event.currentTarget as HTMLElement;
+    const lines = [...area.querySelectorAll<HTMLElement>("[data-testid=tree-row]")];
+    const at = lines.findIndex(line => Number(line.dataset.index) === selected.value && (line.dataset.path ?? "") === selectedPath.value);
+    const line = lines[at];
+    const go = (target: HTMLElement | undefined) => {
+        if (!target) return;
+        choose(Number(target.dataset.index), undefined, target.dataset.path ?? "");
+        target.scrollIntoView({ block: "nearest" });
+    };
+    const toggle = line?.querySelector<HTMLElement>("button");
+    const isOpen = toggle?.querySelector(".rotate-90") !== null;
+    const hasChildren = toggle !== null && toggle !== undefined && !toggle.classList.contains("invisible");
+    switch (event.key) {
+        case "ArrowDown":
+            go(at === -1 ? lines[0] : lines[at + 1]);
+            break;
+        case "ArrowUp":
+            go(at === -1 ? lines[0] : lines[Math.max(0, at - 1)]);
+            break;
+        case "ArrowRight":
+            if (!line || !hasChildren) return false;
+            if (isOpen) go(lines[at + 1]);
+            else toggle?.click();
+            break;
+        case "ArrowLeft": {
+            if (!line) return false;
+            if (hasChildren && isOpen) {
+                toggle?.click();
+                break;
+            }
+            const path = line.dataset.path ?? "";
+            const parent = path.includes(".") ? path.slice(0, path.lastIndexOf(".")) : "";
+            go(lines.find(other => other.dataset.index === line.dataset.index && (other.dataset.path ?? "") === parent));
+            break;
+        }
+        case "Enter":
+            if (!line) return false;
+            if (event.shiftKey) {
+                if (!selectedPath.value || selectedPath.value === "_id" || !editable.value) return false;
+                const document = documentAt(selected.value);
+                if (document) openField("rename", { index: selected.value!, path: selectedPath.value, value: valueAtPath(document, selectedPath.value) ?? null });
+            } else {
+                line.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+            }
+            break;
+        case "Delete": {
+            if (!line || !selectedPath.value || selectedPath.value === "_id" || !editable.value) return false;
+            const document = documentAt(selected.value);
+            if (document) openField("remove", { index: selected.value!, path: selectedPath.value, value: valueAtPath(document, selectedPath.value) ?? null });
+            break;
+        }
+        default: return false;
+    }
+    event.preventDefault();
+    return true;
+}
+
+/** The keys of the field dialogs on the chosen field (adding also on the document); true when one acted. */
+function fieldKey(event: KeyboardEvent): boolean {
+    const index = selected.value;
+    const document = documentAt(index);
+    if (index === undefined || !document || !editable.value) return false;
+    const path = selectedPath.value;
+    const target: ResultTarget = { index, path, value: path ? valueAtPath(document, path) ?? null : document };
+    const onField = path !== "" && path !== "_id";
+    let mode: FieldRequest["mode"] | undefined;
+    if (keymap.matches(event, "field.add")) mode = "add";
+    else if (keymap.matches(event, "field.edit") && onField) mode = "edit";
+    else if (keymap.matches(event, "field.rename") && onField) mode = "rename";
+    else if (keymap.matches(event, "field.remove") && onField) mode = "remove";
+    if (!mode) return false;
+    event.preventDefault();
+    openField(mode, target);
+    return true;
 }
 
 /** The value a text stands for, or the message why it is none. */
@@ -142,6 +249,8 @@ function addDocument() {
         title: t("document.add"),
         text: "{\n    \n}",
         action: t("action.insert"),
+        // *Save and continue*: insert, and the dialog stays for the next document.
+        again: t("document.insertAndContinue"),
         submit: async (text) => {
             const parsed = parse(text);
             if ("error" in parsed) return parsed.error;
@@ -260,9 +369,50 @@ async function commit(target: ResultTarget, text: string) {
     wrote(await tabs.setField(tab.value, document._id!, target.path, parsed.value));
 }
 
-async function removeField(target: ResultTarget) {
+/** The field dialog (add, edit, rename, delete, append) *Fields* menu. */
+const fieldRequest = shallowRef<FieldRequest>();
+const fieldOpen = shallowRef(false);
+
+/** The filter of the query in the tab, when its documents come from a `find`. */
+function queryFilter(): Doc | undefined {
+    const command = tab.value.plan?.command;
+    if (command?.find === undefined) return undefined;
+    return isDoc(command.filter) ? command.filter : {};
+}
+
+function openField(mode: FieldRequest["mode"], target: ResultTarget) {
     const document = documentAt(target.index);
-    if (document) wrote(await tabs.removeField(tab.value, document._id!, target.path));
+    if (!document) return;
+    const ids = [...marked.value].map(index => documentAt(index)?._id).filter((id): id is Json => id !== undefined);
+    const dot = target.path.lastIndexOf(".");
+    const parent = dot === -1 ? "" : target.path.slice(0, dot);
+    const own = dot === -1 ? target.path : target.path.slice(dot + 1);
+    // Adding on a sub document adds into it; on any other field beside it.
+    const into = mode === "add" && (target.path === "" || isDoc(target.value));
+    fieldRequest.value = {
+        mode,
+        parent: into ? target.path : parent,
+        name: mode === "add" ? "" : own,
+        value: mode === "edit" ? target.value : undefined,
+        target: { id: document._id!, selected: ids.length > 1 ? ids : [document._id!], query: queryFilter() }
+    };
+    fieldOpen.value = true;
+}
+
+async function duplicateDocument(index: number) {
+    const document = documentAt(index);
+    if (!document) return;
+    const copy = { ...document };
+    delete copy._id;
+    wrote(await tabs.insertDocuments(tab.value, [copy]));
+}
+
+async function submitField(change: FieldChange, scope: FieldScope, condition: FieldCondition): Promise<string | undefined> {
+    const target = fieldRequest.value?.target;
+    if (!target) return undefined;
+    const failure = await tabs.write(tab.value, collection => fieldCommand(collection, change, target, scope, condition));
+    if (failure === undefined) return undefined;
+    return typeof failure === "string" ? failure : say(failure);
 }
 
 async function copy(text: string) {
@@ -377,13 +527,16 @@ const runHint = computed(() => {
     const keys = keymap.spoken("query.run", t("keys.or"));
     return keys === undefined ? t("query.hint.noKey") : t("query.hint", { keys });
 });
-useShortcut("result.export", () => void openExport(), () => inFront.value);
+// Export and import of the window act on this result while the focus is in it.
+const root = useTemplateRef<HTMLElement>("root");
+const focusedHere = () => root.value?.contains(document.activeElement) === true;
+useShortcut("export.wizard", () => void openExport(), () => inFront.value && focusedHere());
 const searchInput = useTemplateRef<HTMLInputElement>("searchInput");
 useShortcut("result.search", () => {
     searchInput.value?.focus();
     searchInput.value?.select();
 }, () => inFront.value);
-useShortcut("result.import", () => void importDocuments(), () => inFront.value && collection.value !== undefined);
+useShortcut("import.wizard", () => void importDocuments(), () => inFront.value && collection.value !== undefined && focusedHere());
 useShortcut("result.importClipboard", () => void importClipboard(), () => inFront.value && collection.value !== undefined);
 
 /** Documents copied somewhere else: JSON, JSON Lines or shell notation, inserted after asking. */
@@ -423,7 +576,7 @@ async function importShown() {
 async function countDocuments() {
     try {
         const count = await tabs.count(tab.value);
-        if (count !== undefined) notices.answer(t("result.counted", { count }, count));
+        notices.answer(count === undefined ? t("result.notCountable") : t("result.counted", { count }, count));
     } catch (error) {
         report(error);
     }
@@ -432,7 +585,10 @@ async function countDocuments() {
 async function lastPage() {
     try {
         const count = await tabs.count(tab.value);
-        if (count === undefined) return;
+        if (count === undefined) {
+            notices.answer(t("result.notCountable"));
+            return;
+        }
         const size = tab.value.pageSize;
         await tabs.showPage(tab.value, Math.max(0, Math.floor((count - 1) / size) * size));
     } catch (error) {
@@ -440,7 +596,64 @@ async function lastPage() {
     }
 }
 
+/**
+ * Whether the clipboard holds documents, read as the menu opens:, *Import from
+ * clipboard* is grey without them. A clipboard that can not be read leaves the entry on.
+ */
+async function clipboardHasDocuments(): Promise<boolean> {
+    let text: string;
+    try {
+        text = await Promise.race([navigator.clipboard.readText(), new Promise<never>((_, reject) => setTimeout(reject, 300))]);
+    } catch {
+        return true;
+    }
+    try {
+        return readDocuments(text).length > 0;
+    } catch {
+        return false;
+    }
+}
+
+/** The menu of the free space below the documents: what needs no document. */
+async function openSpaceMenu(event: MouseEvent) {
+    const pasteable = await clipboardHasDocuments();
+    const locked = collection.value === undefined || tabs.locked(tab.value);
+    void menu.value?.open(event, [
+        { label: t("document.add"), icon: "i-lucide-file-plus-2", action: addDocument, disabled: locked },
+        { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", command: "result.importClipboard", action: () => void importClipboard(), disabled: locked || !pasteable },
+        { label: t("result.import"), icon: "i-lucide-download", command: "import.wizard", action: () => void importDocuments(), disabled: locked },
+        { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void openExport(), disabled: !result.value },
+        "separator",
+        { label: t("action.refresh"), icon: "i-lucide-refresh-cw", command: "tab.refresh", action: () => void tabs.refresh(tab.value) }
+    ]);
+}
+
+/**
+ * Clicks below the documents of the tree and the table, as in Windows Explorer: the chosen
+ * documents and field are let go, and a right click opens the menu of the space. The Json view
+ * and the plan are no lists: they keep their own clicks.
+ */
+const space = useFreeSpace(() => {
+    selected.value = undefined;
+    selectedPath.value = "";
+    marked.value = new Set();
+    tab.value.fieldPath = undefined;
+}, { rows: "[role=treeitem], tr", menu: event => void openSpaceMenu(event) });
+const isList = computed(() => tab.value.view === "tree" || tab.value.view === "table");
+
+function onSpaceClick(event: MouseEvent) {
+    if (isList.value) space.onClick(event);
+}
+
+function onSpaceMenu(event: MouseEvent) {
+    if (isList.value) space.onContextMenu(event);
+}
+
 function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = []) {
+    void clipboardHasDocuments().then(pasteable => showMenu(event, target, extra, pasteable));
+}
+
+function showMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[], pasteable: boolean) {
     selected.value = target.index;
     choosePath(target.path);
     // A click outside the marked documents marks only the one clicked.
@@ -484,12 +697,14 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
             icon: "i-lucide-files",
             children: [
                 { label: t("document.add"), icon: "i-lucide-file-plus-2", action: addDocument, disabled: locked },
+                // *Duplicate document*: the same document under a new `_id`.
+                { label: t("document.duplicate"), icon: "i-lucide-copy-plus", action: () => void duplicateDocument(target.index), disabled: !document || !editable.value },
                 { label: t("document.remove"), icon: "i-lucide-file-x-2", danger: true, action: () => void removeDocument(target.index), disabled: !document || !editable.value },
                 { label: t("document.refresh"), icon: "i-lucide-rotate-cw", action: () => void tabs.refreshDocument(tab.value, target.index).catch(report), disabled: !document || collection.value === undefined },
                 "separator",
-                { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", command: "result.importClipboard", action: () => void importClipboard(), disabled: locked },
-                { label: t("result.import"), icon: "i-lucide-download", command: "result.import", action: () => void importDocuments(), disabled: locked },
-                { label: t("export.menu"), icon: "i-lucide-upload", command: "result.export", action: () => void openExport() },
+                { label: t("result.importClipboard"), icon: "i-lucide-clipboard-paste", command: "result.importClipboard", action: () => void importClipboard(), disabled: locked || !pasteable },
+                { label: t("result.import"), icon: "i-lucide-download", command: "import.wizard", action: () => void importDocuments(), disabled: locked },
+                { label: t("export.menu"), icon: "i-lucide-upload", command: "export.wizard", action: () => void openExport() },
                 // A result the wizard can not read again is saved as shown, whatever the format.
                 ...(inApp && wizardFilter() ? [exportWizard.exportAsGroup(format => void openExport(format))] : [])
             ]
@@ -498,7 +713,12 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
             label: t("menu.fields"),
             icon: "i-lucide-list-tree",
             children: [
-                { label: t("field.remove"), action: () => void removeField(target), disabled: !field || !editable.value || target.path === "_id" },
+                //: adding works on any row; the rest needs a field (not `_id`).
+                { label: `${t("field.title.add")} …`, icon: "i-lucide-list-plus", command: "field.add", action: () => openField("add", target), disabled: !document || !editable.value },
+                { label: `${t("field.title.edit")} …`, icon: "i-lucide-pencil", command: "field.edit", action: () => openField("edit", target), disabled: !field || !editable.value || target.path === "_id" },
+                { label: `${t("field.title.rename")} …`, command: "field.rename", action: () => openField("rename", target), disabled: !field || !editable.value || target.path === "_id" || /\.\d+(\.|$)/.test(target.path) },
+                { label: `${t("field.title.remove")} …`, icon: "i-lucide-trash-2", danger: true, command: "field.remove", action: () => openField("remove", target), disabled: !field || !editable.value || target.path === "_id" },
+                ...(Array.isArray(target.value) && field ? [{ label: `${t("field.title.push")} …`, action: () => openField("push", target), disabled: !editable.value }] : []),
                 "separator",
                 { label: t("result.expand.node"), command: "result.expand", action: () => setFold(true, target.index, target.path) },
                 { label: t("result.collapse.node"), command: "result.collapse", action: () => setFold(false, target.index, target.path) },
@@ -510,7 +730,10 @@ function openMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[] = 
             label: t("menu.copy"),
             icon: "i-lucide-copy",
             children: [
-                { label: t("copy.value"), icon: "i-lucide-copy", action: () => void copy(toShell(target.value)) },
+                //: the value as text (no quotes), as the shell writes it, the field with its name.
+                { label: t("copy.text"), icon: "i-lucide-copy", action: () => void copy(displayText(target.value)) },
+                { label: t("copy.value"), action: () => void copy(toShell(target.value)) },
+                { label: t("copy.field"), action: () => void copy(`${keyText(target.path.split(".").at(-1) ?? "")}: ${toShell(target.value)}`), disabled: !field },
                 { label: t("copy.path"), action: () => void copy(target.path), disabled: !field },
                 { label: t("copy.document"), action: () => void copy(toShell(document ?? target.value)) },
                 { label: t("copy.json"), action: () => void copy(JSON.stringify(document ?? target.value, null, 2)) },
@@ -542,11 +765,16 @@ function suggest(path: string): ValueField | undefined {
     return { collection, field, values: valueSources, search: valueSearch };
 }
 
-provideResultContext({ editable, selected, marked, choose, fold, pinned, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument, suggest });
+/** The path the table stepped into (a field of the documents); the toolbar shows the way back. */
+const tableStack = ref<string[]>([]);
+provideResultContext({ editable, selected, selectedPath, marked, choose, fold, pinned, commit: (target, text) => void commit(target, text), menu: openMenu, open: editDocument, suggest, tableStack });
 </script>
 
 <template>
-    <section class="h-full min-h-0 flex flex-col">
+    <section
+        ref="root"
+        class="h-full min-h-0 flex flex-col"
+    >
         <div
             class="h-8 shrink-0 flex items-center gap-0.5 px-3.5"
             data-testid="results-toolbar"
@@ -654,7 +882,7 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
             <IconButton
                 @click="openExport"
                 :disabled="!result"
-                :label="keymap.titled($t('export.menu'), 'result.export')"
+                :label="keymap.titled($t('export.menu'), 'export.wizard')"
                 data-testid="result-export"
                 icon="i-lucide-upload"
                 tint="text-warning"
@@ -696,6 +924,25 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
             </label>
 
             <span class="grow" />
+            <!-- Stepped into a field of the table: the way back, after the space, so nothing moves. -->
+            <span
+                v-if="tab.view === 'table' && tableStack.length > 0"
+                class="mr-3 min-w-0 inline-flex items-center gap-1.5"
+            >
+                <IconButton
+                    @click="tableStack = tableStack.slice(0, -1)"
+                    :label="keymap.titled($t('table.stepBack'), 'table.stepBack')"
+                    data-testid="table-step-back"
+                    icon="i-lucide-arrow-left"
+                >
+                    {{ $t("table.stepBack") }}
+                </IconButton>
+                <span
+                    :title="tableStack.join('.')"
+                    class="truncate font-mono text-[12px] text-on-surface-variant"
+                    data-testid="table-step-path"
+                >{{ tableStack.join(".") }}</span>
+            </span>
             <ButtonRoot
                 v-if="tab.error && showLast"
                 @click="showLast = false"
@@ -710,7 +957,7 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
                 v-if="result && !failure"
                 class="pr-3 shrink-0 whitespace-nowrap text-xs text-on-surface-variant tabular-nums"
                 data-testid="result-range"
-            >{{ rows.length === 0 ? $t("result.empty") : $t("result.range", { from: result.offset + 1, to: result.offset + result.items.length }) }}</span>
+            >{{ rangeText }}</span>
             <ToggleGroup
                 v-model="tab.view"
                 :label="$t('view.label')"
@@ -729,10 +976,21 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
             </ToggleGroup>
         </div>
 
+        <!-- While a query runs again the last result stays, faint, under a bar: it is not the new one yet. -->
+        <div class="relative shrink-0 h-0.5 overflow-hidden">
+            <div
+                v-if="tab.running"
+                class="h-full w-1/3 bg-primary animate-pulse"
+                data-testid="results-running"
+            />
+        </div>
         <!-- Focusable for F7 ("Set focus to results"); the keys of the tree are handled here. -->
         <div
+            @click="onSpaceClick"
+            @contextmenu="onSpaceMenu"
             @keydown="onResultKey"
-            class="grow min-h-0 overflow-auto pb-2 font-mono text-[13px] leading-[19px] select-text outline-none"
+            :class="tab.running && result ? 'opacity-60' : ''"
+            class="grow min-h-0 overflow-auto pb-2 font-mono text-[13px] leading-[19px] select-text outline-none transition-opacity"
             data-testid="query-result"
             tabindex="-1"
         >
@@ -774,10 +1032,12 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
                 class="px-2 pt-1"
                 role="tree"
             >
+                <!-- A faint line between documents. -->
                 <TreeRow
                     v-for="row in rows"
                     :key="`${result.offset}-${row.index}`"
-                    :expanded="row.index === 0"
+                    :class="row.index > 0 ? 'border-t border-divider/50' : ''"
+                    :expanded="preferences.autoExpand === 'all' || preferences.autoExpand === 'first' && row.index === 0"
                     :index="row.index"
                     :number="result.offset + row.index + 1"
                     :value="row.item"
@@ -794,10 +1054,16 @@ provideResultContext({ editable, selected, marked, choose, fold, pinned, commit:
                 :key="`${result.offset}-${result.milliseconds}-${rows.length}`"
                 :label="$t('view.json')"
                 :modelValue="jsonText"
+                findBar
                 readonly
             />
         </div>
 
         <ContextMenu ref="menu" />
+        <FieldDialog
+            v-model="fieldOpen"
+            :request="fieldRequest"
+            :submit="submitField"
+        />
     </section>
 </template>

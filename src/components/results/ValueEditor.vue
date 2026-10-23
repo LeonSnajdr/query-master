@@ -2,8 +2,13 @@
 import { ButtonRoot } from "@vuetify/v0";
 import { computed, nextTick, onMounted, ref, shallowRef, useTemplateRef } from "vue";
 import { useI18n } from "vue-i18n";
+import { backend } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
+import DatePicker from "@/components/DatePicker.vue";
 import MenuList from "@/components/MenuList.vue";
+import { preferences } from "@/composables/appearance";
+import { useMessages } from "@/composables/messages";
+import { pickFilePath, pickSavePath } from "@/files";
 import type { MenuEntry } from "@/menu";
 import { convertDraft, DRAFT_TYPES, EMPTY_TYPES, fromDraft, toDraft } from "@/shell/edit";
 import type { Draft } from "@/shell/edit";
@@ -29,12 +34,20 @@ const props = defineProps<{
     testid: string;
     /** The field the value belongs to: its known values are suggested as in a filter. */
     suggest?: ValueField;
+    /** Written in the font of the row (a cell of the table) instead of the editors' one. */
+    inheritFont?: boolean;
+    /**
+     * Grows with the text over the cells beside it, up to the visible width of the results, then
+     * wraps (a cell of the table); no scroll bar across.
+     */
+    grow?: boolean;
 }>();
 
 /** Types whose values are suggested: those a filter suggests (strings, numbers, booleans). */
 const SUGGESTED: readonly ValueType[] = ["string", "int", "long", "double", "decimal", "bool"];
 
 const { t, te } = useI18n();
+const { report } = useMessages();
 
 const initial: Draft = props.value === undefined ? { type: "string", text: "" } : toDraft(props.value);
 const draft = ref<Draft>({ ...initial });
@@ -57,7 +70,36 @@ const typesAt = shallowRef({ left: 0, top: 0 });
 const largeAt = shallowRef({ left: 0, top: 0, width: 480 });
 const expanded = shallowRef(false);
 
-onMounted(() => input.value?.select());
+onMounted(() => {
+    input.value?.select();
+    if (props.grow) measureRoom();
+});
+
+/** At least the cell (and room to type), at most up to the right edge of the results shown. */
+const room = shallowRef<{ minWidth?: string; maxWidth?: string }>({});
+function measureRoom() {
+    const cell = root.value?.parentElement?.getBoundingClientRect();
+    const results = root.value?.closest("[data-testid=query-result]")?.getBoundingClientRect();
+    if (!cell) return;
+    const least = Math.max(cell.width, 224);
+    const most = results ? Math.max(least, results.right - cell.left - 16) : least;
+    room.value = { minWidth: `${least}px`, maxWidth: `${most}px` };
+}
+
+/** Shift+Enter, as in DataGrip: the value in the large editor. */
+function onShiftEnter(event: KeyboardEvent) {
+    // Alt+↓, as in a date field of the system: the calendar.
+    if (event.key === "ArrowDown" && event.altKey && draft.value.type === "date" && !calendarOpen.value) {
+        event.preventDefault();
+        event.stopPropagation();
+        void openCalendar();
+        return;
+    }
+    if (event.key !== "Enter" || !event.shiftKey || expanded.value || calendarOpen.value) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void openLarge();
+}
 
 function focusField() {
     if (code.value) code.value.focus();
@@ -84,9 +126,77 @@ function commit() {
 
 /** Focus that leaves the editor and its menus ends it without writing. */
 function onFocusOut(event: FocusEvent) {
+    // A file dialog takes the focus away for a while: the editor stays.
+    if (picking.value) return;
     const next = event.relatedTarget as Node | null;
     if (next && root.value?.contains(next)) return;
     emit("close", false);
+}
+
+/** A file dialog of *Open file* or *Save file* is open. */
+const picking = shallowRef(false);
+const calendar = useTemplateRef<HTMLDivElement>("calendar");
+const calendarAt = shallowRef({ left: 0, top: 0 });
+const calendarOpen = shallowRef(false);
+/** The moment the calendar starts on: the value, or now when the text is no date. */
+const calendarValue = shallowRef(0);
+
+/** The app's own calendar below the field (above it at the bottom of the window). */
+async function openCalendar() {
+    const element = calendar.value;
+    const field = root.value?.getBoundingClientRect();
+    if (!element || !field) return;
+    closeTypes();
+    const at = Date.parse(draft.value.text);
+    calendarValue.value = Number.isNaN(at) ? Date.now() : at;
+    calendarOpen.value = true;
+    element.showPopover();
+    await nextTick();
+    const { width, height } = element.getBoundingClientRect();
+    calendarAt.value = {
+        left: Math.max(4, Math.min(field.left, window.innerWidth - width - 4)),
+        top: field.bottom + height > window.innerHeight - 4 ? Math.max(4, field.top - height - 2) : field.bottom + 2
+    };
+}
+
+function closeCalendar() {
+    calendarOpen.value = false;
+    calendar.value?.hidePopover();
+    focusField();
+}
+
+/** The chosen moment into the field, as MongoDB keeps it: UTC with milliseconds. */
+function applyDate(milliseconds: number) {
+    draft.value = { ...draft.value, text: new Date(milliseconds).toISOString() };
+    closeCalendar();
+}
+
+/** *Open file*: the bytes of a file become the binary value. */
+async function loadFile() {
+    picking.value = true;
+    try {
+        const path = await pickFilePath();
+        if (path) draft.value = { ...draft.value, text: await backend.readBase64File(path) };
+    } catch (error) {
+        report(error);
+    } finally {
+        picking.value = false;
+        focusField();
+    }
+}
+
+/** *Save file*: the binary value into a file. */
+async function saveFile() {
+    picking.value = true;
+    try {
+        const path = await pickSavePath(`${props.label || "value"}.bin`);
+        if (path) await backend.writeBase64File(path, draft.value.text);
+    } catch (error) {
+        report(error);
+    } finally {
+        picking.value = false;
+        focusField();
+    }
 }
 
 function choose(type: ValueType) {
@@ -164,8 +274,10 @@ function closeLarge() {
         @click.stop
         @dblclick.stop
         @focusout="onFocusOut"
+        @keydown.capture="onShiftEnter"
         @keydown.esc="onEscape"
-        class="flex items-center min-w-0 bg-surface-variant"
+        :style="room"
+        class="relative flex items-center min-w-0 bg-surface-variant"
     >
         <CodeEditor
             v-if="suggest"
@@ -173,10 +285,13 @@ function closeLarge() {
             v-model="draft.text"
             @pick="pick"
             @run="commit"
+            :class="inheritFont ? '' : 'font-mono'"
+            :grow
+            :inheritFont
             :label
             :testid
             :valueField="suggest"
-            class="grow min-w-0 h-full font-mono"
+            class="grow min-w-0 h-full"
             compact
             singleLine
         />
@@ -186,12 +301,52 @@ function closeLarge() {
             v-model="draft.text"
             @keydown.enter.prevent.stop="commit"
             :aria-label="label"
-            :class="empty ? 'text-on-surface-variant/60' : 'text-on-surface-strong'"
+            :class="[empty ? 'text-on-surface-variant/60' : 'text-on-surface-strong', inheritFont ? '' : 'font-mono']"
             :data-testid="testid"
             :readonly="empty"
-            class="grow min-w-0 h-full bg-transparent outline-none font-mono"
+            :size="grow ? Math.max(4, draft.text.length + 1) : undefined"
+            class="grow min-w-0 h-full bg-transparent outline-none"
             spellcheck="false"
         />
+        <!--: a calendar for a date, open and save a file for binary data. -->
+        <template v-if="draft.type === 'date'">
+            <ButtonRoot
+                @click="openCalendar"
+                @mousedown.prevent
+                :ariaLabel="$t('edit.calendar')"
+                :title="$t('edit.calendar')"
+                class="shrink-0 w-4.5 h-full inline-flex items-center justify-center text-on-surface-variant hover:text-on-surface-strong hover:bg-on-surface/10"
+                data-testid="edit-calendar"
+                tabindex="-1"
+            >
+                <span class="i-lucide-calendar size-3" />
+            </ButtonRoot>
+        </template>
+        <template v-if="draft.type === 'binary'">
+            <ButtonRoot
+                @click="loadFile"
+                @mousedown.prevent
+                :ariaLabel="$t('edit.openFile')"
+                :title="$t('edit.openFile')"
+                class="shrink-0 w-4.5 h-full inline-flex items-center justify-center text-on-surface-variant hover:text-on-surface-strong hover:bg-on-surface/10"
+                data-testid="edit-open-file"
+                tabindex="-1"
+            >
+                <span class="i-lucide-folder-open size-3" />
+            </ButtonRoot>
+            <ButtonRoot
+                @click="saveFile"
+                @mousedown.prevent
+                :ariaLabel="$t('edit.saveFile')"
+                :disabled="!draft.text"
+                :title="$t('edit.saveFile')"
+                class="shrink-0 w-4.5 h-full inline-flex items-center justify-center text-on-surface-variant hover:text-on-surface-strong hover:bg-on-surface/10 disabled:opacity-40"
+                data-testid="edit-save-file"
+                tabindex="-1"
+            >
+                <span class="i-lucide-save size-3" />
+            </ButtonRoot>
+        </template>
         <ButtonRoot
             @click="openTypes"
             @mousedown.prevent
@@ -214,6 +369,22 @@ function closeLarge() {
         >
             <span class="i-lucide-maximize-2 size-3" />
         </ButtonRoot>
+        <!-- The calendar of a date (Alt+↓ or the button), in the zone of the display settings. -->
+        <div
+            ref="calendar"
+            :style="{ left: `${calendarAt.left}px`, top: `${calendarAt.top}px` }"
+            class="menu-panel fixed [inset:auto] m-0 p-0"
+            data-testid="edit-calendar-panel"
+            popover="manual"
+        >
+            <DatePicker
+                v-if="calendarOpen"
+                @apply="applyDate"
+                @cancel="closeCalendar"
+                :value="calendarValue"
+                :zone="preferences.timeZone"
+            />
+        </div>
         <div
             ref="types"
             @mousedown.prevent

@@ -3,7 +3,7 @@ import { computed } from "vue";
 import { useNotesStore } from "@/stores/notes";
 import type { NotePlace } from "@/stores/notes";
 
-/** What a row of the tree carries behind its name: its comment. Read-only sits on the icon (ReadonlyBadge). */
+/** What a row of the tree carries behind its name: its comment. The lock sits on the icon (`NodeIcon`). */
 const props = defineProps<{
     place: NotePlace;
 }>();

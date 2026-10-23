@@ -3,13 +3,14 @@ import { ButtonContent, ButtonRoot, DialogClose, DialogContent, DialogRoot, Dial
 import { computed, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { backend, errorMessage } from "@/api";
-import type { Profile } from "@/api";
+import { namesAsChoices } from "@/choice";
+import type { Profile, SshMethod, SshSettings } from "@/api";
 import FormError from "@/components/FormError.vue";
 import ChoiceField from "@/components/ChoiceField.vue";
 import { useActions } from "@/composables/actions";
 import { useDialogs } from "@/composables/dialogs";
 import { useMessages } from "@/composables/messages";
-import { DEFAULT_PORT, buildUri, emptyFields, parseUri } from "@/connection/uri";
+import { DEFAULT_PORT, buildUri, emptyFields, parseUri, uriVariants } from "@/connection/uri";
 import type { AuthMode, ConnectMode, ConnectionFields } from "@/connection/uri";
 import { pickFilePath } from "@/files";
 import { ENVIRONMENTS } from "@/shell/guard";
@@ -23,6 +24,8 @@ import { useConnectionsStore } from "@/stores/connections";
 const props = defineProps<{
     profile?: Profile;
     clone?: boolean;
+    /** A new connection: the folder it starts in. */
+    group?: string;
 }>();
 const open = defineModel<boolean>({ default: false });
 
@@ -62,10 +65,27 @@ const host = computed(() => fields.value.hosts[0] ?? { host: "", port: DEFAULT_P
 
 const connectOptions = computed(() => (["single", "replicaSet", "srv"] as ConnectMode[]).map(value => ({ value, label: t(`connection.mode.${value}`) })));
 const authOptions = computed(() => (["none", "scram", "x509", "aws", "ldap"] as AuthMode[]).map(value => ({ value, label: t(`connection.auth.${value}`) })));
+/** Basic tab: where reads go; empty is the driver's default (primary). */
+const readPreferenceOptions = computed(() => ["", "primary", "primaryPreferred", "secondary", "secondaryPreferred", "nearest"].map(value => ({ value, label: value || t("collation.default") })));
 const tlsOptions = computed(() => [{ value: "off" as const, label: t("connection.tls.off") }, { value: "on" as const, label: t("connection.tls.on") }]);
 const tlsChoice = computed({ get: () => (fields.value.tls ? "on" : "off"), set: (value: "on" | "off") => (fields.value.tls = value === "on") });
-const sshOptions = computed(() => [{ value: "none" as const, label: t("connection.ssh.none") }]);
-const sshChoice = shallowRef<"none">("none");
+/** Through an SSH server, logged in with a password or a key file. */
+const sshOptions = computed(() => (["none", "password", "key"] as const).map(value => ({ value, label: t(`connection.ssh.${value}`) })));
+/** Databases shown besides those the server lists, comma separated. */
+const visibleDatabases = shallowRef("");
+const groupName = shallowRef("");
+const groupOptions = computed(() => namesAsChoices(connections.groups));
+const sshChoice = shallowRef<"none" | SshMethod>("none");
+const ssh = ref<SshSettings>(emptySsh());
+
+function emptySsh(): SshSettings {
+    return { host: "", port: 22, username: "", method: "password", keyPath: "", secret: "" };
+}
+
+/** What goes with the connection: nothing without SSH. */
+function sshSettings(): SshSettings | null {
+    return sshChoice.value === "none" ? null : { ...ssh.value, method: sshChoice.value, port: Number(ssh.value.port) || 22 };
+}
 
 watch(() => fields.value.mode, (mode) => {
     // SRV needs TLS (the driver turns it on); a single server keeps one host.
@@ -83,10 +103,19 @@ watch(open, async (isOpen) => {
     tab.value = "basic";
     name.value = props.profile ? (props.clone ? t("connection.clone.name", { name: props.profile.name }) : props.profile.name) : "";
     environment.value = props.profile?.environment ?? "none";
+    visibleDatabases.value = props.profile?.visibleDatabases ?? "";
+    groupName.value = props.profile?.groupName ?? props.group ?? "";
     fields.value = emptyFields();
+    ssh.value = emptySsh();
+    sshChoice.value = "none";
     if (!props.profile) return;
     try {
         fields.value = parseUri(await backend.connectionUri(props.profile.id));
+        const saved = await backend.connectionSsh(props.profile.id);
+        if (saved) {
+            ssh.value = saved;
+            sshChoice.value = saved.method;
+        }
     } catch (error) {
         fail(error);
     }
@@ -112,7 +141,7 @@ async function fromUri() {
 }
 
 function toUri() {
-    dialogs.showText({ title: t("connection.toUri"), text: uri.value });
+    dialogs.showText({ title: t("connection.toUri"), text: uri.value, variants: uriVariants(uri.value, t) });
 }
 
 async function pick(field: "tlsCAFile" | "tlsCertificateKeyFile") {
@@ -120,11 +149,36 @@ async function pick(field: "tlsCAFile" | "tlsCertificateKeyFile") {
     if (path) fields.value[field] = path;
 }
 
+async function pickKey() {
+    const path = await pickFilePath();
+    if (path) ssh.value.keyPath = path;
+}
+
+/** *Discover replica set members*: the first host names the members and the set. */
+async function discover() {
+    busy.value = true;
+    notice.value = undefined;
+    try {
+        const found = await backend.discoverMembers(uri.value, sshSettings());
+        if (!found.setName) {
+            notice.value = { ok: false, text: t("connection.members.none") };
+            return;
+        }
+        members.value = found.hosts.join("\n");
+        fields.value.replicaSet = found.setName;
+        notice.value = { ok: true, text: t("connection.members.found", { count: found.hosts.length, name: found.setName }, found.hosts.length) };
+    } catch (error) {
+        fail(error);
+    } finally {
+        busy.value = false;
+    }
+}
+
 async function test() {
     busy.value = true;
     notice.value = undefined;
     try {
-        const info = await backend.testConnection(uri.value);
+        const info = await backend.testConnection(uri.value, sshSettings());
         notice.value = { ok: true, text: t("connection.test.ok", { version: info.version }) };
     } catch (error) {
         fail(error);
@@ -140,7 +194,10 @@ async function save(connect = false) {
             id: props.clone ? undefined : props.profile?.id,
             name: name.value.trim() || t("connection.unnamed"),
             uri: uri.value,
-            environment: environment.value === "none" ? null : environment.value
+            environment: environment.value === "none" ? null : environment.value,
+            visibleDatabases: visibleDatabases.value,
+            groupName: groupName.value,
+            ssh: sshSettings()
         });
         open.value = false;
         if (connect) await actions.connect(profile);
@@ -156,7 +213,7 @@ async function save(connect = false) {
     <DialogRoot v-model="open">
         <DialogContent class="dialog w-[min(94vw,40rem)]!">
             <form
-                @submit.prevent="save()"
+                @submit.prevent="save(true)"
                 class="flex flex-col gap-4"
             >
                 <DialogTitle class="dialog-title text-[21px]!">
@@ -181,6 +238,18 @@ async function save(connect = false) {
                         :options="environmentOptions"
                         class="w-64"
                         data-testid="connection-environment"
+                    />
+                    <!--: the group of the connection list it is shown in; a new name makes one. -->
+                    <span class="text-[13px] text-on-surface">{{ $t("connection.group") }}:</span>
+                    <ChoiceField
+                        v-model="groupName"
+                        :label="$t('connection.group')"
+                        :options="groupOptions"
+                        :placeholder="$t('connection.group.none')"
+                        class="grow"
+                        data-testid="connection-group"
+                        free
+                        markNew
                     />
                 </div>
 
@@ -234,13 +303,23 @@ async function save(connect = false) {
                             />
                             <template v-if="fields.mode === 'replicaSet'">
                                 <span class="self-start pt-2">{{ $t("connection.members") }}:</span>
-                                <textarea
-                                    v-model="members"
-                                    class="field h-auto py-1.5 font-mono resize-y"
-                                    data-testid="connection-members"
-                                    rows="3"
-                                    spellcheck="false"
-                                />
+                                <span class="flex flex-col items-start gap-1">
+                                    <textarea
+                                        v-model="members"
+                                        class="field h-auto py-1.5 font-mono resize-y"
+                                        data-testid="connection-members"
+                                        rows="3"
+                                        spellcheck="false"
+                                    />
+                                    <ButtonRoot
+                                        @click="discover"
+                                        :disabled="busy || fields.hosts.length === 0"
+                                        class="text-[12.5px] text-primary hover:underline disabled:opacity-50 disabled:no-underline"
+                                        data-testid="connection-discover"
+                                    >
+                                        <ButtonContent>{{ $t("connection.members.discover") }}</ButtonContent>
+                                    </ButtonRoot>
+                                </span>
                                 <span>{{ $t("connection.replicaSet") }}:</span>
                                 <input
                                     v-model="fields.replicaSet"
@@ -277,6 +356,13 @@ async function save(connect = false) {
                                 :placeholder="$t('connection.database.placeholder')"
                                 class="field"
                                 spellcheck="false"
+                            />
+                            <span>{{ $t("connection.readPreference") }}:</span>
+                            <ChoiceField
+                                v-model="fields.readPreference"
+                                :label="$t('connection.readPreference')"
+                                :options="readPreferenceOptions"
+                                data-testid="connection-read-preference"
                             />
                         </TabsPanel>
 
@@ -317,6 +403,15 @@ async function save(connect = false) {
                                     spellcheck="false"
                                 />
                             </template>
+                            <!--: for a user who may not list the databases. -->
+                            <span>{{ $t("connection.visibleDatabases") }}:</span>
+                            <input
+                                v-model="visibleDatabases"
+                                :placeholder="$t('connection.visibleDatabases.placeholder')"
+                                class="field font-mono"
+                                data-testid="connection-visible-databases"
+                                spellcheck="false"
+                            />
                         </TabsPanel>
 
                         <TabsPanel
@@ -358,10 +453,27 @@ async function save(connect = false) {
                                         <ButtonContent>…</ButtonContent>
                                     </ButtonRoot>
                                 </span>
+                                <span :class="fields.tlsCertificateKeyFile ? '' : 'opacity-50'">{{ $t("connection.tls.passphrase") }}:</span>
+                                <input
+                                    v-model="fields.tlsCertificateKeyFilePassword"
+                                    :disabled="!fields.tlsCertificateKeyFile"
+                                    autocomplete="off"
+                                    class="field disabled:opacity-50"
+                                    type="password"
+                                />
                                 <span>{{ $t("connection.tls.invalid") }}:</span>
                                 <SwitchRoot
                                     v-model="fields.tlsAllowInvalidCertificates"
                                     :label="$t('connection.tls.invalid')"
+                                >
+                                    <SwitchTrack class="switch-track">
+                                        <SwitchThumb class="switch-thumb" />
+                                    </SwitchTrack>
+                                </SwitchRoot>
+                                <span>{{ $t("connection.tls.invalidHostnames") }}:</span>
+                                <SwitchRoot
+                                    v-model="fields.tlsAllowInvalidHostnames"
+                                    :label="$t('connection.tls.invalidHostnames')"
                                 >
                                     <SwitchTrack class="switch-track">
                                         <SwitchThumb class="switch-thumb" />
@@ -379,9 +491,59 @@ async function save(connect = false) {
                                 v-model="sshChoice"
                                 :label="$t('connection.ssh')"
                                 :options="sshOptions"
+                                data-testid="connection-ssh"
                             />
-                            <span />
-                            <span class="text-on-surface-variant">{{ $t("connection.ssh.later") }}</span>
+                            <template v-if="sshChoice !== 'none'">
+                                <span>{{ $t("connection.ssh.address") }}:</span>
+                                <span class="flex gap-2">
+                                    <input
+                                        v-model="ssh.host"
+                                        :aria-label="$t('connection.ssh.address')"
+                                        class="field grow"
+                                        data-testid="connection-ssh-host"
+                                        spellcheck="false"
+                                    />
+                                    <input
+                                        v-model.number="ssh.port"
+                                        :aria-label="$t('connection.port')"
+                                        class="field w-20"
+                                        inputmode="numeric"
+                                    />
+                                </span>
+                                <span>{{ $t("connection.ssh.user") }}:</span>
+                                <input
+                                    v-model="ssh.username"
+                                    class="field"
+                                    data-testid="connection-ssh-user"
+                                    spellcheck="false"
+                                />
+                                <template v-if="sshChoice === 'key'">
+                                    <span>{{ $t("connection.ssh.keyFile") }}:</span>
+                                    <span class="flex gap-2">
+                                        <input
+                                            v-model="ssh.keyPath"
+                                            class="field grow font-mono"
+                                            spellcheck="false"
+                                        />
+                                        <ButtonRoot
+                                            @click="pickKey"
+                                            class="btn-secondary"
+                                        >
+                                            <ButtonContent>…</ButtonContent>
+                                        </ButtonRoot>
+                                    </span>
+                                </template>
+                                <span>{{ $t(sshChoice === "key" ? "connection.ssh.passphrase" : "connection.password") }}:</span>
+                                <input
+                                    v-model="ssh.secret"
+                                    autocomplete="off"
+                                    class="field"
+                                    data-testid="connection-ssh-secret"
+                                    type="password"
+                                />
+                                <span />
+                                <span class="text-[12px] text-on-surface-variant">{{ $t("connection.ssh.hint") }}</span>
+                            </template>
                         </TabsPanel>
 
                         <TabsPanel

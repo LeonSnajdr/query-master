@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            insert into setting (id, language, theme, page_size, result_view, editor_font_size, startup, default_tab, time_zone,\n                date_format, legacy_uuid, auto_expand, json_view, number_grouping, type_colors, tab_width, auto_close)\n            values (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)\n            on conflict (id) do update set\n                language = excluded.language,\n                theme = excluded.theme,\n                page_size = excluded.page_size,\n                result_view = excluded.result_view,\n                editor_font_size = excluded.editor_font_size,\n                startup = excluded.startup,\n                default_tab = excluded.default_tab,\n                time_zone = excluded.time_zone,\n                date_format = excluded.date_format,\n                legacy_uuid = excluded.legacy_uuid,\n                auto_expand = excluded.auto_expand,\n                json_view = excluded.json_view,\n                number_grouping = excluded.number_grouping,\n                type_colors = excluded.type_colors,\n                tab_width = excluded.tab_width,\n                auto_close = excluded.auto_close\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 16
+    },
+    "nullable": []
+  },
+  "hash": "9e7538e986f32307823ca5bfc1512f95bc23b3d032ff12ac0ce8e6583ac18525"
+}

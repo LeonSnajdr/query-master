@@ -1,4 +1,5 @@
 import type { Backend, Profile, SavedQuery, SessionTab, Setting, TreeFolder, TreeNote } from "./api";
+import { allFolders, folderPath, parentFolder as parentConnectionFolder, within } from "./connection/folders";
 import { folderWithin, parentFolder } from "./tree/folders";
 import { isDoc, toNumber } from "./shell/ejson";
 import type { Doc, Json } from "./shell/ejson";
@@ -12,6 +13,20 @@ const profiles: Profile[] = [
     // A server that is not there: shows how a connection that fails stays in the tree.
     { id: "offline", name: "Offline (unreachable)", address: "mongodb://10.0.0.1:27017" }
 ];
+/** Folders of the connections kept while empty, as the table `connection_folder`. */
+const connectionFolders = new Set<string>();
+
+/** `from` and what lies in it get the path `to` (empty: one level up), as the backend does. */
+function moveConnectionFolder(from: string, to: string) {
+    const moved = (path: string) => (path === from ? to : to ? `${to}${path.slice(from.length)}` : path.slice(from.length + 1));
+    for (const profile of profiles) {
+        if (profile.groupName && within(profile.groupName, from)) profile.groupName = moved(profile.groupName);
+    }
+    for (const path of [...connectionFolders].filter(path => within(path, from))) {
+        connectionFolders.delete(path);
+        if (moved(path)) connectionFolders.add(moved(path));
+    }
+}
 
 const COLLECTIONS: Record<string, string[]> = {
     shop: ["orders", "customers", "order-items"],
@@ -90,8 +105,27 @@ function valueGroups(pipeline: Json[]): Doc[] | undefined {
 export const mockBackend: Backend = {
     listConnections: async () => [...profiles],
     connectionUri: async () => "mongodb://localhost:27017",
+    connectionSsh: async () => null,
+    setConnectionGroup: async (id, group) => {
+        const profile = profiles.find(item => item.id === id);
+        if (profile) profile.groupName = group;
+    },
+    // As the backend: kept folders and those the connections name; moving takes both along.
+    listConnectionFolders: async () => allFolders([...connectionFolders], profiles),
+    addConnectionFolder: async (name) => {
+        connectionFolders.add(folderPath(name));
+    },
+    renameConnectionFolder: async (from, to) => moveConnectionFolder(folderPath(from), folderPath(to)),
+    deleteConnectionFolder: async name => moveConnectionFolder(folderPath(name), parentConnectionFolder(folderPath(name))),
     saveConnection: async (input) => {
-        const profile = { id: input.id ?? `mock-${profiles.length}`, name: input.name, address: input.uri.replace(/\/\/[^@/]*@/, "//"), environment: input.environment ?? null };
+        const profile = {
+            id: input.id ?? `mock-${profiles.length}`,
+            name: input.name,
+            address: input.uri.replace(/\/\/[^@/]*@/, "//"),
+            environment: input.environment ?? null,
+            groupName: input.groupName ?? "",
+            visibleDatabases: input.visibleDatabases ?? ""
+        };
         const index = profiles.findIndex(item => item.id === profile.id);
         if (index === -1) profiles.push(profile);
         else profiles[index] = profile;
@@ -105,6 +139,7 @@ export const mockBackend: Backend = {
         profiles.splice(profiles.findIndex(item => item.id === id), 1);
     },
     testConnection: async () => ({ version: "8.0.4" }),
+    discoverMembers: async () => ({ setName: "rs0", hosts: ["db1.example.net:27017", "db2.example.net:27017", "db3.example.net:27018"] }),
     connect: async (id) => {
         if (id !== "offline") return { version: "8.0.4" };
         await new Promise(resolve => setTimeout(resolve, 1500));
@@ -135,6 +170,8 @@ export const mockBackend: Backend = {
     },
     readTextFile: async () => "",
     writeTextFile: async () => undefined,
+    readBase64File: async () => "aGVsbG8=",
+    writeBase64File: async () => undefined,
     // The engine is part of the app: a browser has none.
     runScript: () => Promise.reject({ key: "error.script.browser", detail: null }),
     stopRun: async () => undefined,

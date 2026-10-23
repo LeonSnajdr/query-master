@@ -52,8 +52,8 @@ export function activeStages(stages: PipelineStage[]): PipelineStage[] {
 }
 
 /** The rows a collection opens with: filter, sort and projection, empty, in the order `find` applies them. */
-export function browseStages(filter = "{ }"): PipelineStage[] {
-    return [newStage("$match", filter), newStage("$sort", "{ }"), newStage("$project", "{ }")];
+export function browseStages(filter = "{}"): PipelineStage[] {
+    return [newStage("$match", filter), newStage("$sort", "{}"), newStage("$project", "{}")];
 }
 
 /** The order in which `find` applies its parts. */
@@ -115,12 +115,15 @@ export function readStages(content: { [key: string]: Json }): PipelineStage[] | 
  */
 export function stageTemplate(operator: string): string {
     const snippet = STAGES.find(entry => entry.name === operator)?.snippet;
-    if (!snippet) return "{ }";
+    if (!snippet) return "{}";
+    // Written as the formatter writes it, so that formatting a new stage changes nothing.
     return snippet
         .slice(snippet.indexOf(":") + 1)
         .trim()
         .replace(/\$\{([^}]*)\}/g, "$1")
-        .replaceAll("\t", "    ");
+        .replaceAll("\t", "    ")
+        .replace(/\{\s+\}/g, "{}")
+        .replace(/^\[\s*\{\}\s*\]$/, "[{}]");
 }
 
 /** The stages that are switched on, as the text of the pipeline array. */
@@ -170,12 +173,12 @@ export function stagesOfQuery(statement: Statement): PipelineStage[] {
     if (statement.method === "aggregate") return stagesOf(statement);
     if (statement.method !== "find") throw new ShellError("error.pipeline.notQuery");
     const modifier = (name: string) => statement.modifiers.find(item => item.name === name)?.args[0];
-    const stages = [newStage("$match", line(statement.args[0], "{ }")), newStage("$sort", line(modifier("sort"), "{ }"))];
+    const stages = [newStage("$match", line(statement.args[0], "{}")), newStage("$sort", line(modifier("sort"), "{}"))];
     for (const name of ["skip", "limit"] as const) {
         const value = modifier(name);
         if (value !== undefined) stages.push(newStage(`$${name}`, line(value, "")));
     }
-    stages.push(newStage("$project", line(statement.args[1], "{ }")));
+    stages.push(newStage("$project", line(statement.args[1], "{}")));
     return stages;
 }
 

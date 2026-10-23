@@ -108,7 +108,8 @@ export function codeMirrorKey(hotkey: string): string | undefined {
 }
 
 /** Keys that reload the web view unless the app takes them. */
-const RELOAD = new Set(["f5", "ctrl+r", "ctrl+shift+r", "ctrl+f5", "shift+f5"]);
+// Also the web view's own "Save page" and "Open file", where no tab saves or opens a script.
+const RELOAD = new Set(["f5", "ctrl+r", "ctrl+shift+r", "ctrl+f5", "shift+f5", "ctrl+s", "ctrl+shift+s", "ctrl+o"]);
 
 export function reloadsPage(event: KeyInput): boolean {
     const hotkey = hotkeyOfEvent(event);

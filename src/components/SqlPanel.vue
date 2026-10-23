@@ -73,6 +73,17 @@ function copyStatement() {
 
         <div class="h-8 shrink-0 flex items-center gap-0.5 px-5">
             <IconButton
+                v-if="tab.runId"
+                @click="tabs.stop(tab)"
+                :label="keymap.titled($t('query.stop'), 'query.stop')"
+                data-testid="query-stop"
+                icon="i-lucide-square"
+                tint="text-error"
+            >
+                {{ $t("query.stop") }}
+            </IconButton>
+            <IconButton
+                v-else
                 @click="run"
                 :disabled="tab.running"
                 :icon="tab.running ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-play'"
@@ -133,6 +144,7 @@ function copyStatement() {
                         :label="$t('sql.editor')"
                         :sqlSchema="schema"
                         formatAs="sql"
+                        findBar
                     />
                 </div>
                 <p

@@ -8,6 +8,18 @@ export interface RoleRef {
 }
 
 /** Built-in roles every server knows, for the choice next to the roles a database defines. */
+/** Letters, digits and signs a typed password can hold without trouble in a URI or a shell. */
+const PASSWORD_SIGNS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_.~!*";
+
+/** A new password of `length` signs from the random source of the system *Generate*. */
+export function generatePassword(length = 20): string {
+    const bytes = crypto.getRandomValues(new Uint8Array(length * 2));
+    const limit = 256 - (256 % PASSWORD_SIGNS.length);
+    // Bytes above the last whole round are skipped, so every sign is equally likely.
+    const signs = [...bytes].filter(byte => byte < limit).map(byte => PASSWORD_SIGNS[byte % PASSWORD_SIGNS.length]!);
+    return signs.length >= length ? signs.slice(0, length).join("") : generatePassword(length);
+}
+
 export const BUILTIN_ROLES: RoleRef[] = [
     ...["read", "readWrite", "dbAdmin", "dbOwner", "userAdmin"].map(role => ({ role, db: "" })),
     ...["readAnyDatabase", "readWriteAnyDatabase", "userAdminAnyDatabase", "dbAdminAnyDatabase", "clusterMonitor", "clusterManager",
@@ -38,8 +50,8 @@ export interface UserForm {
 
 /** A privilege of a role: a resource and what may be done there. */
 export interface PrivilegeForm {
-    /** `cluster` for the whole deployment; else a database (empty: every database). */
-    kind: "namespace" | "cluster";
+    /** `cluster` for the whole deployment, `any` for every resource; else a database (empty: every database). */
+    kind: "namespace" | "cluster" | "any";
     db: string;
     /** Empty: every collection of the database. */
     collection: string;
@@ -76,6 +88,7 @@ export function userFormErrors(form: UserForm, existing: boolean): string[] {
 }
 
 function resource(privilege: PrivilegeForm): Doc {
+    if (privilege.kind === "any") return { anyResource: true };
     return privilege.kind === "cluster" ? { cluster: true } : { db: privilege.db.trim(), collection: privilege.collection.trim() };
 }
 
@@ -114,7 +127,7 @@ export function roleFormOf(info: Doc): RoleForm {
         privileges: privileges.map((privilege) => {
             const target = isDoc(privilege.resource) ? privilege.resource : {};
             return {
-                kind: target.cluster === true ? "cluster" : "namespace",
+                kind: target.anyResource === true ? "any" : target.cluster === true ? "cluster" : "namespace",
                 db: typeof target.db === "string" ? target.db : "",
                 collection: typeof target.collection === "string" ? target.collection : "",
                 actions: Array.isArray(privilege.actions) ? privilege.actions.map(String) : []

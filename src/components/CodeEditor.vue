@@ -7,9 +7,12 @@ import { sql } from "@codemirror/lang-sql";
 import { HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxHighlighting } from "@codemirror/language";
 import { Compartment, EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
 import type { Extension, Range } from "@codemirror/state";
-import { Decoration, EditorView, ViewPlugin, drawSelection, highlightActiveLine, keymap, lineNumbers, showTooltip } from "@codemirror/view";
+import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
+import { Decoration, EditorView, ViewPlugin, crosshairCursor, drawSelection, highlightActiveLine, keymap, lineNumbers, placeholder as placeholderText, rectangularSelection, showTooltip } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { onBeforeUnmount, onMounted, useTemplateRef, watch } from "vue";
+import { useI18n } from "vue-i18n";
+import { preferences } from "@/composables/appearance";
 import { useMessages } from "@/composables/messages";
 import { codeMirrorKey } from "@/keys/hotkey";
 import { useKeymap } from "@/keys/keymap";
@@ -49,6 +52,17 @@ const props = defineProps<{
     valueField?: ValueField;
     /** Without room above and below the line, to fit a row of the result. */
     compact?: boolean;
+    /** The font of the row it edits in (a cell of the table), not that of the editors. */
+    inheritFont?: boolean;
+    /**
+     * As high as its text (wrapped, at most six lines), never a scroll bar across: for a value
+     * edited in a cell. The list of suggestions opens below the whole field, not below the line.
+     */
+    grow?: boolean;
+    /** The find and replace bar (Ctrl+F) and go to line: for editors with room for it (shell, SQL, text). */
+    findBar?: boolean;
+    /** Text shown grey while the editor is empty. */
+    placeholder?: string;
     /** Test id of the editable text. */
     testid?: string;
     /**
@@ -118,6 +132,13 @@ function languageExtension(): Extension {
     return props.sqlSchema ? sql({ schema: props.sqlSchema, upperCaseKeywords: true }) : javascript();
 }
 const { say, report } = useMessages();
+const { t } = useI18n();
+
+/** The words of the find bar and of go to line, in the language of the app. */
+function searchPhrases(): Record<string, string> {
+    const keys = ["Find", "Replace", "next", "previous", "all", "match case", "regexp", "by word", "replace", "replace all", "close", "Go to line", "go", "current match", "on line", "replaced match on line $", "replaced $ matches"];
+    return Object.fromEntries(keys.map(key => [key, t(`editor.search.${key.replace(/[^a-z]+/gi, "_")}`)]));
+}
 const host = useTemplateRef<HTMLDivElement>("host");
 let view: EditorView | undefined;
 
@@ -374,12 +395,33 @@ const highlight = HighlightStyle.define([
     { tag: tags.comment, color: "var(--v0-code-comment)", fontStyle: "italic" }
 ]);
 
+/**
+ * Find (Ctrl+F), find again (F3), replace, go to line (Ctrl+Alt+G), all matches (Ctrl+Shift+L).
+ * Without Ctrl+D, which saves the query (your decision of 18.10.2026).
+ */
+const EDITOR_SEARCH_KEYS = searchKeymap.filter(binding => binding.key !== "Mod-d");
+
 const theme = EditorView.theme({
-    "&": { height: "100%", fontSize: "var(--editor-font-size, 13px)", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
+    "&": { height: "100%", fontSize: props.inheritFont ? "inherit" : "var(--editor-font-size, 13px)", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
     "&.cm-focused": { outline: "none" },
+    ...(props.inheritFont ? { "&.cm-editor .cm-scroller": { fontFamily: "inherit" } } : {}),
+    // One line never scrolls up and down; a pixel of rounding would show a scroll bar otherwise,
+    // and no room is kept for one.
+    // Across it scrolls with the cursor, without a bar that would cover the one line.
+    ".cm-scroller": props.singleLine ? { overflowY: "hidden", scrollbarGutter: "auto", scrollbarWidth: "none" } : {},
+    ...(props.grow
+        ? {
+                "&": { height: "auto", fontSize: props.inheritFont ? "inherit" : "var(--editor-font-size, 13px)", color: "var(--v0-on-surface)", backgroundColor: "transparent" },
+                ".cm-scroller": { overflowX: "hidden", overflowY: "auto", maxHeight: "calc(6 * 1.4em)", scrollbarGutter: "auto", scrollbarWidth: "thin" },
+                // The list below the field (or above it), never over the text: set from the field's edges.
+                ".cm-tooltip.cm-tooltip-autocomplete:not(.cm-tooltip-above)": { transform: "translateY(var(--below-field, 0px))" },
+                ".cm-tooltip.cm-tooltip-autocomplete.cm-tooltip-above": { transform: "translateY(var(--above-field, 0px))" }
+            }
+        : {}),
     ".cm-content": { caretColor: "var(--v0-primary)", padding: props.compact ? "0" : props.singleLine ? "5px 0" : "8px 0" },
     ".cm-line": { padding: props.singleLine ? "0 2px" : "0 6px" },
     ".cm-cursor": { borderLeftColor: "var(--v0-primary)" },
+    ".cm-placeholder": { color: "var(--v0-on-surface-variant)", fontStyle: "italic", fontFamily: "\"Open Sans\", system-ui, sans-serif" },
     ".cm-errorMark": { textDecoration: "underline wavy var(--v0-error)", textUnderlineOffset: "3px", textDecorationSkipInk: "none" },
     ".cm-gutters": { backgroundColor: "transparent", color: "var(--v0-on-surface-variant)", border: "none", paddingLeft: "8px" },
     ".cm-activeLine": { backgroundColor: props.readonly || props.singleLine ? "transparent" : "color-mix(in srgb, var(--v0-on-surface) 5%, transparent)" },
@@ -396,6 +438,26 @@ const theme = EditorView.theme({
         boxShadow: "0 8px 24px rgb(0 0 0 / 0.35)",
         overflow: "hidden"
     },
+    // Find and replace (Ctrl+F, Ctrl+H) and "go to line" (Ctrl+Alt+G), as panels above the text.
+    ".cm-panels": { backgroundColor: "var(--v0-dock)", color: "var(--v0-on-surface)", fontFamily: "\"Open Sans\", system-ui, sans-serif", fontSize: "12.5px" },
+    ".cm-panels.cm-panels-top": { borderBottom: "1px solid var(--v0-divider)" },
+    ".cm-panel input[type=text], .cm-panel .cm-textfield": {
+        backgroundColor: "var(--v0-background)",
+        color: "var(--v0-on-surface-strong)",
+        border: "1px solid var(--v0-divider)",
+        borderRadius: "3px",
+        padding: "2px 6px"
+    },
+    ".cm-panel button, .cm-panel .cm-button": {
+        backgroundImage: "none",
+        backgroundColor: "color-mix(in srgb, var(--v0-on-surface) 8%, transparent)",
+        color: "var(--v0-on-surface)",
+        border: "1px solid var(--v0-divider)",
+        borderRadius: "3px"
+    },
+    ".cm-searchMatch": { backgroundColor: "color-mix(in srgb, var(--v0-warning) 30%, transparent)" },
+    ".cm-searchMatch-selected": { backgroundColor: "color-mix(in srgb, var(--v0-primary) 40%, transparent)" },
+    ".cm-selectionMatch": { backgroundColor: "color-mix(in srgb, var(--v0-on-surface) 12%, transparent)" },
     ".cm-tooltip.cm-tooltip-autocomplete > ul": { fontFamily: "inherit", maxHeight: "18em" },
     ".cm-tooltip-autocomplete ul li": { padding: "2px 8px 2px 4px" },
     ".cm-tooltip-autocomplete ul li[aria-selected]": { backgroundColor: "var(--v0-primary)", color: "var(--v0-on-primary)" },
@@ -433,23 +495,56 @@ const theme = EditorView.theme({
     ".cm-snippetField": { backgroundColor: "color-mix(in srgb, var(--v0-primary) 18%, transparent)" }
 });
 
+/**
+ * How far the field reaches below and above the line of the cursor, as CSS variables on the
+ * editor: the list of suggestions moves by them to the field's edge.
+ */
+const fieldEdges = EditorView.updateListener.of((update) => {
+    if (!update.docChanged && !update.selectionSet && !update.geometryChanged && !update.focusChanged) return;
+    const target = update.view;
+    target.requestMeasure({
+        read: (current) => {
+            const line = current.coordsAtPos(current.state.selection.main.head);
+            const box = current.dom.getBoundingClientRect();
+            // Two pixels clear of the frame of the field.
+            return line ? { below: Math.max(0, box.bottom - line.bottom) + 2, above: Math.min(0, box.top - line.top) - 2 } : undefined;
+        },
+        write: (edges, current) => {
+            if (!edges) return;
+            current.dom.style.setProperty("--below-field", `${edges.below}px`);
+            current.dom.style.setProperty("--above-field", `${edges.above}px`);
+        }
+    });
+});
+
 function extensions(): Extension[] {
     const base: Extension[] = [
         drawSelection(),
         bracketMatching(),
-        indentUnit.of("    "),
+        // Tab width and closing brackets as the settings say (new editors take a change).
+        indentUnit.of(" ".repeat(preferences.tabWidth)),
+        EditorState.tabSize.of(preferences.tabWidth),
         language.of(languageExtension()),
         syntaxHighlighting(highlight),
         EditorView.contentAttributes.of({ "aria-label": props.label, ...(props.testid ? { "data-testid": props.testid } : {}) }),
+        ...(props.placeholder ? [placeholderText(props.placeholder)] : []),
         theme
     ];
     if (!props.singleLine) base.push(lineNumbers(), highlightActiveLine());
+    if (props.grow) base.push(EditorView.lineWrapping, fieldEdges);
     if (props.readonly) return [...base, EditorState.readOnly.of(true), EditorView.editable.of(false)];
     return [
         ...base,
         history(),
         indentOnInput(),
-        closeBrackets(),
+        ...(preferences.autoClose ? [closeBrackets()] : []),
+        //: several cursors (Ctrl+Alt+Up/Down, Alt+click), block selection
+        // (Alt+drag), the other places of the selected text marked; find and replace on top.
+        EditorState.allowMultipleSelections.of(true),
+        rectangularSelection(),
+        crosshairCursor(),
+        ...(props.singleLine ? [] : [highlightSelectionMatches()]),
+        ...(props.findBar ? [search({ top: true }), EditorState.phrases.of(searchPhrases())] : []),
         // Ctrl+Space again, with the list open at a value: search all data. Ahead of the list's own
         // keys (also of the highest precedence, so the order decides), which take it to open the list.
         // Esc closes the footer shown alone.
@@ -473,6 +568,7 @@ function extensions(): Extension[] {
             ...completionKeymap,
             ...historyKeymap,
             ...(props.singleLine ? [] : [indentWithTab]),
+            ...(props.findBar ? EDITOR_SEARCH_KEYS : []),
             ...defaultKeymap
         ]),
         // A single line stays one: pasted line breaks become spaces.

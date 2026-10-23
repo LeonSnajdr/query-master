@@ -64,6 +64,16 @@ impl JsonWriter {
             text.push_str(LINE);
         }
         self.first = false;
+        // Extended JSON one after the other is what `mongoexport` writes:
+        // one document per line (JSON Lines), so line-based tools read it.
+        if self.notation != Notation::Shell && self.layout == Layout::Lines {
+            let json = match self.notation {
+                Notation::Canonical => Bson::Document(document.clone()).into_canonical_extjson(),
+                _ => Bson::Document(document.clone()).into_relaxed_extjson(),
+            };
+            text.push_str(&serde_json::to_string(&json).unwrap_or_default());
+            return text;
+        }
         let indent = if self.layout == Layout::Array {
             "\t"
         } else {
@@ -185,11 +195,14 @@ fn uuid_text(bytes: &[u8]) -> String {
     )
 }
 
-/// One value in the shell's notation, as `toShell` in `src/shell/ejson.ts` writes it.
+/// One value in the shell's notation export writes it (`toShell` in
+/// `src/shell/ejson.ts` shows an int32 bare, as mongosh does).
 fn shell_scalar(value: &Bson) -> String {
     match value {
-        Bson::String(text) | Bson::Symbol(text) => quoted(text),
-        Bson::Int32(number) => number.to_string(),
+        Bson::String(text) => quoted(text),
+        //: the type stays, so the shell read it back as it was.
+        Bson::Symbol(text) => format!("Symbol({})", quoted(text)),
+        Bson::Int32(number) => format!("NumberInt({number})"),
         Bson::Int64(number) => format!("NumberLong({number})"),
         Bson::Double(number) => shell_double(*number),
         Bson::Decimal128(number) => format!("NumberDecimal(\"{number}\")"),
@@ -253,7 +266,7 @@ mod tests {
             "\t\"DateStarted\": ISODate(\"2026-07-22T07:26:00.000+00:00\"),",
             "\t\"Attributes\": {",
             "\t\t\"siteUrl\": \"https://example.net\",",
-            "\t\t\"count\": 3",
+            "\t\t\"count\": NumberInt(3)",
             "\t},",
             "\t\"Sources\": [",
             "\t\t{",
@@ -264,7 +277,7 @@ mod tests {
             "\t\"Empty\": []",
             "}",
             "{",
-            "\t\"_id\": 2",
+            "\t\"_id\": NumberInt(2)",
             "}",
             "",
         ]
@@ -330,11 +343,26 @@ mod tests {
 
     #[test]
     fn keeps_types_in_canonical_and_simplifies_in_relaxed() {
-        let mut canonical = JsonWriter::new(Notation::Canonical, Layout::Lines);
+        let mut canonical = JsonWriter::new(Notation::Canonical, Layout::Array);
         assert!(canonical
             .document(&doc! { "n": 5_i64 })
             .contains("\"n\": {\"$numberLong\":\"5\"}"));
-        let mut relaxed = JsonWriter::new(Notation::Relaxed, Layout::Lines);
+        let mut relaxed = JsonWriter::new(Notation::Relaxed, Layout::Array);
         assert!(relaxed.document(&doc! { "n": 5_i64 }).contains("\"n\": 5"));
+    }
+
+    #[test]
+    fn writes_extended_json_one_document_per_line_as_mongoexport() {
+        let mut relaxed = JsonWriter::new(Notation::Relaxed, Layout::Lines);
+        let first = relaxed.document(&doc! { "_id": 1, "sub": { "a": [1, 2] } });
+        let second = relaxed.document(&doc! { "_id": 2 });
+        assert_eq!(first, r#"{"_id":1,"sub":{"a":[1,2]}}"#);
+        assert_eq!(second, "\r\n{\"_id\":2}");
+        assert_eq!(relaxed.finish(), LINE);
+        let mut canonical = JsonWriter::new(Notation::Canonical, Layout::Lines);
+        assert_eq!(
+            canonical.document(&doc! { "n": 5_i64 }),
+            r#"{"n":{"$numberLong":"5"}}"#
+        );
     }
 }

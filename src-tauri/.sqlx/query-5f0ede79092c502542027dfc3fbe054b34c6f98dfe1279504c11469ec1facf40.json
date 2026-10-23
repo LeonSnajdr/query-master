@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            select name as \"name!\" from connection_folder\n            union\n            select group_name as \"name!\" from connection where group_name <> ''\n            order by 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "name!",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "5f0ede79092c502542027dfc3fbe054b34c6f98dfe1279504c11469ec1facf40"
+}

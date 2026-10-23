@@ -35,7 +35,7 @@ const label = computed(() => {
         @click="tab.readonly = !tab.readonly"
         :active="locked"
         :disabled="byTree"
-        :icon="locked ? 'i-lucide-lock' : 'i-lucide-lock-open'"
+        :icon="locked ? 'i-app-lock' : 'i-lucide-lock-open'"
         :label
         data-testid="query-readonly"
     />

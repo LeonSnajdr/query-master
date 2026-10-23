@@ -14,6 +14,7 @@ mod saved_query;
 mod script;
 mod session;
 mod setting;
+mod ssh;
 mod transfer;
 mod tree;
 
@@ -35,6 +36,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             connection::commands::connection_list,
             connection::commands::connection_uri,
+            connection::commands::connection_ssh,
+            connection::commands::connection_set_group,
+            connection::commands::connection_folder_list,
+            connection::commands::connection_folder_add,
+            connection::commands::connection_folder_rename,
+            connection::commands::connection_folder_delete,
             connection::commands::connection_save,
             connection::commands::connection_delete,
             connection::commands::connection_set_environment,
@@ -66,6 +73,7 @@ pub fn run() {
             tree::commands::tree_folder_rename,
             tree::commands::tree_folder_delete,
             mongo::test_connection,
+            mongo::discover_members,
             mongo::connect,
             mongo::connect_uri,
             mongo::disconnect,
@@ -79,7 +87,9 @@ pub fn run() {
             gridfs::gridfs_upload,
             gridfs::gridfs_download,
             files::read_text_file,
-            files::write_text_file
+            files::write_text_file,
+            files::read_base64_file,
+            files::write_base64_file
         ])
         .build(tauri::generate_context!())
         .expect("error while building QueryMaster")

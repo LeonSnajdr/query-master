@@ -15,6 +15,24 @@ export interface Profile {
     address: string;
     /** What the connection is used for; decides how the app asks before writing (stage 21). */
     environment?: Environment | null;
+    /** When it was last connected (ISO time); absent or null when never. */
+    dateLastUsed?: string | null;
+    /** Databases the tree shows besides those the server lists, separated by commas. */
+    visibleDatabases?: string;
+    /** The group of the connection list it lies in; empty or absent for none. */
+    groupName?: string;
+}
+
+export type SshMethod = "password" | "key";
+
+/** The SSH server a connection goes through; `secret` is the password or the key's passphrase. */
+export interface SshSettings {
+    host: string;
+    port: number;
+    username: string;
+    method: SshMethod;
+    keyPath: string;
+    secret: string;
 }
 
 export interface ProfileInput {
@@ -23,6 +41,10 @@ export interface ProfileInput {
     name: string;
     uri: string;
     environment?: Environment | null;
+    /** Through an SSH server; absent or null for a direct connection. */
+    ssh?: SshSettings | null;
+    visibleDatabases?: string;
+    groupName?: string;
 }
 
 export interface KeybindingChange {
@@ -42,6 +64,22 @@ export interface Setting {
     editorFontSize: number | null;
     /** `ask`, `restore` or `empty`: what the start does with the tabs of the last session. */
     startup: string | null;
+    /** What a double click on a collection opens: `browse`, `shell`, `aggregate`, `sql`. */
+    defaultTab?: string | null;
+    /** Dates in `local` time or `utc`. */
+    timeZone?: string | null;
+    /** `local`, `iso`, `dmy` or `mdy`. */
+    dateFormat?: string | null;
+    /** Binary subtype 3 as `raw`, or the UUID of `dotnet`, `java`, `python`. */
+    legacyUuid?: string | null;
+    /** Documents unfolded at first: `none`, `first`, `all`. */
+    autoExpand?: string | null;
+    /** The view Json: `shell`, `relaxed` or `canonical`. */
+    jsonView?: string | null;
+    numberGrouping?: boolean | null;
+    typeColors?: boolean | null;
+    tabWidth?: number | null;
+    autoClose?: boolean | null;
 }
 
 /** A query saved with a name (stage 20): of a collection, or (`collection` absent) of a database. */
@@ -141,25 +179,42 @@ export interface CursorPage {
 export interface Backend {
     listConnections: () => Promise<Profile[]>;
     connectionUri: (id: string) => Promise<string>;
+    /** The SSH part of a saved connection with its secret; null for a direct one. */
+    connectionSsh: (id: string) => Promise<SshSettings | null>;
+    /** Moves a saved connection into a group of the list; empty for none. */
+    setConnectionGroup: (id: string, group: string) => Promise<void>;
+    /** Every folder of the connections, also empty ones; nested with "/". */
+    listConnectionFolders: () => Promise<string[]>;
+    addConnectionFolder: (name: string) => Promise<void>;
+    /** Renames or moves a folder (`to` is its whole path) with what lies in it. */
+    renameConnectionFolder: (from: string, to: string) => Promise<void>;
+    /** Takes a folder away; what lay in it lies one level up then. */
+    deleteConnectionFolder: (name: string) => Promise<void>;
     saveConnection: (input: ProfileInput) => Promise<Profile>;
     /** Marks a saved connection as development, test or production; `null` takes the mark away. */
     setConnectionEnvironment: (id: string, environment: Environment | null) => Promise<void>;
     deleteConnection: (id: string) => Promise<void>;
-    testConnection: (uri: string) => Promise<ServerInfo>;
+    testConnection: (uri: string, ssh?: SshSettings | null) => Promise<ServerInfo>;
+    /** The members of the replica set the first host of the string belongs to (`hello`). */
+    discoverMembers: (uri: string, ssh?: SshSettings | null) => Promise<{ setName: string; hosts: string[] }>;
     connect: (id: string) => Promise<ServerInfo>;
     /** Connects with a string that is not saved; the session lives under `id` until `disconnect`. */
     connectUri: (id: string, uri: string) => Promise<ServerInfo & { address: string }>;
     disconnect: (id: string) => Promise<void>;
-    runCommand: (id: string, database: string, command: Doc) => Promise<Doc>;
+    /** With `runId` the command can be stopped (`stopRun`). */
+    runCommand: (id: string, database: string, command: Doc, runId?: string) => Promise<Doc>;
     /** Reads at most `limit` documents from the cursor the command opens. */
-    runCursorCommand: (id: string, database: string, command: Doc, limit: number) => Promise<CursorPage>;
+    runCursorCommand: (id: string, database: string, command: Doc, limit: number, runId?: string) => Promise<CursorPage>;
     /** Files the user picked in a file dialog. */
     readTextFile: (path: string) => Promise<string>;
     writeTextFile: (path: string, text: string) => Promise<void>;
+    /** A file as Base64, and Base64 into a file: binary values of documents. */
+    readBase64File: (path: string) => Promise<string>;
+    writeBase64File: (path: string, data: string) => Promise<void>;
     /** Runs a script in the engine of the Rust side; `runId` names the run for `stopRun`. */
     /** `output` gets what the script prints while it runs. */
     runScript: (id: string, runId: string, database: string, source: string, readonly: boolean, output: (text: string) => void) => Promise<ScriptResult>;
-    /** Asks a script or a copy to stop. */
+    /** Asks a script, a copy or a command with a run id to stop. */
     stopRun: (runId: string) => Promise<void>;
     getSetting: () => Promise<Setting>;
     saveSetting: (setting: Setting) => Promise<void>;
@@ -215,17 +270,26 @@ export interface Backend {
 const tauriBackend: Backend = {
     listConnections: () => invoke("connection_list"),
     connectionUri: id => invoke("connection_uri", { id }),
+    connectionSsh: id => invoke("connection_ssh", { id }),
+    setConnectionGroup: (id, group) => invoke("connection_set_group", { id, group }),
+    listConnectionFolders: () => invoke("connection_folder_list"),
+    addConnectionFolder: name => invoke("connection_folder_add", { name }),
+    renameConnectionFolder: (from, to) => invoke("connection_folder_rename", { from, to }),
+    deleteConnectionFolder: name => invoke("connection_folder_delete", { name }),
     saveConnection: input => invoke("connection_save", { input }),
     setConnectionEnvironment: (id, environment) => invoke("connection_set_environment", { id, environment }),
     deleteConnection: id => invoke("connection_delete", { id }),
-    testConnection: uri => invoke("test_connection", { uri }),
+    testConnection: (uri, ssh) => invoke("test_connection", { uri, ssh: ssh ?? null }),
+    discoverMembers: (uri, ssh) => invoke("discover_members", { uri, ssh: ssh ?? null }),
     connect: id => invoke("connect", { id }),
     connectUri: (id, uri) => invoke("connect_uri", { id, uri }),
     disconnect: id => invoke("disconnect", { id }),
-    runCommand: (id, database, command) => invoke("run_command", { id, database, command }),
-    runCursorCommand: (id, database, command, limit) => invoke("run_cursor_command", { id, database, command, limit }),
+    runCommand: (id, database, command, runId) => invoke("run_command", { id, database, command, runId }),
+    runCursorCommand: (id, database, command, limit, runId) => invoke("run_cursor_command", { id, database, command, limit, runId }),
     readTextFile: path => invoke("read_text_file", { path }),
     writeTextFile: (path, text) => invoke("write_text_file", { path, text }),
+    readBase64File: path => invoke("read_base64_file", { path }),
+    writeBase64File: (path, data) => invoke("write_base64_file", { path, data }),
     runScript: (id, runId, database, source, readonly, output) => {
         const onOutput = new Channel<string>();
         onOutput.onmessage = output;

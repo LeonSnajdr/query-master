@@ -22,7 +22,7 @@ const connections = useConnectionsStore();
                 {{ $t("connection.empty") }}
             </p>
             <ButtonRoot
-                v-for="profile in connections.saved"
+                v-for="profile in connections.recent"
                 :key="profile.id"
                 @click="actions.connect(profile)"
                 class="w-full h-[23px] flex items-center gap-2 text-left hover:bg-on-surface/6"

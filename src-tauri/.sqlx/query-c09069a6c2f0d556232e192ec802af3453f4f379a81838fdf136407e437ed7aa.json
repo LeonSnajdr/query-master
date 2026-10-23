@@ -1,0 +1,110 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            select language, theme, page_size, result_view, editor_font_size, startup, default_tab, time_zone,\n                date_format, legacy_uuid, auto_expand, json_view,\n                number_grouping as \"number_grouping: bool\", type_colors as \"type_colors: bool\",\n                tab_width, auto_close as \"auto_close: bool\"\n            from setting where id = 1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "name": "language",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "theme",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "page_size",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "result_view",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "editor_font_size",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "startup",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "default_tab",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "time_zone",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "date_format",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "legacy_uuid",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "auto_expand",
+        "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "json_view",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "number_grouping: bool",
+        "ordinal": 12,
+        "type_info": "Integer"
+      },
+      {
+        "name": "type_colors: bool",
+        "ordinal": 13,
+        "type_info": "Integer"
+      },
+      {
+        "name": "tab_width",
+        "ordinal": 14,
+        "type_info": "Integer"
+      },
+      {
+        "name": "auto_close: bool",
+        "ordinal": 15,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "c09069a6c2f0d556232e192ec802af3453f4f379a81838fdf136407e437ed7aa"
+}

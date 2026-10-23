@@ -13,6 +13,7 @@ function state(change: Partial<ExportState> = {}): ExportState {
         csv: DEFAULT_CSV,
         sql: DEFAULT_SQL,
         columns: {},
+        names: {},
         database: { connectionId: "", database: "", insertMode: "overwrite", copyIndexes: true },
         ...change
     };
@@ -62,8 +63,8 @@ describe("exportJob", () => {
         const copy = exportJob(state({ format: "database", database: { connectionId: "c2", database: "backup", insertMode: "newId", copyIndexes: false } }));
         expect(copy.destination).toEqual({ kind: "database", connectionId: "c2", database: "backup", insertMode: "newId", copyIndexes: false });
         expect(copy.items).toEqual([
-            { database: "shop", collection: "orders", output: "shop.orders.json", filter: null, columns: null },
-            { database: "shop", collection: "people", output: "shop.people.json", filter: null, columns: null }
+            { database: "shop", collection: "orders", output: "shop.orders.json", filter: null, columns: null, names: null, replace: false },
+            { database: "shop", collection: "people", output: "shop.people.json", filter: null, columns: null, names: null, replace: false }
         ]);
     });
 
@@ -71,6 +72,14 @@ describe("exportJob", () => {
         const job = exportJob(state({ format: "csv", csv: { ...DEFAULT_CSV, delimiter: ";" }, columns: { "shop.orders": ["total", "customer.city"] } }));
         expect(job.format).toEqual({ kind: "csv", options: { delimiter: ";", quote: "\"", header: true, nullEmpty: true, escapeStrings: false } });
         expect((job.items as { columns: string[] | null }[]).map(item => item.columns)).toEqual([["total", "customer.city"], null]);
+    });
+
+    it("sends the names of renamed columns, the others as the file or table names them", () => {
+        const renamed = { columns: { "shop.orders": ["_id", "customer.city"] }, names: { "shop.orders": { "customer.city": "Stadt" } } };
+        const names = (format: "csv" | "sql") => (exportJob(state({ format, ...renamed })).items as { names: string[] | null }[]).map(item => item.names);
+        expect(names("csv")).toEqual([["_id", "Stadt"], null]);
+        expect(names("sql")).toEqual([["_id", "Stadt"], null]);
+        expect((exportJob(state({ format: "sql", columns: { "shop.orders": ["customer.city"] }, names: { "shop.orders": { "customer.city": " " } } })).items as { names: unknown }[])[0]!.names).toBeNull();
     });
 
     it("sends the SQL settings and its columns as for CSV", () => {

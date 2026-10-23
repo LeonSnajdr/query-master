@@ -81,6 +81,9 @@ export function importProblems(state: ImportState): { key: string; row?: number 
         if (!row.database.trim()) problems.push({ key: "import.problem.noDatabase", row: index });
         if (!row.collection.trim()) problems.push({ key: "import.problem.noCollection", row: index });
         else if (isSystemCollection(row.collection) || row.collection.includes("$")) problems.push({ key: "import.problem.badCollection", row: index });
+        // A file of the other format (after switching the tile) would be read wrongly.
+        const extension = splitPath(row.path).name.split(".").pop()?.toLowerCase() ?? "";
+        if (formatOf(row.path) !== undefined && !EXTENSIONS[state.format].includes(extension)) problems.push({ key: "import.problem.otherFormat", row: index });
     });
     return problems;
 }

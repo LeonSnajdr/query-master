@@ -5,12 +5,12 @@
 
 /**
  * Where a shortcut acts. `global` listens on the window; the others are the keys of one part of
- * the app, handled there: the editor, the whole results area, the result tree, the result table
- * and the tree in the dock.
+ * the app, handled there: the editor, the whole results area, the result tree, the result table,
+ * the tree in the dock and the stage rows of a query.
  */
-export type Scope = "global" | "editor" | "results" | "resultTree" | "table" | "tree";
+export type Scope = "global" | "editor" | "results" | "resultTree" | "table" | "tree" | "stages";
 
-export const GROUPS = ["connection", "tabs", "create", "manage", "view", "focus", "editor", "results", "table", "tree"] as const;
+export const GROUPS = ["connection", "tabs", "create", "manage", "view", "focus", "editor", "stages", "results", "table", "tree"] as const;
 export type CommandGroup = typeof GROUPS[number];
 
 export interface Command {
@@ -30,8 +30,10 @@ export interface Command {
 
 /** Scopes that can be active at the same moment; a key used in both is a conflict. */
 const OVERLAP: Record<Scope, readonly Scope[]> = {
-    global: ["global", "editor", "results", "resultTree", "table", "tree"],
-    editor: ["global", "editor"],
+    global: ["global", "editor", "results", "resultTree", "table", "tree", "stages"],
+    // A stage row holds an editor: its keys act while the editor has the focus.
+    editor: ["global", "editor", "stages"],
+    stages: ["global", "editor", "stages"],
     results: ["global", "results", "resultTree", "table"],
     // The tree and the table of the results are never shown together.
     resultTree: ["global", "results", "resultTree"],
@@ -50,6 +52,7 @@ const command = <const T extends Command>(value: T) => value;
 const LIST = [
     command({ id: "connection.list", label: "connection.list.hint", group: "connection", scope: "global", keys: ["f2"] }),
     command({ id: "connection.add", label: "connection.add", group: "connection", scope: "global", keys: ["ctrl+f2"] }),
+    command({ id: "connection.addUri", label: "connection.addFromUri", group: "connection", scope: "global", keys: ["ctrl+shift+f2"] }),
     command({ id: "connection.uri", label: "connection.uri", group: "connection", scope: "global", keys: ["ctrl+alt+f2"] }),
     command({ id: "connection.disconnect", label: "connection.disconnect", group: "connection", scope: "global", keys: ["ctrl+alt+d"] }),
 
@@ -76,7 +79,8 @@ const LIST = [
 
     command({ id: "users.manage", label: "users.manage", group: "manage", scope: "global", keys: ["ctrl+alt+u"] }),
     command({ id: "roles.manage", label: "roles.manage", group: "manage", scope: "global", keys: ["ctrl+alt+r"] }),
-    command({ id: "export.wizard", label: "export.menu", group: "manage", scope: "global", keys: ["ctrl+shift+s"] }),
+    // Export: the result of the tab while the focus is in it, else what the tree has chosen.
+    command({ id: "export.wizard", label: "export.menu", group: "manage", scope: "global", keys: ["ctrl+e"] }),
     command({ id: "import.wizard", label: "import.menu", group: "manage", scope: "global", keys: ["ctrl+shift+o"] }),
     command({ id: "tree.collapse", label: "tree.collapse", group: "manage", scope: "global", keys: ["ctrl+shift+u"] }),
     command({ id: "settings.open", label: "settings.open", group: "manage", scope: "global", keys: ["ctrl+alt+p"] }),
@@ -97,6 +101,12 @@ const LIST = [
     command({ id: "query.run", label: "shortcut.run", group: "editor", scope: "editor", keys: ["ctrl+enter", "f5"] }),
     // Ctrl+S is the export: saving a query is a bookmark, as in a browser.
     command({ id: "query.save", label: "savedQuery.title", group: "editor", scope: "global", keys: ["ctrl+d"] }),
+    // The script of a shell tab as a file, with the keys every editor has for it.
+    command({ id: "script.save", label: "script.save", group: "editor", scope: "global", keys: ["ctrl+s"] }),
+    command({ id: "script.saveAs", label: "script.saveAs", group: "editor", scope: "global", keys: ["ctrl+shift+s"] }),
+    command({ id: "script.open", label: "script.open", group: "editor", scope: "global", keys: ["ctrl+o"] }),
+    //: stops a running query or script of the tab in front, also in the editor.
+    command({ id: "query.stop", label: "query.stop", group: "editor", scope: "global", keys: ["shift+f5"] }),
     // As in VS Code; through the editor's keymap, so the editor with the focus is formatted.
     command({ id: "editor.format", label: "shortcut.format", group: "editor", scope: "editor", keys: ["alt+shift+f"] }),
     command({ id: "editor.complete", label: "shortcut.complete", group: "editor", scope: "editor", keys: ["ctrl+space"], fixed: true }),
@@ -104,12 +114,22 @@ const LIST = [
     command({ id: "editor.indent", label: "shortcut.indent", group: "editor", scope: "editor", keys: ["ctrl+]"], fixed: true }),
     command({ id: "editor.outdent", label: "shortcut.outdent", group: "editor", scope: "editor", keys: ["ctrl+["], fixed: true }),
     command({ id: "editor.undo", label: "shortcut.undo", group: "editor", scope: "editor", keys: ["ctrl+z"], fixed: true }),
+    // The editor's own keys (CodeMirror), listed so the help and the start page show them.
+    command({ id: "editor.find", label: "shortcut.find", group: "editor", scope: "editor", keys: ["ctrl+f"], fixed: true }),
+    command({ id: "editor.findNext", label: "shortcut.findNext", group: "editor", scope: "editor", keys: ["f3"], fixed: true }),
+    command({ id: "editor.gotoLine", label: "shortcut.gotoLine", group: "editor", scope: "editor", keys: ["ctrl+alt+g"], fixed: true }),
+    command({ id: "editor.selectMatches", label: "shortcut.selectMatches", group: "editor", scope: "editor", keys: ["ctrl+shift+l"], fixed: true }),
+    command({ id: "editor.cursorAbove", label: "shortcut.cursorAbove", group: "editor", scope: "editor", keys: ["ctrl+alt+up"], fixed: true }),
+    command({ id: "editor.cursorBelow", label: "shortcut.cursorBelow", group: "editor", scope: "editor", keys: ["ctrl+alt+down"], fixed: true }),
 
-    command({ id: "result.export", label: "result.export", group: "results", scope: "results", keys: ["ctrl+s"] }),
-    command({ id: "result.import", label: "result.import", group: "results", scope: "results", keys: ["ctrl+o"] }),
     // Outside text fields only: in an editor Ctrl+F is its own search.
     command({ id: "result.search", label: "result.search.focus", group: "results", scope: "results", keys: ["ctrl+f"], inputs: false }),
     command({ id: "result.importClipboard", label: "result.importClipboard", group: "results", scope: "results", keys: ["ctrl+shift+v"], inputs: false }),
+    // The field dialogs, with the keys.
+    command({ id: "field.add", label: "field.title.add", group: "results", scope: "resultTree", keys: ["ctrl+shift+n"] }),
+    command({ id: "field.edit", label: "field.title.edit", group: "results", scope: "resultTree", keys: ["ctrl+shift+e"] }),
+    command({ id: "field.rename", label: "field.title.rename", group: "results", scope: "resultTree", keys: ["ctrl+alt+e"] }),
+    command({ id: "field.remove", label: "field.title.remove", group: "results", scope: "resultTree", keys: ["alt+delete"] }),
     command({ id: "result.pin", label: "result.pin", group: "results", scope: "resultTree", keys: ["ctrl+p"] }),
     command({ id: "result.expand", label: "result.expand.node", group: "results", scope: "resultTree", keys: ["ctrl+j"] }),
     command({ id: "result.collapse", label: "result.collapse.node", group: "results", scope: "resultTree", keys: ["ctrl+shift+j"] }),
@@ -123,6 +143,21 @@ const LIST = [
     command({ id: "table.hide", label: "table.hide", group: "table", scope: "table", keys: ["ctrl+k"] }),
     command({ id: "table.hideOthers", label: "table.hideOthers", group: "table", scope: "table", keys: ["ctrl+alt+k"] }),
     command({ id: "table.showAll", label: "table.showAll", group: "table", scope: "table", keys: ["ctrl+shift+k"] }),
+    // Sorting, moving and sizing columns, with the keys.
+    command({ id: "table.sortAsc", label: "table.sortAsc", group: "table", scope: "table", keys: ["ctrl+["] }),
+    command({ id: "table.sortDesc", label: "table.sortDesc", group: "table", scope: "table", keys: ["ctrl+]"] }),
+    command({ id: "table.moveLeft", label: "table.moveLeft", group: "table", scope: "table", keys: ["ctrl+alt+arrowleft"] }),
+    command({ id: "table.moveRight", label: "table.moveRight", group: "table", scope: "table", keys: ["ctrl+alt+arrowright"] }),
+    command({ id: "table.autosize", label: "table.autosize", group: "table", scope: "table", keys: ["ctrl+'"] }),
+    command({ id: "table.autosizeAll", label: "table.autosizeAll", group: "table", scope: "table", keys: ["ctrl+shift+'"] }),
+
+    // The stage rows, with the keys (its Ctrl+Enter "change stage" stays "run").
+    command({ id: "stage.add", label: "stage.add", group: "stages", scope: "stages", keys: ["ctrl+b"] }),
+    command({ id: "stage.remove", label: "stage.remove", group: "stages", scope: "stages", keys: ["ctrl+delete"] }),
+    command({ id: "stage.up", label: "stage.up", group: "stages", scope: "stages", keys: ["ctrl+arrowup"] }),
+    command({ id: "stage.down", label: "stage.down", group: "stages", scope: "stages", keys: ["ctrl+arrowdown"] }),
+    command({ id: "stage.toggle", label: "stage.toggle", group: "stages", scope: "stages", keys: ["alt+t"] }),
+    command({ id: "stage.collapse", label: "stage.collapse", group: "stages", scope: "stages", keys: ["ctrl+\\"] }),
 
     command({ id: "tree.drop", label: "keys.command.drop", group: "tree", scope: "tree", keys: ["delete"], fixed: true }),
     command({ id: "tree.copy", label: "collection.copy", group: "tree", scope: "tree", keys: ["ctrl+c"], fixed: true }),

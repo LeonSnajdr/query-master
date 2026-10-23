@@ -6,7 +6,8 @@ import { LOCALES } from "../../i18n/i18n.config";
 import type { AppLocale } from "../../i18n/i18n.config";
 import ChoiceField from "@/components/ChoiceField.vue";
 import KeybindingsTab from "@/components/KeybindingsTab.vue";
-import { RESULT_VIEWS, STARTUPS, startupChoice, useAppearance } from "@/composables/appearance";
+import { AUTO_EXPANDS, DATE_FORMATS, DEFAULT_TABS, JSON_VIEWS, LEGACY_UUIDS, RESULT_VIEWS, STARTUPS, startupChoice, TAB_WIDTHS, TIME_ZONES, useAppearance } from "@/composables/appearance";
+import type { DisplaySetting } from "@/composables/appearance";
 import type { Startup, StartView } from "@/composables/appearance";
 import type { SettingsPage } from "@/composables/dialogs";
 import { THEMES } from "@/plugins/vuetify";
@@ -16,7 +17,7 @@ import { PAGE_SIZES } from "@/stores/tabs";
 /** The settings of the app in two tabs, General and Keyboard shortcuts; each change applies and is kept at once. */
 const open = defineModel<boolean>({ default: false });
 const page = defineModel<SettingsPage>("page", { default: "general" });
-const PAGES: SettingsPage[] = ["general", "keys"];
+const PAGES: SettingsPage[] = ["general", "display", "keys"];
 
 // A tab only selects once it is there; on opening the tabs choose the first, so the page asked for is set again.
 watch(open, async (isOpen) => {
@@ -46,6 +47,32 @@ const startup = computed({
         startupVersion.value++;
     }
 });
+/**
+ * A choice of the tab *Display*, in the preferences: the setting it changes, its
+ * values (labels from `settings.<key>.<value>`) and a model for its field.
+ */
+function displayChoice(key: DisplaySetting, values: readonly (string | number | boolean)[]) {
+    return {
+        key,
+        options: values.map(value => ({ value: String(value), label: t(`settings.${key}.${String(value)}`) })),
+        model: computed({
+            get: () => String((preferences as Record<string, unknown>)[key]),
+            set: (value: string) => setPreferences({ [key]: typeof values[0] === "number" ? Number(value) : typeof values[0] === "boolean" ? value === "true" : value })
+        })
+    };
+}
+const DISPLAY = [
+    displayChoice("defaultTab", DEFAULT_TABS),
+    displayChoice("autoExpand", AUTO_EXPANDS),
+    displayChoice("jsonView", JSON_VIEWS),
+    displayChoice("dateFormat", DATE_FORMATS),
+    displayChoice("timeZone", TIME_ZONES),
+    displayChoice("legacyUuid", LEGACY_UUIDS),
+    displayChoice("numberGrouping", [false, true]),
+    displayChoice("typeColors", [true, false])
+];
+const EDITOR = [displayChoice("tabWidth", TAB_WIDTHS), displayChoice("autoClose", [true, false])];
+
 const startupOptions = computed(() => STARTUPS.map(value => ({ value, label: t(`settings.startup.${value}`) })));
 
 const languageOptions = computed(() => LOCALES.map(value => ({ value, label: t(`language.${value}`) })));
@@ -136,6 +163,40 @@ const fontSizeOptions = FONT_SIZES.map(value => ({ value, label: `${value} px` }
                         </div>
                         <p class="m-0 text-on-surface-variant">
                             {{ $t("settings.note") }}
+                        </p>
+                    </TabsPanel>
+                    <TabsPanel
+                        class="pt-4 max-w-[34rem] flex flex-col gap-4"
+                        value="display"
+                    >
+                        <div class="form-grid grid-cols-[13rem_1fr]!">
+                            <template
+                                v-for="choice in DISPLAY"
+                                :key="choice.key"
+                            >
+                                <span>{{ $t(`settings.${choice.key}`) }}:</span>
+                                <ChoiceField
+                                    v-model="choice.model.value"
+                                    :data-testid="`settings-${choice.key}`"
+                                    :label="$t(`settings.${choice.key}`)"
+                                    :options="choice.options"
+                                />
+                            </template>
+                            <span class="pt-3 border-t border-divider col-span-2 text-on-surface-variant">{{ $t("settings.editor") }}</span>
+                            <template
+                                v-for="choice in EDITOR"
+                                :key="choice.key"
+                            >
+                                <span>{{ $t(`settings.${choice.key}`) }}:</span>
+                                <ChoiceField
+                                    v-model="choice.model.value"
+                                    :label="$t(`settings.${choice.key}`)"
+                                    :options="choice.options"
+                                />
+                            </template>
+                        </div>
+                        <p class="m-0 text-on-surface-variant">
+                            {{ $t("settings.display.note") }}
                         </p>
                     </TabsPanel>
                     <TabsPanel

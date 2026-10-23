@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "select host, port, username, method, key_path from connection_ssh where connection_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "name": "host",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "port",
+        "ordinal": 1,
+        "type_info": "Integer"
+      },
+      {
+        "name": "username",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "method",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "key_path",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6961b9ea5e6ecc5e633c36ffe9b00590b206bcdad249ad0a378a0c43c4fe090d"
+}

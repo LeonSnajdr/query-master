@@ -2,10 +2,11 @@
 import { ButtonRoot } from "@vuetify/v0";
 import { computed, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
+import { preferences } from "@/composables/appearance";
 import { isLink, openLink } from "@/links";
 import { isDoc, scalar, typeOf } from "@/shell/ejson";
 import type { Json, ValueType } from "@/shell/ejson";
-import { dateFormat, dateText, displayText, foldReaches, useResultContext } from "./result-context";
+import { displayText, foldReaches, settingText, useResultContext } from "./result-context";
 import ValueEditor from "./ValueEditor.vue";
 
 /** A line of the result tree: a document, or a field with what lies below it. */
@@ -88,9 +89,8 @@ watch(context.fold, (fold) => {
     if (foldReaches(fold, props.index, props.path)) open.value = fold.open;
 });
 
-const dates = computed(() => dateFormat(locale.value));
 /** Dates as the table shows them; everything else as `displayText`. */
-const text = computed(() => (type.value === "date" ? dateText(props.value, dates.value) : undefined) ?? displayText(props.value));
+const text = computed(() => settingText(props.value, locale.value) ?? displayText(props.value));
 
 // Editing in place: fields of documents that can be written back, also arrays and documents.
 const editing = shallowRef(false);
@@ -111,7 +111,9 @@ function startEdit() {
             @click="context.choose(index, $event, path)"
             @contextmenu="context.menu($event, target)"
             @dblclick="startEdit"
-            :class="root && selected ? 'outline outline-1 -outline-offset-1 outline-primary/70 bg-on-surface/4' : root && context.marked.value.has(index) && context.marked.value.size > 1 ? 'bg-primary/15' : 'hover:bg-on-surface/4'"
+            :class="root && selected ? 'outline outline-1 -outline-offset-1 outline-primary/70 bg-on-surface/4' : root && context.marked.value.has(index) && context.marked.value.size > 1 ? 'bg-primary/15' : !root && selected && context.selectedPath.value === path ? 'bg-primary/15' : 'hover:bg-on-surface/4'"
+            :data-index="index"
+            :data-path="path"
             :data-root="root || undefined"
             class="flex items-center h-[19px] pr-3 whitespace-nowrap"
             data-testid="tree-row"
@@ -162,14 +164,14 @@ function startEdit() {
                 <span
                     v-if="leaf && isLink(value)"
                     @click.ctrl.exact.stop="openLink(value)"
-                    :class="COLORS[type]"
+                    :class="preferences.typeColors ? COLORS[type] : ''"
                     :title="$t('result.link')"
                     class="truncate underline decoration-dotted underline-offset-2 hover:decoration-solid cursor-pointer"
                     data-testid="tree-link"
                 >{{ text }}</span>
                 <span
                     v-else-if="leaf"
-                    :class="COLORS[type]"
+                    :class="preferences.typeColors ? COLORS[type] : ''"
                     class="truncate"
                     data-testid="tree-value"
                 >{{ text }}</span>

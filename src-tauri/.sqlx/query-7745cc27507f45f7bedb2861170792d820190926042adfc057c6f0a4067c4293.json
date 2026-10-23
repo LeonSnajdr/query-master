@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "update connection set group_name = $2 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "7745cc27507f45f7bedb2861170792d820190926042adfc057c6f0a4067c4293"
+}

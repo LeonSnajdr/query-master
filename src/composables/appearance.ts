@@ -15,7 +15,30 @@ const LEGACY_KEYS = { theme: "querymaster:theme", language: "querymaster:languag
 /** The views a result can start in, and the page sizes offered (as in the results toolbar). */
 export const RESULT_VIEWS = ["tree", "table", "json"] as const;
 export type StartView = typeof RESULT_VIEWS[number];
-export const DEFAULTS = { pageSize: 20, resultView: "tree" as StartView, editorFontSize: 13 };
+/** Choices of the display settings, in the preferences. */
+export const DEFAULT_TABS = ["browse", "shell", "aggregate", "sql"] as const;
+export const TIME_ZONES = ["local", "utc"] as const;
+export const DATE_FORMATS = ["local", "iso", "dmy", "mdy"] as const;
+export const LEGACY_UUIDS = ["raw", "dotnet", "java", "python"] as const;
+export const AUTO_EXPANDS = ["none", "first", "all"] as const;
+export const JSON_VIEWS = ["shell", "relaxed", "canonical"] as const;
+export const TAB_WIDTHS = [2, 4, 8] as const;
+
+export const DEFAULTS = {
+    pageSize: 20,
+    resultView: "tree" as StartView,
+    editorFontSize: 13,
+    defaultTab: "browse" as typeof DEFAULT_TABS[number],
+    timeZone: "local" as typeof TIME_ZONES[number],
+    dateFormat: "local" as typeof DATE_FORMATS[number],
+    legacyUuid: "raw" as typeof LEGACY_UUIDS[number],
+    autoExpand: "first" as typeof AUTO_EXPANDS[number],
+    jsonView: "shell" as typeof JSON_VIEWS[number],
+    numberGrouping: false,
+    typeColors: true,
+    tabWidth: 4,
+    autoClose: true
+};
 
 function oneOf<T extends string>(choices: readonly T[], value: string | null | undefined): T | undefined {
     return choices.find(choice => choice === value);
@@ -31,6 +54,9 @@ const language = ref<AppLocale>(detectLanguage());
 export const preferences = reactive({ ...DEFAULTS });
 /** What was chosen, as opposed to what applies: an unset language keeps following the system. */
 const chosen: Setting = { language: null, theme: null, pageSize: null, resultView: null, editorFontSize: null, startup: null };
+
+/** The settings a choice of the dialog changes, besides language, theme and start. */
+export type DisplaySetting = "pageSize" | "resultView" | "editorFontSize" | "startup" | "defaultTab" | "timeZone" | "dateFormat" | "legacyUuid" | "autoExpand" | "jsonView" | "numberGrouping" | "typeColors" | "tabWidth" | "autoClose";
 
 /** What the start does with the tabs of the last session (stage 20). */
 export const STARTUPS = ["ask", "restore", "empty"] as const;
@@ -61,6 +87,16 @@ function apply(): void {
     preferences.pageSize = chosen.pageSize ?? DEFAULTS.pageSize;
     preferences.resultView = oneOf(RESULT_VIEWS, chosen.resultView) ?? DEFAULTS.resultView;
     preferences.editorFontSize = chosen.editorFontSize ?? DEFAULTS.editorFontSize;
+    preferences.defaultTab = oneOf(DEFAULT_TABS, chosen.defaultTab) ?? DEFAULTS.defaultTab;
+    preferences.timeZone = oneOf(TIME_ZONES, chosen.timeZone) ?? DEFAULTS.timeZone;
+    preferences.dateFormat = oneOf(DATE_FORMATS, chosen.dateFormat) ?? DEFAULTS.dateFormat;
+    preferences.legacyUuid = oneOf(LEGACY_UUIDS, chosen.legacyUuid) ?? DEFAULTS.legacyUuid;
+    preferences.autoExpand = oneOf(AUTO_EXPANDS, chosen.autoExpand) ?? DEFAULTS.autoExpand;
+    preferences.jsonView = oneOf(JSON_VIEWS, chosen.jsonView) ?? DEFAULTS.jsonView;
+    preferences.numberGrouping = chosen.numberGrouping ?? DEFAULTS.numberGrouping;
+    preferences.typeColors = chosen.typeColors ?? DEFAULTS.typeColors;
+    preferences.tabWidth = TAB_WIDTHS.find(width => width === chosen.tabWidth) ?? DEFAULTS.tabWidth;
+    preferences.autoClose = chosen.autoClose ?? DEFAULTS.autoClose;
 }
 
 /** Reads the settings from the app's database (call before mounting, so nothing flickers). */
@@ -95,7 +131,7 @@ export function useAppearance() {
     }
 
     /** What new tabs start with and the code font; `null` returns to the app's default. */
-    function setPreferences(change: Partial<Pick<Setting, "pageSize" | "resultView" | "editorFontSize" | "startup">>): void {
+    function setPreferences(change: Partial<Pick<Setting, DisplaySetting>>): void {
         Object.assign(chosen, change);
         apply();
         save();

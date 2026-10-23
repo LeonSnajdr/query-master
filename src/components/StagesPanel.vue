@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
-import { computed, reactive, shallowRef } from "vue";
+import { ButtonRoot, SplitterHandle, SplitterPanel, SplitterRoot, SwitchRoot, SwitchThumb, SwitchTrack } from "@vuetify/v0";
+import { computed, reactive, shallowRef, useTemplateRef } from "vue";
 import { backend } from "@/api";
 import CodeEditor from "@/components/CodeEditor.vue";
 import DropMenu from "@/components/DropMenu.vue";
@@ -56,7 +56,7 @@ const current = shallowRef<number>();
 /** The row of options (`allowDiskUse`, `maxTimeMS` …) shows; it does by itself when it holds some. */
 const showOptions = shallowRef((tab.value.aggregateOptions ?? "").replace(/[\s{}]/g, "") !== "");
 const options = computed({
-    get: () => tab.value.aggregateOptions ?? "{ }",
+    get: () => tab.value.aggregateOptions ?? "{}",
     set: (text: string) => (tab.value.aggregateOptions = text)
 });
 const wholeStatement = () => stagesStatement(tab.value);
@@ -176,7 +176,7 @@ async function formatStages() {
 
 /** The stages a new tab of this kind starts with; runs again. */
 function resetStages() {
-    tab.value.pipeline = isBrowse.value ? browseStages() : [newStage("$match", "{ }")];
+    tab.value.pipeline = isBrowse.value ? browseStages() : [newStage("$match", "{}")];
     tab.value.aggregateOptions = undefined;
     showOptions.value = false;
     current.value = undefined;
@@ -195,6 +195,39 @@ function move(by: -1 | 1) {
     const target = index + by;
     if (index === -1 || target < 0 || target >= stages.value.length) return;
     tab.value.pipeline = moveItem(stages.value, index, target);
+}
+
+/** Stages shown on one line, by id *Collapse editor*; the text stays. */
+const collapsed = reactive(new Set<number>());
+
+function toggleCollapsed(stage: PipelineStage) {
+    if (collapsed.has(stage.id)) collapsed.delete(stage.id);
+    else collapsed.add(stage.id);
+}
+
+/** The text of a collapsed stage on one line. */
+function preview(stage: PipelineStage): string {
+    return stage.text.replace(/\s+/g, " ").trim() || "{}";
+}
+
+const root = useTemplateRef<HTMLElement>("root");
+
+/**
+ * The keys on a stage row (`Ctrl+B`, `Ctrl+Del`, `Ctrl+↑/↓`, `Alt+T`,
+ * `Ctrl+\`). Read before the editor sees them; inside the editor `Ctrl+Del` still deletes a word.
+ */
+function onStageKey(event: KeyboardEvent, stage: PipelineStage) {
+    const inEditor = event.target instanceof Element && event.target.closest(".cm-editor") !== null;
+    current.value = stage.id;
+    if (keymap.matches(event, "stage.toggle")) stage.enabled = !stage.enabled;
+    else if (keymap.matches(event, "stage.up")) move(-1);
+    else if (keymap.matches(event, "stage.down")) move(1);
+    else if (keymap.matches(event, "stage.collapse")) toggleCollapsed(stage);
+    else if (keymap.matches(event, "stage.add")) root.value?.querySelector<HTMLElement>("[data-testid=stage-add]")?.click();
+    else if (!inEditor && keymap.matches(event, "stage.remove")) removeStage();
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
 }
 
 /** The stage being dragged to another place in the pipeline. */
@@ -279,7 +312,10 @@ function createView() {
 </script>
 
 <template>
-    <section class="h-full min-h-0 flex flex-col">
+    <section
+        ref="root"
+        class="h-full min-h-0 flex flex-col"
+    >
         <h1 class="m-0 shrink-0 h-13 flex items-end gap-3 px-5.5 pb-1.5 text-[21px] font-normal text-on-surface whitespace-nowrap overflow-hidden">
             <span :data-testid="isBrowse ? 'browse-title' : 'aggregate-title'">{{ collection }}</span>
             <span
@@ -295,6 +331,17 @@ function createView() {
         <template v-if="layout !== 'results'">
             <div class="h-8 shrink-0 flex items-center gap-0.5 px-5">
                 <IconButton
+                    v-if="tab.runId"
+                    @click="tabs.stop(tab)"
+                    :label="keymap.titled($t('query.stop'), 'query.stop')"
+                    data-testid="query-stop"
+                    icon="i-lucide-square"
+                    tint="text-error"
+                >
+                    {{ $t("query.stop") }}
+                </IconButton>
+                <IconButton
+                    v-else
                     @click="run()"
                     :disabled="tab.running"
                     :icon="tab.running ? 'i-lucide-loader-circle animate-spin' : 'i-lucide-play'"
@@ -319,7 +366,7 @@ function createView() {
                     :label="$t('stage.add')"
                 >
                     <span
-                        :title="$t('stage.add')"
+                        :title="keymap.titled($t('stage.add'), 'stage.add')"
                         class="h-6.5 min-w-6 px-1 inline-flex items-center justify-center rounded-sm text-on-surface hover:bg-on-surface/10"
                         data-testid="stage-add"
                     >
@@ -329,7 +376,7 @@ function createView() {
                 <IconButton
                     @click="removeStage"
                     :disabled="currentIndex === -1"
-                    :label="$t('stage.remove')"
+                    :label="keymap.titled($t('stage.remove'), 'stage.remove')"
                     data-testid="stage-remove"
                     icon="i-lucide-list-x"
                     tint="text-error"
@@ -337,14 +384,14 @@ function createView() {
                 <IconButton
                     @click="move(-1)"
                     :disabled="currentIndex <= 0"
-                    :label="$t('stage.up')"
+                    :label="keymap.titled($t('stage.up'), 'stage.up')"
                     data-testid="stage-up"
                     icon="i-lucide-arrow-up"
                 />
                 <IconButton
                     @click="move(1)"
                     :disabled="currentIndex === -1 || currentIndex === stages.length - 1"
-                    :label="$t('stage.down')"
+                    :label="keymap.titled($t('stage.down'), 'stage.down')"
                     data-testid="stage-down"
                     icon="i-lucide-arrow-down"
                 />
@@ -402,15 +449,24 @@ function createView() {
                     icon="i-lucide-list-restart"
                 />
             </div>
+        </template>
 
-            <div
-                class="shrink-0 max-h-[50vh] overflow-y-auto mx-5 mt-1.5 mb-1 border-t border-divider"
+        <SplitterRoot
+            class="grow min-h-0"
+            orientation="vertical"
+        >
+            <SplitterPanel
+                v-if="layout !== 'results'"
+                :defaultSize="30"
+                :minSize="8"
+                class="min-h-0 overflow-y-auto mx-5 mt-1.5 mb-1 border-t border-divider"
                 data-stage-list
             >
                 <div
                     v-for="stage in stages"
                     :key="stage.id"
                     @focusin="focusStage(stage)"
+                    @keydown.capture="onStageKey($event, stage)"
                     @mousedown="current = stage.id"
                     :class="[current === stage.id ? 'border-l-primary' : 'border-l-transparent', draggedId === stage.id ? 'bg-primary/10' : '']"
                     :data-stage-id="stage.id"
@@ -432,6 +488,7 @@ function createView() {
                         :label="$t('stage.change')"
                     >
                         <span
+                            :class="stage.enabled ? '' : 'opacity-40'"
                             :title="$t('stage.change')"
                             class="w-36 shrink-0 h-6.5 mt-0.5 pl-4 pr-1 flex items-center gap-1 text-[13px] font-semibold text-on-surface-strong hover:text-primary"
                             data-testid="stage-operator"
@@ -445,7 +502,18 @@ function createView() {
                             />
                         </span>
                     </DropMenu>
+                    <ButtonRoot
+                        v-if="collapsed.has(stage.id)"
+                        @click="toggleCollapsed(stage)"
+                        :class="stage.enabled ? '' : 'opacity-40'"
+                        :title="keymap.titled($t('stage.collapse'), 'stage.collapse')"
+                        class="grow min-w-0 h-6.5 mt-0.5 px-1.5 text-left truncate font-mono text-[13px] text-on-surface-variant hover:text-on-surface-strong"
+                        data-testid="stage-preview-text"
+                    >
+                        {{ preview(stage) }}
+                    </ButtonRoot>
                     <div
+                        v-else
                         :class="stage.enabled ? '' : 'opacity-40'"
                         :style="{ height: height(stage) }"
                         class="grow min-w-0"
@@ -460,17 +528,24 @@ function createView() {
                         />
                     </div>
                     <IconButton
+                        @click="toggleCollapsed(stage)"
+                        :icon="collapsed.has(stage.id) ? 'i-lucide-chevrons-up-down' : 'i-lucide-chevrons-down-up'"
+                        :label="keymap.titled($t('stage.collapse'), 'stage.collapse')"
+                        class="shrink-0 ml-1 mt-0.5"
+                        data-testid="stage-collapse"
+                    />
+                    <IconButton
                         @click="toggleJson(stage)"
                         :active="stage.json === true"
                         :data-testid="`stage-json-${stage.operator}`"
                         :label="$t('stage.json', { name: stage.operator })"
-                        class="shrink-0 ml-1 mt-0.5"
+                        class="shrink-0 mt-0.5"
                         icon="i-lucide-braces"
                     />
                     <SwitchRoot
                         v-model="stage.enabled"
                         :label="$t('stage.enabled', { name: stage.operator })"
-                        :title="$t('stage.enabled', { name: stage.operator })"
+                        :title="keymap.titled($t('stage.enabled', { name: stage.operator }), 'stage.toggle')"
                         class="shrink-0 mx-3 mt-1.5"
                     >
                         <SwitchTrack class="w-7 h-4 flex items-center px-0.5 rounded-full bg-on-surface/15 data-[state=checked]:bg-primary/60">
@@ -500,13 +575,25 @@ function createView() {
                         singleLine
                     />
                 </div>
-            </div>
-        </template>
-
-        <ResultsPanel
-            v-if="layout !== 'editor'"
-            :tabId
-            class="grow"
-        />
+            </SplitterPanel>
+            <SplitterHandle
+                v-if="layout === 'default'"
+                :label="$t('layout.resize')"
+                class="relative z-10 h-1.5 -my-[3px] shrink-0 flex items-center justify-center border-t border-divider cursor-row-resize text-on-surface-variant hover:bg-primary/25"
+            >
+                <span class="i-lucide-ellipsis size-3.5" />
+            </SplitterHandle>
+            <SplitterPanel
+                v-if="layout !== 'editor'"
+                :defaultSize="70"
+                :minSize="10"
+                class="min-h-0 flex flex-col"
+            >
+                <ResultsPanel
+                    :tabId
+                    class="grow"
+                />
+            </SplitterPanel>
+        </SplitterRoot>
     </section>
 </template>

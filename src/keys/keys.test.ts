@@ -119,10 +119,10 @@ describe("export and import", () => {
         const text = JSON.stringify({
             querymaster: "keybindings",
             version: 1,
-            bindings: { "tab.browse": ["Ctrl+B"], "tab.diagram": ["ctrl+d"], "tab.sql": ["alt+f4", "ctrl+alt+s"], "editor.undo": ["ctrl+u"], "tab.duplicate": ["ctrl+b"] }
+            bindings: { "tab.browse": ["Ctrl+Shift+B"], "tab.diagram": ["ctrl+d"], "tab.sql": ["alt+f4", "ctrl+alt+s"], "editor.undo": ["ctrl+u"], "tab.duplicate": ["ctrl+shift+b"] }
         });
         const plan = planImport({}, text);
-        expect(plan.changes).toEqual({ "tab.browse": ["ctrl+b"], "tab.sql": ["ctrl+alt+s"], "tab.duplicate": ["ctrl+b"] });
+        expect(plan.changes).toEqual({ "tab.browse": ["ctrl+shift+b"], "tab.sql": ["ctrl+alt+s"], "tab.duplicate": ["ctrl+shift+b"] });
         expect(plan.unknown).toEqual(["tab.diagram"]);
         expect(plan.skipped).toEqual([{ id: "tab.sql", hotkey: "alt+f4" }, { id: "editor.undo", hotkey: "ctrl+u" }]);
         expect(plan.conflicts).toEqual(["tab.browse", "tab.duplicate"]);

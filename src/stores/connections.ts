@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, reactive, ref, shallowReactive, shallowRef, watch } from "vue";
 import { backend, errorMessage } from "@/api";
 import type { Profile, ProfileInput } from "@/api";
+import { allFolders, folderPath } from "@/connection/folders";
 import { isDoc, scalar } from "@/shell/ejson";
 import type { Doc, Json } from "@/shell/ejson";
 import type { Environment } from "@/shell/guard";
@@ -109,10 +110,13 @@ export const useConnectionsStore = defineStore("connections", () => {
 
     async function load(): Promise<void> {
         profiles.value = [...await backend.listConnections(), ...transient];
+        await loadFolders();
     }
 
     /** The saved connections, without those from a typed string. */
     const saved = computed(() => profiles.value.filter(profile => !isTransient(profile.id)));
+    /** *Recent connections*: the last used first, then the others by name. */
+    const recent = computed(() => [...saved.value].sort((a, b) => (b.dateLastUsed ?? "").localeCompare(a.dateLastUsed ?? "")));
 
     function isTransient(id: string): boolean {
         return transient.some(profile => profile.id === id);
@@ -177,6 +181,41 @@ export const useConnectionsStore = defineStore("connections", () => {
      * Marks a connection as development, test or production. Production paints it red, unless it
      * has a color already.
      */
+    /** Moves a saved connection into a group of the list (empty: none). */
+    async function setGroup(id: string, group: string): Promise<void> {
+        await backend.setConnectionGroup(id, group.trim());
+        await load();
+    }
+
+    /** The folders kept by the backend, also empty ones; with those the connections name: `groups`. */
+    const keptFolders = ref<string[]>([]);
+    /** Every folder of the saved connections, nested with "/", sorted. */
+    const groups = computed(() => allFolders(keptFolders.value, saved.value));
+
+    async function loadFolders(): Promise<void> {
+        keptFolders.value = await backend.listConnectionFolders();
+    }
+
+    /** A folder of connections, kept while it is empty; `parent` puts it inside another. */
+    async function addGroup(name: string, parent = ""): Promise<string> {
+        const path = folderPath(parent ? `${parent}/${name}` : name);
+        await backend.addConnectionFolder(path);
+        await loadFolders();
+        return path;
+    }
+
+    /** Renames or moves a folder with all it holds; `to` is its whole new path. */
+    async function renameGroup(from: string, to: string): Promise<void> {
+        await backend.renameConnectionFolder(from, to);
+        await Promise.all([load(), loadFolders()]);
+    }
+
+    /** Takes a folder away; its connections and folders lie one level up then. */
+    async function deleteGroup(name: string): Promise<void> {
+        await backend.deleteConnectionFolder(name);
+        await Promise.all([load(), loadFolders()]);
+    }
+
     async function setEnvironment(id: string, environment: Environment | null): Promise<void> {
         await backend.setConnectionEnvironment(id, environment);
         await paintProduction(id, environment);
@@ -197,16 +236,21 @@ export const useConnectionsStore = defineStore("connections", () => {
     async function loadDatabases(id: string): Promise<void> {
         const session = sessions[id];
         if (!session) return;
+        const profile = profiles.value.find(item => item.id === id);
+        // *Visible databases*: those named for the connection come along.
+        const visible = (profile?.visibleDatabases ?? "").split(",").map(name => name.trim()).filter(Boolean);
         let names: string[];
         try {
-            const reply = await backend.runCommand(id, "admin", { listDatabases: 1, nameOnly: true });
-            names = (reply.databases as Doc[]).map(database => String(database.name)).sort((a, b) => a.localeCompare(b));
+            // `authorizedDatabases`: a user without the right to list all gets those they may use.
+            const reply = await backend.runCommand(id, "admin", { listDatabases: 1, nameOnly: true, authorizedDatabases: true });
+            names = (reply.databases as Doc[]).map(database => String(database.name));
         } catch (error) {
             // A user who may not list databases still sees the one their connection string names.
-            const named = /^[^/]+\/\/[^/]+\/([^/?]+)/.exec(profiles.value.find(profile => profile.id === id)?.address ?? "")?.[1];
-            if (!named) throw error;
-            names = [decodeURIComponent(named)];
+            const named = /^[^/]+\/\/[^/]+\/([^/?]+)/.exec(profile?.address ?? "")?.[1];
+            if (!named && visible.length === 0) throw error;
+            names = named ? [decodeURIComponent(named)] : [];
         }
+        names = [...new Set([...names, ...visible])].sort((a, b) => a.localeCompare(b));
         session.databases = names.map(name => session.databases.find(database => database.name === name) ?? { name, open: false, loading: false, details: {}, types: {} });
         await Promise.all(session.databases.filter(database => database.open).map(database => loadCollections(id, database.name)));
     }
@@ -240,6 +284,9 @@ export const useConnectionsStore = defineStore("connections", () => {
 
     async function connect(id: string): Promise<void> {
         await open(id, () => backend.connect(id));
+        // The Rust side noted the time too; the start page sorts by it at once.
+        const profile = profiles.value.find(item => item.id === id);
+        if (profile && sessions[id]) profile.dateLastUsed = new Date().toISOString();
     }
 
     /** Tries a connection again that is open, failed or still being opened. */
@@ -289,7 +336,20 @@ export const useConnectionsStore = defineStore("connections", () => {
     }
 
     /** Folds every connection, database and collection of the tree. */
+    /** Folders of connections closed in the tree; all are open at first. */
+    const closedFolders = shallowRef(new Set<string>());
+
+    function toggleFolderOpen(path: string): void {
+        const next = new Set(closedFolders.value);
+        if (next.has(path)) next.delete(path);
+        else next.add(path);
+        closedFolders.value = next;
+    }
+
+    /** Folds the whole tree: folders of connections, connections, databases, their folders, collections. */
     function collapseAll(): void {
+        closedFolders.value = new Set(groups.value);
+        useNotesStore().closeFolders();
         for (const session of Object.values(sessions)) {
             session.open = false;
             for (const database of session.databases) {
@@ -401,5 +461,5 @@ export const useConnectionsStore = defineStore("connections", () => {
         return sampleValues.get(`${id}/${database}/${collection}`)?.get(field);
     }
 
-    return { profiles, saved, sessions, connecting, failed, selected, marked, inTree, load, save, setEnvironment, environmentOf, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, rememberSample, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll };
+    return { profiles, saved, recent, groups, setGroup, addGroup, renameGroup, deleteGroup, sessions, connecting, failed, selected, marked, inTree, load, save, setEnvironment, environmentOf, remove, connect, reconnect, connectUri, isTransient, disconnect, loadDatabases, loadCollections, loadIndexes, collectionsOf, fieldsOf, rememberSample, sampleValuesOf, allowedValuesOf, searchValues, valueSearchOf, searchedValuesOf, collapseAll, closedFolders, toggleFolderOpen };
 });

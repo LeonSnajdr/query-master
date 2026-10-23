@@ -5,6 +5,7 @@ import type { ExportOutcome } from "@/api";
 import { useMessages } from "@/composables/messages";
 import { useNotices } from "@/composables/notices";
 import { useWriteGuard } from "@/composables/writeGuard";
+import { useDialogs } from "@/composables/dialogs";
 import { ShellError } from "@/shell/message";
 import { useConnectionsStore } from "@/stores/connections";
 import type { TreeSelection } from "@/stores/connections";
@@ -34,11 +35,14 @@ const wizard = reactive({
         csv: { ...DEFAULT_CSV },
         sql: { ...DEFAULT_SQL },
         columns: {},
+        names: {},
         database: { connectionId: "", database: "", insertMode: "overwrite", copyIndexes: true }
     } as ExportState,
     progress: [] as RowProgress[],
     runId: undefined as string | undefined,
-    outcome: undefined as ExportOutcome | undefined
+    outcome: undefined as ExportOutcome | undefined,
+    /** The collections of the selection are still being read (the rows follow). */
+    loading: false
 });
 
 /** The export wizard: shared by the menus, the tree and the results. */
@@ -49,13 +53,14 @@ export function useExportWizard() {
     const connections = useConnectionsStore();
     const notes = useNotesStore();
     const writeGuard = useWriteGuard();
+    const dialogs = useDialogs();
     const busy = shallowRef(false);
 
     /**
-     * The collections a selection stands for: of the connection, the database, or the one. Of a
-     * connection or database, the server's own `system.*` collections are left out (the profiler's
-     * entries, the definitions of views), silently as mongodump: they are written by the server and
-     * cannot be imported. Chosen on its own, such a collection is exported.
+     * The collections a selection stands for: of the connection, the database, or the one. The
+     * server's own `system.*` collections come along (`admin.system.users` and
+     * `roles` belong to a full backup); they can be removed from the rows. Into a database they
+     * cannot be written: the tile Database leaves them out (`withoutSystem`).
      */
     async function collectionsOf(at: TreeSelection): Promise<{ database: string; collection: string }[]> {
         const session = connections.sessions[at.connectionId];
@@ -68,9 +73,7 @@ export function useExportWizard() {
                 continue;
             }
             await connections.loadCollections(at.connectionId, database).catch(() => undefined);
-            for (const collection of connections.collectionsOf(at.connectionId, database)) {
-                if (!isSystemCollection(collection)) found.push({ database, collection });
-            }
+            for (const collection of connections.collectionsOf(at.connectionId, database)) found.push({ database, collection });
         }
         return found;
     }
@@ -87,23 +90,27 @@ export function useExportWizard() {
         if (!at || busy.value || wizard.runId) return;
         busy.value = true;
         try {
-            const collections: { database: string; collection: string }[] = [];
-            for (const item of all) collections.push(...await collectionsOf(item));
             preset ??= readExportPreset(await backend.getPreset("export").catch(() => null));
-            Object.assign(wizard, { open: true, step: "rows", progress: [], outcome: undefined });
+            // Open at once: the rows follow while the collections are read.
+            Object.assign(wizard, { open: true, step: "rows", progress: [], outcome: undefined, loading: true });
             // Always JSON into a folder first; the options are those of the last run.
             Object.assign(wizard.state, {
                 connectionId: at.connectionId,
                 format: "json",
                 target: "directory",
                 path: preset.folder,
-                rows: rowsFor("json", collections.map(item => ({ ...item, filter }))),
+                rows: [],
                 json: { ...preset.json },
                 csv: { ...preset.csv },
                 sql: { ...preset.sql },
-                columns: {}
+                columns: {},
+                names: {}
             });
             wizard.state.database = { connectionId: at.connectionId, database: "", insertMode: preset.insertMode, copyIndexes: preset.copyIndexes };
+            const collections: { database: string; collection: string }[] = [];
+            for (const item of all) collections.push(...await collectionsOf(item));
+            wizard.state.rows = rowsFor("json", collections.map(item => ({ ...item, filter })));
+            wizard.loading = false;
             if (target) {
                 setFormat("database");
                 // Into the database it comes from, a copy needs another name.
@@ -119,6 +126,7 @@ export function useExportWizard() {
             report(error);
         } finally {
             busy.value = false;
+            wizard.loading = false;
         }
     }
 
@@ -126,6 +134,15 @@ export function useExportWizard() {
         wizard.state.rows = switchFormat(wizard.state.rows, wizard.state.format, format);
         wizard.state.format = format;
         wizard.step = "rows";
+        if (format === "database") withoutSystem();
+    }
+
+    /** Into a database the server's own collections cannot be written: their rows go, with a notice. */
+    function withoutSystem() {
+        const system = wizard.state.rows.filter(row => isSystemCollection(row.collection));
+        if (system.length === 0) return;
+        wizard.state.rows = wizard.state.rows.filter(row => !isSystemCollection(row.collection));
+        notices.notify({ kind: "info", title: t("export.skippedSystem", system.length), detail: system.map(row => `${row.database}.${row.collection}`).join(", ") });
     }
 
     function addRows(rows: ExportRow[]) {
@@ -145,6 +162,9 @@ export function useExportWizard() {
             return;
         }
         if (state.format === "database" && !await writeGuard.confirmJob(state.database.connectionId, state.database.database, t("export.menu"))) return;
+        // *Replace* drops collections: said once, with their names, before anything happens.
+        const replaced = state.format === "database" ? state.rows.filter(row => row.replace).map(row => `${state.database.database}.${row.output}`) : [];
+        if (replaced.length > 0 && !await dialogs.confirm({ title: t("export.replace.title"), text: t("export.replace.text", { names: replaced.join(", ") }, replaced.length), action: t("export.target.mode.replace") })) return;
         let job;
         try {
             job = exportJob(state);

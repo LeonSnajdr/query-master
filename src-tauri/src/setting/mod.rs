@@ -22,6 +22,26 @@ pub struct Setting {
     pub editor_font_size: Option<i64>,
     /// `ask`, `restore` or `empty`: the tabs of the last session at the start.
     pub startup: Option<String>,
+    /// What a double click on a collection opens: `browse`, `shell`, `aggregate`, `sql`.
+    pub default_tab: Option<String>,
+    /// Dates in `local` time or `utc`.
+    pub time_zone: Option<String>,
+    /// `local`, `iso`, `dmy` or `mdy`.
+    pub date_format: Option<String>,
+    /// How binary subtype 3 shows: `raw`, or as the UUID of `dotnet`, `java`, `python`.
+    pub legacy_uuid: Option<String>,
+    /// Documents of a result unfolded at first: `none`, `first`, `all`.
+    pub auto_expand: Option<String>,
+    /// The view Json: `shell`, `relaxed` or `canonical` Extended JSON.
+    pub json_view: Option<String>,
+    /// Numbers with thousands separators.
+    pub number_grouping: Option<bool>,
+    /// Values coloured by type.
+    pub type_colors: Option<bool>,
+    /// Spaces of a tab in the editor.
+    pub tab_width: Option<i64>,
+    /// The editor closes brackets and quotes.
+    pub auto_close: Option<bool>,
 }
 
 pub async fn get(pool: &SqlitePool) -> Result<Setting> {
