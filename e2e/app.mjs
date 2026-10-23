@@ -289,7 +289,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
     });
 
     await step("a capped collection, its validator and a view are made through the dialogs", async () => {
-        const database = page.locator("[data-testid=database-row]", { hasText: DATABASE });
+        const database = page.locator("[data-testid=database-row]", { hasText: DATABASE }).first();
         await database.click({ button: "right" });
         await chooseMenu("Create collection");
         await id("collection-name").fill(`${COLLECTION}_capped`);
@@ -673,8 +673,9 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await id("prompt-submit").click();
         await row.locator("[data-testid=note-comment]", { hasText: "archive" }).waitFor();
         await row.click({ button: "right" });
-        await chooseMenu("Read-only");
-        await row.locator("[data-testid=note-readonly]").waitFor();
+        await openGroup("Read-only");
+        await chooseMenu("Always read-only");
+        await row.locator("[data-testid=note-readonly][data-state=own]").waitFor();
         await row.click({ button: "right" });
         await shot("tree-notes");
         await page.keyboard.press("Escape");
@@ -693,8 +694,28 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.ok(await lock.isDisabled());
         await page.keyboard.press("Control+w");
 
+        // Marked writable, it stays writable below a read-only database.
+        const database = page.locator("[data-testid=database-row]", { hasText: DATABASE }).first();
+        await database.click({ button: "right" });
+        await openGroup("Read-only");
+        await chooseMenu("Always read-only");
         await row.click({ button: "right" });
-        await chooseMenu("Read-only");
+        await openGroup("Read-only");
+        await chooseMenu("Always writable");
+        await row.locator("[data-testid=note-readonly][data-state=writable]").waitFor();
+        await row.dblclick();
+        await visible("browse-title").waitFor();
+        assert.equal(await visible("query-readonly").getAttribute("aria-pressed"), "false");
+        await page.keyboard.press("Control+w");
+
+        // As above again, it takes read-only from the database; then the database lets go too.
+        await row.click({ button: "right" });
+        await openGroup("Read-only");
+        await chooseMenu("As above");
+        await row.locator("[data-testid=note-readonly][data-state=inherited]").waitFor();
+        await database.click({ button: "right" });
+        await openGroup("Read-only");
+        await chooseMenu("As above");
         await row.locator("[data-testid=note-readonly]").waitFor({ state: "detached" });
         await row.click({ button: "right" });
         await chooseMenu("Remove comment");

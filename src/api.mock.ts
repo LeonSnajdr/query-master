@@ -29,8 +29,8 @@ function inFolderOf(path: string, database: string): boolean {
 const keybindings: Record<string, string[]> = {};
 let setting: Setting = { language: null, theme: null, pageSize: null, resultView: null, editorFontSize: null, startup: null };
 const savedQueries: SavedQuery[] = [];
-/** `?session` starts with a last session: a tab on the made-up data and one on the unreachable server. */
-let session: SessionTab[] = location.search.includes("session")
+/** `?session` starts with a last session: a tab on the made-up data and one on the unreachable server. Tests have no `location`. */
+let session: SessionTab[] = typeof location !== "undefined" && location.search.includes("session")
     ? [
             { active: true, connectionId: "demo", content: { kind: "shell", database: "shop", text: "db.orders.find({})", view: "tree", pageSize: 20 } },
             { active: false, connectionId: "offline", content: { kind: "shell", database: "test", text: "db.stats()", view: "tree", pageSize: 20 } }
@@ -197,7 +197,7 @@ export const mockBackend: Backend = {
     saveTreeNote: async (connectionId, node) => {
         const own = notes.get(connectionId) ?? new Map<string, TreeNote>();
         notes.set(connectionId, own);
-        if (node.color || node.comment || node.readonly || node.folder) own.set(node.path, node);
+        if (node.color || node.comment || node.readonly !== null || node.folder) own.set(node.path, node);
         else own.delete(node.path);
     },
     renameTreeNotes: async () => undefined,

@@ -322,9 +322,8 @@ export function useActions() {
         if (at) await notes.change(notePlace(at), { comment: null }).catch(report);
     }
 
-    async function toggleReadonly(at = target.value) {
-        if (!at) return;
-        const readonly = notes.noteOf(notePlace(at))?.readonly !== true;
+    /** `null` takes what the row above has; `false` is writable even below a read-only row. */
+    async function setReadonly(at: TreeSelection, readonly: boolean | null) {
         await notes.change(notePlace(at), { readonly }).catch(report);
     }
 
@@ -426,9 +425,7 @@ export function useActions() {
         for (const row of rows) await setColor(row, color);
     }
 
-    /** Read-only for all when one of them is not yet, else off for all. */
-    async function toggleReadonlyMany(rows: TreeSelection[]) {
-        const readonly = !rows.every(row => notes.noteOf(notePlace(row))?.readonly === true);
+    async function setReadonlyMany(rows: TreeSelection[], readonly: boolean | null) {
         for (const row of rows) await notes.change(notePlace(row), { readonly }).catch(report);
     }
 
@@ -520,8 +517,8 @@ export function useActions() {
         target, hasConnection, hasDatabase, hasCollection,
         openShell, browse, schema, aggregation, openSql, exportWizard, importWizard, collectionStats, databaseStats, collectionsStats, serverStatus, serverLog, manageUsers, manageRoles, openGridFs, createBucket, indexes,
         createCollection, createView, editValidator, createDatabase, renameCollection, dropCollection, dropDatabase, createIndex, duplicateIndex, recreateIndex, toggleIndexHidden, dropIndex, indexInfo, indexOf,
-        setColor, editComment, removeComment, toggleReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,
-        dropMany, browseMany, setColorMany, toggleReadonlyMany, moveManyToFolder, toggleIndexesHidden, refreshMany, disconnectMany,
+        setColor, editComment, removeComment, setReadonly, writable, addFolder, renameFolder, moveFolder, deleteFolder, moveToFolder,
+        dropMany, browseMany, setColorMany, setReadonlyMany, moveManyToFolder, toggleIndexesHidden, refreshMany, disconnectMany,
         refresh, connect, reconnect, connectFromUri, disconnect, viewUri, connectionSettings, deleteConnection,
         newConnection: () => dialogs.editConnection()
     };

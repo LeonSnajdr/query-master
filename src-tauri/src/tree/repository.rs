@@ -11,7 +11,7 @@ pub async fn list(pool: &SqlitePool, connection_id: Uuid) -> Result<Vec<TreeNode
     let nodes = sqlx::query_as!(
         TreeNode,
         r#"
-            select path, color, comment, readonly as "readonly: bool", folder
+            select path, color, comment, readonly as "readonly?: bool", folder
             from tree_node
             where connection_id = $1
             order by path
@@ -210,7 +210,7 @@ pub async fn delete_folder(
     sqlx::query!(
         r#"
             delete from tree_node
-            where connection_id = $1 and color is null and comment is null and readonly = 0 and folder is null
+            where connection_id = $1 and color is null and comment is null and readonly is null and folder is null
         "#,
         connection_id
     )
@@ -255,7 +255,7 @@ mod tests {
         id
     }
 
-    fn node(path: &str, color: Option<&str>, readonly: bool) -> TreeNode {
+    fn node(path: &str, color: Option<&str>, readonly: Option<bool>) -> TreeNode {
         TreeNode {
             path: path.into(),
             color: color.map(Into::into),
@@ -273,19 +273,34 @@ mod tests {
     async fn keeps_changes_and_forgets_empty_rows() {
         let pool = db::memory_pool().await;
         let id = connection(&pool).await;
-        save(&pool, id, node("shop", Some("red"), false))
+        save(&pool, id, node("shop", Some("red"), None))
             .await
             .unwrap();
-        save(&pool, id, node("shop", Some("blue"), true))
+        save(&pool, id, node("shop", Some("blue"), Some(true)))
             .await
             .unwrap();
         assert_eq!(
             list_nodes(&pool, id).await.unwrap(),
-            [node("shop", Some("blue"), true)]
+            [node("shop", Some("blue"), Some(true))]
         );
 
+        // Writable below a read-only row is a note of its own.
+        save(&pool, id, node("shop/orders", None, Some(false)))
+            .await
+            .unwrap();
+        assert_eq!(
+            list_nodes(&pool, id).await.unwrap(),
+            [
+                node("shop", Some("blue"), Some(true)),
+                node("shop/orders", None, Some(false))
+            ]
+        );
+        save(&pool, id, node("shop/orders", None, None))
+            .await
+            .unwrap();
+
         // Blank text is no note; without any note the row goes.
-        let mut blank = node("shop", Some("  "), false);
+        let mut blank = node("shop", Some("  "), None);
         blank.comment = Some(String::new());
         save(&pool, id, blank).await.unwrap();
         assert!(list_nodes(&pool, id).await.unwrap().is_empty());
@@ -302,7 +317,7 @@ mod tests {
             "shopping/x",
             "sh_p",
         ] {
-            save(&pool, id, node(path, Some("red"), false))
+            save(&pool, id, node(path, Some("red"), None))
                 .await
                 .unwrap();
         }
@@ -346,10 +361,10 @@ mod tests {
         add_folder(&pool, id, &archive).await.unwrap();
         // Adding it again changes nothing.
         add_folder(&pool, id, &archive).await.unwrap();
-        let mut old = node("shop/orders_2023", None, false);
+        let mut old = node("shop/orders_2023", None, None);
         old.folder = Some("archive".into());
         save(&pool, id, old).await.unwrap();
-        let mut marked = node("shop/orders_2022", Some("red"), false);
+        let mut marked = node("shop/orders_2022", Some("red"), None);
         marked.folder = Some("archive".into());
         save(&pool, id, marked).await.unwrap();
 
@@ -375,7 +390,7 @@ mod tests {
         assert!(folders(&pool, id).await.unwrap().is_empty());
         assert_eq!(
             list_nodes(&pool, id).await.unwrap(),
-            [node("shop/orders_2022", Some("red"), false)]
+            [node("shop/orders_2022", Some("red"), None)]
         );
 
         // Dropping the database takes its folders along.
@@ -396,13 +411,13 @@ mod tests {
         for name in ["reports", "reports/2024", "reports/2024/q1", "reportsx"] {
             add_folder(&pool, id, &folder(name)).await.unwrap();
         }
-        let mut sales = node("shop/sales", None, false);
+        let mut sales = node("shop/sales", None, None);
         sales.folder = Some("reports/2024/q1".into());
         save(&pool, id, sales).await.unwrap();
-        let mut costs = node("shop/costs", Some("red"), false);
+        let mut costs = node("shop/costs", Some("red"), None);
         costs.folder = Some("reports/2024".into());
         save(&pool, id, costs).await.unwrap();
-        let mut other = node("shop/other", None, false);
+        let mut other = node("shop/other", None, None);
         other.folder = Some("reportsx".into());
         save(&pool, id, other).await.unwrap();
         let folder_of = |nodes: &[TreeNode], path: &str| {
@@ -464,11 +479,11 @@ mod tests {
             name: "work".into(),
         };
         add_folder(&pool, id, &top).await.unwrap();
-        let mut shop = node("shop", None, false);
+        let mut shop = node("shop", None, None);
         shop.folder = Some("work".into());
         save(&pool, id, shop).await.unwrap();
         // A collection in a folder of the same name inside a database is another folder.
-        let mut orders = node("shop/orders", None, false);
+        let mut orders = node("shop/orders", None, None);
         orders.folder = Some("work".into());
         save(&pool, id, orders).await.unwrap();
 

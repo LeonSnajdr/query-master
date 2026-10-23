@@ -83,7 +83,8 @@ export interface TreeNote {
     path: string;
     color: string | null;
     comment: string | null;
-    readonly: boolean;
+    /** null takes what the row above has; false is writable even below a read-only row. */
+    readonly: boolean | null;
     /** The folder of the database a collection is shown in. */
     folder: string | null;
 }

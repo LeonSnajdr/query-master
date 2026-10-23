@@ -30,9 +30,26 @@ export function pathsAbove(place: NotePlace): string[] {
     return paths;
 }
 
-/** The row, or one above it, is read-only. */
+/** A path as the user reads it, `shop.orders`; undefined for the connection, which has no path. */
+export function notePathLabel(path: string): string | undefined {
+    return path === "" ? undefined : path.replace("/", ".");
+}
+
+/**
+ * Whether a row is read-only, and the path of the row that says so: the nearest one, itself first,
+ * that is marked read-only or writable. `from` is undefined when none is: then it is writable.
+ */
+export function readonlyFrom(notes: Record<string, TreeNote> | undefined, place: NotePlace): { readonly: boolean; from?: string } {
+    for (const path of pathsAbove(place).reverse()) {
+        const readonly = notes?.[path]?.readonly;
+        if (readonly === true || readonly === false) return { readonly, from: path };
+    }
+    return { readonly: false };
+}
+
+/** The row is read-only: marked so itself, or taken from the nearest row above that says. */
 export function readonlyIn(notes: Record<string, TreeNote> | undefined, place: NotePlace): boolean {
-    return pathsAbove(place).some(path => notes?.[path]?.readonly === true);
+    return readonlyFrom(notes, place).readonly;
 }
 
 /**
@@ -114,7 +131,8 @@ function grouped<Kind extends "collection" | "database">(
 
 /**
  * Colors, comments and read-only marks of the tree, per connection, kept in the app's database.
- * Read-only on a row holds for everything below it: tabs, shells and the tree's own actions.
+ * Read-only on a row holds for everything below it (tabs, shells and the tree's own actions) up
+ * to a row below marked writable again.
  */
 export const useNotesStore = defineStore("notes", () => {
     const notes = reactive<Record<string, Record<string, TreeNote>>>({});
@@ -194,13 +212,17 @@ export const useNotesStore = defineStore("notes", () => {
         return readonlyIn(notes[place.connectionId], place);
     }
 
+    function readonlySource(place: NotePlace): { readonly: boolean; from?: string } {
+        return readonlyFrom(notes[place.connectionId], place);
+    }
+
     /** Changes part of the note of a row and keeps it; a note left empty is forgotten. */
     async function change(place: NotePlace, update: Partial<Omit<TreeNote, "path">>): Promise<void> {
         const path = notePath(place);
-        const note: TreeNote = { path, color: null, comment: null, readonly: false, folder: null, ...noteOf(place), ...update };
+        const note: TreeNote = { path, color: null, comment: null, readonly: null, folder: null, ...noteOf(place), ...update };
         await backend.saveTreeNote(place.connectionId, note);
         const own = notes[place.connectionId] ??= {};
-        if (note.color || note.comment || note.readonly || note.folder) own[path] = note;
+        if (note.color || note.comment || note.readonly !== null || note.folder) own[path] = note;
         else delete own[path];
     }
 
@@ -216,5 +238,5 @@ export const useNotesStore = defineStore("notes", () => {
         await load(connectionId);
     }
 
-    return { notes, folders, load, noteOf, isReadonly, change, rename, remove, foldersOf, isOpen, toggleFolder, addFolder, renameFolder, moveFolder, deleteFolder };
+    return { notes, folders, load, noteOf, isReadonly, readonlySource, change, rename, remove, foldersOf, isOpen, toggleFolder, addFolder, renameFolder, moveFolder, deleteFolder };
 });

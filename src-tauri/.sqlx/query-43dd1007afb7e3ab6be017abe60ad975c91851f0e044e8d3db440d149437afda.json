@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            delete from tree_node\n            where connection_id = $1 and color is null and comment is null and readonly is null and folder is null\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "43dd1007afb7e3ab6be017abe60ad975c91851f0e044e8d3db440d149437afda"
+}

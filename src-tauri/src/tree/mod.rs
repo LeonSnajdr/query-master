@@ -18,7 +18,8 @@ pub struct TreeNode {
     pub path: String,
     pub color: Option<String>,
     pub comment: Option<String>,
-    pub readonly: bool,
+    /// `None` takes what the row above has; `Some(false)` is writable even below a read-only row.
+    pub readonly: Option<bool>,
     /// The folder a database (of the connection) or a collection (of its database) is shown in.
     #[serde(default)]
     pub folder: Option<String>,
@@ -26,7 +27,10 @@ pub struct TreeNode {
 
 impl TreeNode {
     fn is_empty(&self) -> bool {
-        self.color.is_none() && self.comment.is_none() && !self.readonly && self.folder.is_none()
+        self.color.is_none()
+            && self.comment.is_none()
+            && self.readonly.is_none()
+            && self.folder.is_none()
     }
 }
 

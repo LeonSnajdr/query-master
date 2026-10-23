@@ -8,6 +8,7 @@ import ContextMenu from "@/components/ContextMenu.vue";
 import DropMenu from "@/components/DropMenu.vue";
 import IconButton from "@/components/IconButton.vue";
 import NoteMarks from "@/components/NoteMarks.vue";
+import ReadonlyBadge from "@/components/ReadonlyBadge.vue";
 import { useActions } from "@/composables/actions";
 import { useCopy } from "@/composables/copy";
 import { useDialogs } from "@/composables/dialogs";
@@ -64,6 +65,30 @@ function tint(place: NotePlace): string {
     return color ? `note-fg-${color}` : "text-on-surface";
 }
 
+/**
+ * Read-only of rows, for their context menu. A connection has nothing above it: a mark to set. A
+ * database or collection takes what lies above, or says read-only or writable itself.
+ */
+function readonlyEntry(rows: TreeSelection[]): MenuEntry {
+    const states = rows.map(row => notes.noteOf({ connectionId: row.connectionId, database: row.database, collection: row.collection })?.readonly ?? null);
+    const each = (state: boolean | null) => states.every(item => item === state);
+    if (rows.every(row => row.database === undefined)) {
+        return { label: t("note.readonly"), icon: "i-lucide-lock", checked: each(true), action: () => void actions.setReadonlyMany(rows, each(true) ? null : true) };
+    }
+    // What "as above" would give, told for a single row.
+    const first = rows[0]!;
+    const above = notes.readonlySource(first.collection === undefined ? { connectionId: first.connectionId } : { connectionId: first.connectionId, database: first.database });
+    return {
+        label: t("note.readonly.menu"),
+        icon: "i-lucide-lock",
+        children: [
+            { label: t("note.readonly.inherit"), ...(rows.length === 1 ? { hotkey: t(above.readonly ? "note.readonly.inherit.on" : "note.readonly.inherit.off") } : {}), checked: each(null), action: () => void actions.setReadonlyMany(rows, null) },
+            { label: t("note.readonly.on"), icon: "i-lucide-lock", checked: each(true), action: () => void actions.setReadonlyMany(rows, true) },
+            { label: t("note.readonly.off"), icon: "i-lucide-lock-open", checked: each(false), action: () => void actions.setReadonlyMany(rows, false) }
+        ]
+    };
+}
+
 /** Comment, read-only and color of a row, for its context menu, in the order. */
 function noteEntries(at: TreeSelection): MenuEntry[] {
     const place = { connectionId: at.connectionId, database: at.database, collection: at.collection };
@@ -74,7 +99,7 @@ function noteEntries(at: TreeSelection): MenuEntry[] {
     ];
     if (note?.comment) entries.push({ label: t("note.comment.remove"), action: () => void actions.removeComment(at) });
     entries.push(
-        { label: t("note.readonly"), icon: "i-lucide-lock", checked: note?.readonly === true, action: () => void actions.toggleReadonly(at) },
+        readonlyEntry([at]),
         { label: t("note.color"), swatches: NOTE_COLORS, current: note?.color ?? null, choose: color => void actions.setColor(at, color) }
     );
     // A saved connection is marked as development, test or production: how the app asks before writing.
@@ -575,10 +600,9 @@ function openManyMenu(event: MouseEvent, rows: TreeSelection[]) {
     const first = rows[0]!;
     const kind = kindOf(first);
     const head: MenuEntry = { label: t(`tree.selected.${kind}`, { count: rows.length }, rows.length), icon: "i-lucide-list-checks", action: () => undefined, disabled: true };
-    const readonly = rows.every(row => notes.noteOf({ connectionId: row.connectionId, database: row.database, collection: row.collection })?.readonly === true);
     const marks: MenuEntry[] = [
         "separator",
-        { label: t("note.readonly"), icon: "i-lucide-lock", checked: readonly, action: () => void actions.toggleReadonlyMany(rows) },
+        readonlyEntry(rows),
         { label: t("note.color"), swatches: NOTE_COLORS, current: null, choose: color => void actions.setColorMany(rows, color) }
     ];
     // Folders hold the databases of a connection or the collections of a database: all rows in one.
@@ -920,12 +944,7 @@ defineExpose({
                                 />
                                 <span class="relative size-4 shrink-0">
                                     <span class="i-lucide-server size-4 block text-on-surface" />
-                                    <!-- Read-only: a lock over the lower left of the icon. -->
-                                    <span
-                                        v-if="notes.noteOf({ connectionId: profile.id })?.readonly"
-                                        :title="$t('note.readonly')"
-                                        class="i-lucide-lock absolute -left-0.5 -bottom-0.5 size-2.5 text-warning"
-                                    />
+                                    <ReadonlyBadge :place="{ connectionId: profile.id }" />
                                 </span>
                                 <span class="shrink-0 text-on-surface-strong">{{ profile.name }}</span>
                                 <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>
@@ -1083,7 +1102,10 @@ defineExpose({
                         :class="connections.sessions[profile.id]?.open ? 'rotate-90' : ''"
                         class="i-lucide-chevron-right size-3.5 shrink-0 text-on-surface-variant"
                     />
-                    <span class="i-lucide-server size-4 shrink-0 text-on-surface" />
+                    <span class="relative size-4 shrink-0">
+                        <span class="i-lucide-server size-4 block text-on-surface" />
+                        <ReadonlyBadge :place="{ connectionId: profile.id }" />
+                    </span>
                     <span class="truncate text-on-surface-strong">{{ profile.name }}</span>
                     <NoteMarks :place="{ connectionId: profile.id }" />
                     <span class="truncate italic text-on-surface-variant">{{ profile.address.replace(/^mongodb(\+srv)?:\/\//, "") }}</span>
@@ -1167,10 +1189,13 @@ defineExpose({
                                         class="size-3.5 shrink-0 text-on-surface-variant"
                                         data-testid="database-toggle"
                                     />
-                                    <span
-                                        :class="tint({ connectionId: profile.id, database: database.name })"
-                                        class="i-lucide-database size-4 shrink-0"
-                                    />
+                                    <span class="relative size-4 shrink-0">
+                                        <span
+                                            :class="tint({ connectionId: profile.id, database: database.name })"
+                                            class="i-lucide-database size-4 block"
+                                        />
+                                        <ReadonlyBadge :place="{ connectionId: profile.id, database: database.name }" />
+                                    </span>
                                     <span class="truncate text-on-surface-strong">{{ database.name }}</span>
                                     <NoteMarks :place="{ connectionId: profile.id, database: database.name }" />
                                     <span class="grow" />
@@ -1253,11 +1278,14 @@ defineExpose({
                                                         class="size-3.5 shrink-0 text-on-surface-variant"
                                                         data-testid="collection-toggle"
                                                     />
-                                                    <span
-                                                        :class="[collectionIcon(database, collection), tint({ connectionId: profile.id, database: database.name, collection })]"
-                                                        :title="database.types[collection] === 'collection' ? undefined : $t(`collection.type.${database.types[collection] ?? 'collection'}`)"
-                                                        class="size-4 shrink-0"
-                                                    />
+                                                    <span class="relative size-4 shrink-0">
+                                                        <span
+                                                            :class="[collectionIcon(database, collection), tint({ connectionId: profile.id, database: database.name, collection })]"
+                                                            :title="database.types[collection] === 'collection' ? undefined : $t(`collection.type.${database.types[collection] ?? 'collection'}`)"
+                                                            class="size-4 block"
+                                                        />
+                                                        <ReadonlyBadge :place="{ connectionId: profile.id, database: database.name, collection }" />
+                                                    </span>
                                                     <span class="truncate text-on-surface-strong">{{ bucketAt(database, collection) ?? collection }}</span>
                                                     <span
                                                         v-if="bucketAt(database, collection) !== undefined"

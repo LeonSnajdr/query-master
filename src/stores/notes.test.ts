@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { folderLabel, folderWithin, parentFolder } from "@/tree/folders";
-import { collectionRows, databaseRows, notePath, pathsAbove, readonlyIn } from "./notes";
+import { collectionRows, databaseRows, notePath, notePathLabel, pathsAbove, readonlyFrom, readonlyIn } from "./notes";
 
-const note = (path: string, readonly: boolean, folder: string | null = null) => ({ path, color: null, comment: null, readonly, folder });
+const note = (path: string, readonly: boolean | null, folder: string | null = null) => ({ path, color: null, comment: null, readonly, folder });
 
 describe("notes of the tree", () => {
     it("keeps a note per connection, database and collection", () => {
@@ -20,6 +20,32 @@ describe("notes of the tree", () => {
         expect(readonlyIn(notes, { connectionId: "c", database: "crm", collection: "deals" })).toBe(false);
         expect(readonlyIn({ "": note("", true) }, { connectionId: "c", database: "any", collection: "thing" })).toBe(true);
         expect(readonlyIn(undefined, { connectionId: "c" })).toBe(false);
+    });
+
+    it("lets the nearest row that says so win, writable as much as read-only", () => {
+        const notes = {
+            "": note("", true),
+            "shop": note("shop", false),
+            "shop/audit": note("shop/audit", true),
+            "crm/staging": note("crm/staging", false),
+            "crm/people": note("crm/people", null, "old")
+        };
+        const at = (database?: string, collection?: string) => readonlyFrom(notes, { connectionId: "c", database, collection });
+        // Writable below the read-only connection, and all of it below too.
+        expect(at("shop", "orders")).toEqual({ readonly: false, from: "shop" });
+        // Read-only again below that.
+        expect(at("shop", "audit")).toEqual({ readonly: true, from: "shop/audit" });
+        // Taken from the connection, past a row that notes only a folder.
+        expect(at("crm", "people")).toEqual({ readonly: true, from: "" });
+        expect(at("crm", "staging")).toEqual({ readonly: false, from: "crm/staging" });
+        // Nothing said anywhere: writable, from no row.
+        expect(readonlyFrom({ shop: note("shop", null) }, { connectionId: "c", database: "shop" })).toEqual({ readonly: false });
+    });
+
+    it("names a row as the user reads it", () => {
+        expect(notePathLabel("")).toBeUndefined();
+        expect(notePathLabel("shop")).toBe("shop");
+        expect(notePathLabel("shop/a/b")).toBe("shop.a/b");
     });
 });
 

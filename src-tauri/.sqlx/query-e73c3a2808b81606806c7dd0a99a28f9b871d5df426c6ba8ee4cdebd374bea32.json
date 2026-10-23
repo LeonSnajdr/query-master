@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "\n            select path, color, comment, readonly as \"readonly: bool\", folder\n            from tree_node\n            where connection_id = $1\n            order by path\n        ",
+  "query": "\n            select path, color, comment, readonly as \"readonly?: bool\", folder\n            from tree_node\n            where connection_id = $1\n            order by path\n        ",
   "describe": {
     "columns": [
       {
@@ -19,7 +19,7 @@
         "type_info": "Text"
       },
       {
-        "name": "readonly: bool",
+        "name": "readonly?: bool",
         "ordinal": 3,
         "type_info": "Integer"
       },
@@ -36,9 +36,9 @@
       false,
       true,
       true,
-      false,
+      true,
       true
     ]
   },
-  "hash": "647f9b36649d053197d9101e58d530c74f576ccc18bff67413f6dc0da9264984"
+  "hash": "e73c3a2808b81606806c7dd0a99a28f9b871d5df426c6ba8ee4cdebd374bea32"
 }
