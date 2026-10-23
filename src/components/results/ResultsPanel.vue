@@ -880,7 +880,7 @@ provideResultContext({ editable, selected, selectedPath, marked, choose, fold, p
             />
             <span class="toolbar-rule" />
             <IconButton
-                @click="openExport"
+                @click="openExport()"
                 :disabled="!result"
                 :label="keymap.titled($t('export.menu'), 'export.wizard')"
                 data-testid="result-export"
