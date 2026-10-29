@@ -3,6 +3,7 @@
     "private": true,
     "type": "module",
     "version": "0.1.0",
+    "license": "SEE LICENSE IN LICENSE.md",
     "scripts": {
         "dev": "vite",
         "build": "vue-tsc --build --force && bun run build:runtime && vite build",

@@ -2,6 +2,9 @@
 name = "query-master"
 version = "0.1.0"
 description = "QueryMaster - a MongoDB client"
+authors = ["Leon Snajdr"]
+license-file = "../LICENSE.md"
+repository = "https://github.com/LeonSnajdr/query-master"
 edition = "2021"
 
 [lib]
