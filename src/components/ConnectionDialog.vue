@@ -220,37 +220,40 @@ async function save(connect = false) {
                     {{ $t(profile && !clone ? "connection.edit.title" : "connection.new.title") }}
                 </DialogTitle>
 
-                <label class="flex items-center gap-3">
-                    <span class="w-14 text-[13px] text-on-surface">{{ $t("connection.field.name") }}:</span>
-                    <input
-                        v-model="name"
-                        :placeholder="$t('connection.field.name.placeholder')"
-                        class="field grow"
-                        data-testid="connection-name"
-                        type="text"
-                    />
-                </label>
-                <div class="flex items-center gap-3">
-                    <span class="w-14 text-[13px] text-on-surface">{{ $t("environment.label") }}:</span>
-                    <ChoiceField
-                        v-model="environment"
-                        :label="$t('environment.label')"
-                        :options="environmentOptions"
-                        class="w-64"
-                        data-testid="connection-environment"
-                    />
-                    <!--: the group of the connection list it is shown in; a new name makes one. -->
-                    <span class="text-[13px] text-on-surface">{{ $t("connection.group") }}:</span>
-                    <ChoiceField
-                        v-model="groupName"
-                        :label="$t('connection.group')"
-                        :options="groupOptions"
-                        :placeholder="$t('connection.group.none')"
-                        class="grow"
-                        data-testid="connection-group"
-                        free
-                        markNew
-                    />
+                <!-- The label column is as wide as its longest label in either language ("Environment"). -->
+                <div class="grid grid-cols-[max-content_minmax(0,1fr)] items-center gap-x-3 gap-y-4">
+                    <label class="contents">
+                        <span class="text-[13px] text-on-surface">{{ $t("connection.field.name") }}:</span>
+                        <input
+                            v-model="name"
+                            :placeholder="$t('connection.field.name.placeholder')"
+                            class="field"
+                            data-testid="connection-name"
+                            type="text"
+                        />
+                    </label>
+                    <span class="text-[13px] text-on-surface">{{ $t("environment.label") }}:</span>
+                    <div class="flex items-center gap-3 min-w-0">
+                        <ChoiceField
+                            v-model="environment"
+                            :label="$t('environment.label')"
+                            :options="environmentOptions"
+                            class="w-56 shrink-0"
+                            data-testid="connection-environment"
+                        />
+                        <!--: the group of the connection list it is shown in; a new name makes one. -->
+                        <span class="text-[13px] text-on-surface">{{ $t("connection.group") }}:</span>
+                        <ChoiceField
+                            v-model="groupName"
+                            :label="$t('connection.group')"
+                            :options="groupOptions"
+                            :placeholder="$t('connection.group.none')"
+                            class="grow min-w-0"
+                            data-testid="connection-group"
+                            free
+                            markNew
+                        />
+                    </div>
                 </div>
 
                 <TabsRoot
