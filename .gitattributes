@@ -1,7 +1,8 @@
 * text=auto eol=lf
 *.ps1 text eol=crlf
 *.png binary
+*.jpg binary
 *.ico binary
 *.icns binary
-bun.lock linguist-generated
-src-tauri/Cargo.lock linguist-generated
+**/bun.lock linguist-generated
+sources/app/src-tauri/Cargo.lock linguist-generated

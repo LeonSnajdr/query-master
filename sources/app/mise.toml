@@ -1,0 +1,7 @@
+[tools]
+node = "24.16.0"
+bun = "1.3.14"
+
+"cargo:sqlx-cli" = { version = "0.8.6", default-features = false, features = [
+  "sqlite",
+] }

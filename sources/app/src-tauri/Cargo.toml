@@ -1,0 +1,52 @@
+[package]
+name = "query-master"
+version = "0.1.0"
+description = "QueryMaster - a MongoDB client"
+authors = ["Leon Snajdr"]
+license-file = "../../../LICENSE.md"
+repository = "https://github.com/LeonSnajdr/query-master"
+edition = "2021"
+
+[lib]
+name = "query_master_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+# Commands and sort specifications depend on key order.
+serde_json = { version = "1", features = ["preserve_order"] }
+mongodb = "3.9"
+futures-util = "0.3"
+keyring = { version = "3", features = ["windows-native", "apple-native", "linux-native"] }
+uuid = { version = "1", features = ["serde", "v4"] }
+sqlx = { version = "0.8.6", features = [
+    "sqlite",
+    "runtime-tokio",
+    "migrate",
+    "chrono",
+    "macros",
+    "uuid",
+] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "io-util", "macros"] }
+rquickjs = "0.14.0"
+csv = "1"
+base64 = "0.22"
+tauri-plugin-opener = "2"
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
+# The SSH tunnel; ring instead of aws-lc-rs, which needs CMake and NASM to build on Windows.
+russh = { version = "0.64", default-features = false, features = ["ring", "rsa", "flate2"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[profile.release]
+strip = true
+lto = "thin"

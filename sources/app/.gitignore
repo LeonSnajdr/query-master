@@ -1,0 +1,16 @@
+# Environment (connection strings for the tests against a real server)
+.env
+.env.*
+!.env.example
+
+# Tauri / Rust
+/src-tauri/target
+/src-tauri/gen
+# The development database; `src-tauri/.env` only names it and is versioned
+/src-tauri/dev.db*
+!/src-tauri/.env
+*.pdb
+
+# Captures taken with tools/observe: they show real data
+/tools/observe/out
+*.capture.png
