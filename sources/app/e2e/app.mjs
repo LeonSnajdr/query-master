@@ -95,6 +95,13 @@ async function write(scope, text) {
     await page.keyboard.insertText(text);
 }
 
+/** Replaces the text of an editor in place (a value in the tree or the table): it is CodeMirror, not a text field. */
+async function retype(locator, text) {
+    await locator.click();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.insertText(text);
+}
+
 async function runShell(text) {
     const panel = page.locator("[data-testid=tab-panel]:visible");
     await write(panel, text);
@@ -105,6 +112,14 @@ async function runShell(text) {
     assert.equal(await panel.locator("[data-testid=query-error]").count(), 0, "the statement failed");
     await panel.locator("[data-testid=result-range]").waitFor();
     return panel;
+}
+
+/** What the statements printed: it stands on the Text tab of the output; the result tab is shown again after. */
+async function scriptOutput(panel) {
+    await panel.locator("[data-testid=script-text-tab]").click();
+    const text = await panel.locator("[data-testid=script-output]").innerText();
+    await panel.locator("[data-testid=statement-result], [data-testid=script-result-tab]").last().click();
+    return text;
 }
 
 /** Opens the menu of a group (Documents, Fields, Copy) beside its line. */
@@ -177,7 +192,7 @@ docs.find({}).forEach(function (document) { total += document.n; });
 print("total " + total + ", big " + docs.findOne({ n: 1 }).big);
 docs.find({}).sort({ n: -1 }).limit(2)`;
         const panel = await runShell(source);
-        assert.match(await panel.locator("[data-testid=script-output]").innerText(), /total 6, big 9007199254740993/);
+        assert.match(await scriptOutput(panel), /total 6, big 9007199254740993/);
         assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 2");
         assert.match(await panel.locator("[data-testid=tree-row]").first().innerText(), /5 elements|4 elements|3 elements/);
     });
@@ -194,7 +209,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         for (const expected of ["insertedCount:1", "modifiedCount:1", "deletedCount:1"]) assert.ok(counts.includes(expected), `${expected} not in ${counts.slice(0, 300)}`);
         // Two statements: both run, the last one is the result.
         await runShell(`print(${target}.countDocuments({}));\n${target}.find({ n: 1 })`);
-        assert.equal((await panel.locator("[data-testid=script-output]").innerText()).trim(), "3");
+        assert.equal((await scriptOutput(panel)).trim(), "3");
         assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 1");
     });
 
@@ -203,9 +218,11 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await write(panel, `print("early");\nvar end = Date.now() + 1500;\nwhile (Date.now() < end) {}\ndb.getSiblingDB("${DATABASE}").getCollection("${COLLECTION}").find({}).sort({ n: 1 })`);
         await panel.locator("[data-testid=query-run]").click();
         // The line is there while the script still runs: Stop is still offered.
+        await panel.locator("[data-testid=script-text-tab]").click({ timeout: 1200 });
         await panel.locator("[data-testid=script-output]", { hasText: "early" }).waitFor({ timeout: 1200 });
         assert.equal(await panel.locator("[data-testid=query-stop]").count(), 1, "the output came only at the end");
         await panel.locator("[data-testid=query-run]:not([disabled])").waitFor();
+        await panel.locator("[data-testid=statement-result], [data-testid=script-result-tab]").last().click();
         assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 3");
 
         await write(panel, "var a = 1;\n  nope();");
@@ -345,20 +362,20 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         // Without a filter the count comes from the collection itself.
         await panel.locator("[data-testid=result-count]").click();
         await page.locator("[data-testid=status-message]", { hasText: /matches 3 documents/ }).waitFor();
-        // The export of the result opens the wizard with its collection, as one row; so does Ctrl+S.
+        // The export of the result opens the wizard with its collection, as one row; so does Ctrl+E.
         await visible("result-export").click();
         await id("export-wizard").waitFor();
         assert.equal(await id("export-row").count(), 1);
         await id("export-close").click();
         await id("export-wizard").waitFor({ state: "hidden" });
         await panel.locator("[data-testid=tree-row]").first().click();
-        await page.keyboard.press("Control+s");
+        await page.keyboard.press("Control+e");
         await id("export-wizard").waitFor();
         assert.equal(await id("export-output").inputValue(), `${DATABASE}.${COLLECTION}.json`);
         await id("export-close").click();
         await id("export-wizard").waitFor({ state: "hidden" });
-        // Ctrl+O: the import wizard, every file going into this collection.
-        await page.keyboard.press("Control+o");
+        // Ctrl+Shift+O: the import wizard, every file going into this collection.
+        await page.keyboard.press("Control+Shift+O");
         await id("import-wizard").waitFor();
         await id("import-empty").waitFor();
         await id("import-close").click();
@@ -460,15 +477,16 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await wizardSelect(0, "Semicolon");
         await shot("export-csv");
         await id("export-schema").click();
-        const columns = page.locator("[data-testid=schema-column]");
-        await page.locator("[data-testid=schema-column]", { hasText: /^\s*name\s*$/ }).waitFor();
+        // A row shows the path, a field for its name in the file and its type: the path is its first part.
+        const columns = page.locator("[data-testid=schema-column] > span:first-child");
+        await columns.filter({ hasText: /^\s*name\s*$/ }).waitFor();
         for (const name of await columns.allInnerTexts()) {
             if (name.trim() !== "name") await columns.filter({ hasText: new RegExp(`^\\s*${name.trim()}\\s*$`) }).click();
         }
         await id("schema-remove").click();
         await id("schema-typed").fill("nested.deep");
         await id("schema-typed").press("Enter");
-        await page.locator("[data-testid=schema-fields] li", { hasText: /^\s*tags\s*$/ }).dblclick();
+        await page.locator("[data-testid=schema-fields] li > span:first-child", { hasText: /^\s*tags\s*$/ }).dblclick();
         assert.deepEqual((await columns.allInnerTexts()).map(name => name.trim()), ["name", "nested.deep", "tags"]);
         await shot("export-schema");
         await id("export-start").click();
@@ -489,7 +507,9 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await id("export-start").click();
         await page.locator("[data-testid=export-progress-row][data-state=done]").waitFor();
         const sql = await clipboardChanged();
-        assert.match(sql, new RegExp(`^CREATE TABLE "${COLLECTION}" \\(\\r\\n\\t"_id" VARCHAR\\(24\\),`), sql);
+        // `_id` is the primary key of the table.
+        assert.match(sql, new RegExp(`^CREATE TABLE "${COLLECTION}" \\(\\r\\n\\t"_id" VARCHAR\\(24\\) NOT NULL,`), sql);
+        assert.match(sql, /\tPRIMARY KEY \("_id"\)\r\n\);/, sql);
         assert.match(sql, new RegExp(`INSERT INTO "${COLLECTION}" \\("_id", "n", "name", "price"\\) VALUES \\('[0-9a-f]{24}', 2, 'two', 9\\.99\\);\\r\\n$`), sql);
         await id("export-close").click();
 
@@ -680,13 +700,11 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await shot("tree-notes");
         await page.keyboard.press("Escape");
 
-        // Neither the tree nor a tab on the collection may change it now.
+        // Neither the tree nor a tab on the collection may change it now: the menu greys what writes.
         await row.click({ button: "right" });
-        await chooseMenu("Drop collection");
-        await page.locator("[data-testid=notice-title]", { hasText: "is marked read-only in the connection tree" }).first().waitFor();
+        assert.ok(await page.locator("[data-testid=menu-item]:visible", { hasText: "Drop collection" }).first().isDisabled());
+        await page.keyboard.press("Escape");
         assert.equal(await page.locator("dialog[open]").count(), 0);
-        // A problem's card stays until it is closed: closed here, so it lies over nothing later on.
-        await dismissToasts();
         await row.dblclick();
         await visible("browse-title").waitFor();
         const lock = visible("query-readonly");
@@ -934,6 +952,9 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await id("connection-delete").click();
         await id("confirm-action").click();
         await page.locator("[data-testid=recent-connection]", { hasText: limitedName }).waitFor({ state: "detached" });
+        // The list stays open after a delete, for the next one: closed, so it lies over nothing.
+        await page.keyboard.press("Escape");
+        await page.locator("[data-testid=connection-item]:visible").first().waitFor({ state: "hidden" });
         // The tree as the later steps expect it: the test database open.
         await page.locator("[data-testid=connection-row]", { hasText: NAME }).dblclick();
         await page.locator("[data-testid=database-row]", { hasText: DATABASE }).locator("[data-testid=database-toggle]").click();
@@ -1155,7 +1176,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await footer.locator("[data-testid=search-all]").click();
         await footer.filter({ hasText: /\d+ found/ }).waitFor();
         assert.equal(await list.locator("li", { hasText: "Search all data" }).count(), 0);
-        await panel.locator("[data-testid=tree-edit]").fill("THREE");
+        await retype(panel.locator("[data-testid=tree-edit]"), "THREE");
         // "THREE" fits "three" of the list: Esc closes the list, Enter then writes what is typed.
         await page.waitForTimeout(300);
         if (await list.count() > 0) await page.keyboard.press("Escape");
@@ -1178,7 +1199,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.keyboard.press("Escape");
         await panel.locator("[data-testid=table-edit]").waitFor({ state: "detached" });
         await panel.locator("[data-testid=table-cell]", { hasText: "two" }).dblclick();
-        await panel.locator("[data-testid=table-edit]").fill("TWO");
+        await retype(panel.locator("[data-testid=table-edit]"), "TWO");
         await page.waitForTimeout(300);
         if (await list.count() > 0) await page.keyboard.press("Escape");
         await page.keyboard.press("Enter");
@@ -1379,7 +1400,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
 
     await step("the schema analysis shows a card per field; a bar opens the documents with that value", async () => {
         await page.locator("[data-testid=collection-row]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) }).click({ button: "right" });
-        await chooseMenu("Analyse schema");
+        await chooseMenu("Analyze schema");
         const schemaPanel = page.locator("[data-testid=schema-panel]:visible");
         const card = schemaPanel.locator("[data-testid=schema-card]", { has: page.locator("[data-testid=schema-field]", { hasText: /^n$/ }) });
         await card.waitFor();
@@ -1406,10 +1427,10 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await visible("settings-tab-keys").click();
         await browseRow.locator("[data-testid=keys-chip]").click();
         await browseRow.locator("[data-testid=keys-recorder]").waitFor();
-        await page.keyboard.press("Control+B");
-        await browseRow.getByText("Ctrl + B").waitFor();
+        await page.keyboard.press("Control+Alt+B");
+        await browseRow.getByText("Ctrl + Alt + B").waitFor();
         await visible("settings-close").click();
-        assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ B\)$/);
+        assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ Alt \+ B\)$/);
 
         // The new key opens the collection; the old one is free. A tab open on it would only come to the front.
         const openTabs = page.locator("[data-testid=tab]", { hasText: new RegExp(`^\\s*${COLLECTION}\\s*$`) });
@@ -1423,7 +1444,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.keyboard.press("Control+Q");
         await page.waitForTimeout(300);
         assert.equal(await id("tab").count(), tabs);
-        await page.keyboard.press("Control+B");
+        await page.keyboard.press("Control+Alt+B");
         await page.waitForFunction(count => document.querySelectorAll("[data-testid=tab]").length === count + 1, tabs);
         await page.keyboard.press("Control+w");
 
@@ -1433,7 +1454,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         await page.waitForTimeout(2500);
         await page.reload();
         await id("dock-browse").waitFor();
-        assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ B\)$/);
+        assert.match(await id("dock-browse").getAttribute("title"), /\(Ctrl \+ Alt \+ B\)$/);
         // The card at the start brings the tabs of before back, without running them (stage 20);
         // their connection opens in the tree behind them.
         await page.locator("[data-testid=notice-action]:visible", { hasText: "Restore" }).click();
