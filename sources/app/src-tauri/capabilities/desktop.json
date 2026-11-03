@@ -1,0 +1,8 @@
+{
+    "$schema": "../gen/schemas/desktop-schema.json",
+    "identifier": "desktop",
+    "description": "What only the desktop app may do: look for and install updates",
+    "platforms": ["macOS", "windows", "linux"],
+    "windows": ["main"],
+    "permissions": ["updater:default"]
+}

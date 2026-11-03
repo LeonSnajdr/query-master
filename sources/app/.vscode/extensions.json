@@ -2,10 +2,14 @@
     "recommendations": [
         "Vue.volar",
         "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
         "antfu.unocss",
         "lokalise.i18n-ally",
+        "streetsidesoftware.code-spell-checker",
+        "streetsidesoftware.code-spell-checker-german",
         "tauri-apps.tauri-vscode",
         "rust-lang.rust-analyzer",
-        "EditorConfig.EditorConfig"
+        "EditorConfig.EditorConfig",
+        "mikestead.dotenv"
     ]
 }

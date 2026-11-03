@@ -40,7 +40,6 @@ csv = "1"
 base64 = "0.22"
 tauri-plugin-opener = "2"
 tauri-plugin-process = "2"
-tauri-plugin-updater = "2"
 # The SSH tunnel; ring instead of aws-lc-rs, which needs CMake and NASM to build on Windows.
 russh = { version = "0.64", default-features = false, features = ["ring", "rsa", "flate2"] }
 
@@ -50,3 +49,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 [profile.release]
 strip = true
 lto = "thin"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"

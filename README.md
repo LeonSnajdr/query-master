@@ -109,10 +109,11 @@ To get your development environment set up, follow these steps:
 All commands run in `sources/app`.
 
 | What | Command |
-|---|---|
+| --- | --- |
 | Lint | `bun run lint` |
 | Types | `bun run type-check` |
 | Unit tests | `bun run test` |
+| Spelling of the interface texts | `bun run cspell` |
 | Rust format and Clippy | `bun run rust:check` |
 | Rust tests | `bun run rust:test` |
 | Migrate, prepare, format, lint and test the Rust side | `pwsh tools/check-rust.ps1` |

@@ -1,6 +1,48 @@
 {
-    "i18n-ally.localesPaths": [
-        "i18n",
-        "i18n/locales"
-    ]
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": true,
+    "editor.codeActionsOnSave": {
+        "source.fixAll.eslint": "explicit"
+    },
+    "[javascript]": {
+        "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[typescript]": {
+        "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[vue]": {
+        "editor.defaultFormatter": "dbaeumer.vscode-eslint"
+    },
+    "[json]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[jsonc]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[yaml]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[markdown]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer"
+    },
+    "eslint.format.enable": true,
+    "i18n-ally.localesPaths": ["i18n/locales"],
+    "i18n-ally.keystyle": "flat",
+    "i18n-ally.sortKeys": true,
+    "i18n-ally.sortCompare": "locale",
+    "vue.complete.casing.props": "camel",
+    "vue.complete.casing.tags": "pascal",
+    "rust-analyzer.semanticHighlighting.strings.enable": false,
+    "rust-analyzer.check.command": "clippy",
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.patterns": {
+        "package.json": "bun.lock, mise.toml, .gitignore, .prettierrc.json, cspell.yml",
+        "vite.config.ts": "vite.runtime.config.ts, unocss.config.ts, eslint.config.ts, env.d.ts, tsconfig.json, tsconfig.*.json",
+        "Cargo.toml": "Cargo.lock, build.rs, .env",
+        "*.vue": "${capture}.test.ts",
+        "*.ts": "${capture}.test.ts"
+    }
 }

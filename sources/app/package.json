@@ -13,6 +13,7 @@
         "type-check": "vue-tsc --build --force",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
+        "cspell": "cspell",
         "test": "vitest run",
         "rust:check": "cargo fmt --manifest-path src-tauri/Cargo.toml --check && cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings",
         "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
@@ -48,6 +49,7 @@
         "vue-i18n": "11"
     },
     "devDependencies": {
+        "@cspell/dict-de-de": "4.1.2",
         "@iconify-json/lucide": "^1.2.0",
         "@stylistic/eslint-plugin": "latest",
         "@tauri-apps/cli": "^2.12.2",
@@ -56,6 +58,7 @@
         "@vitejs/plugin-vue": "^6.0.5",
         "@vue/eslint-config-typescript": "latest",
         "@vue/tsconfig": "^0.9.0",
+        "cspell": "9.2.0",
         "eslint": "^9.39.4",
         "eslint-plugin-vue": "latest",
         "jiti": "latest",
