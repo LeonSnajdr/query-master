@@ -42,8 +42,10 @@
     },
     "plugins": {
         "updater": {
-            "pubkey": "REPLACE_WITH_THE_PUBLIC_KEY_FROM_TAURI_SIGNER_GENERATE",
-            "endpoints": ["https://github.com/LeonSnajdr/query-master/releases/latest/download/latest.json"]
+            "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEREODA2NjhBQUVGNkNGNjcKUldSbnovYXVpbWFBM2R4N1NOWGlDNng0WEoxMGpId2FUcUVITWgrVEZkU2l3eHRVOHBHL3diYXMK",
+            "endpoints": [
+                "https://github.com/LeonSnajdr/query-master/releases/latest/download/latest.json"
+            ]
         }
     }
 }

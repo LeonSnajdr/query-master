@@ -13,84 +13,84 @@ jobs:
       app_version: ${{ steps.version.outputs.app_version }}
       date_created: ${{ steps.version.outputs.date_created }}
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Generate app_version
-      id: version
-      run: |
-        echo "app_version=$(date +'%y.%-m').${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
-        echo "date_created=$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
+      - name: Generate app_version
+        id: version
+        run: |
+          echo "app_version=$(date +'%y.%-m').${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+          echo "date_created=$(date +'%Y.%m.%d')" >> $GITHUB_OUTPUT
 
-    - name: Print app_version and date_created
-      run: |
-        echo "app_version: ${{ steps.version.outputs.app_version }}"
-        echo "date_created: ${{ steps.version.outputs.date_created }}"
+      - name: Print app_version and date_created
+        run: |
+          echo "app_version: ${{ steps.version.outputs.app_version }}"
+          echo "date_created: ${{ steps.version.outputs.date_created }}"
 
   release:
-      needs: [prepare]
-      permissions:
-          contents: write
-      strategy:
-          fail-fast: false
-          matrix:
-            platform: [windows-latest, macos-latest, ubuntu-22.04]
-      runs-on: ${{ matrix.platform }}
-      defaults:
-        run:
-          working-directory: sources/app
-      steps:
-          - name: Checkout repository
-            uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    needs: [prepare]
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, macos-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
+    defaults:
+      run:
+        working-directory: sources/app
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-          - name: Install Linux dependencies
-            if: runner.os == 'Linux'
-            run: |
-              sudo apt-get update
-              sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
-          - name: Rust setup
-            uses: dtolnay/rust-toolchain@stable
+      - name: Rust setup
+        uses: dtolnay/rust-toolchain@stable
 
-          - name: Setup mise
-            uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
-            with:
-              working_directory: sources/app
+      - name: Setup mise
+        uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          working_directory: sources/app
 
-          - name: Verify tool versions
-            run: |
-              node --version
-              bun --version
-              mise --version
+      - name: Verify tool versions
+        run: |
+          node --version
+          bun --version
+          mise --version
 
-          - name: Node cache
-            uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-            id: node_modules_cache
-            with:
-              path: sources/app/node_modules
-              key: ${{ runner.os }}-querymaster-app-node_modules-${{ hashFiles('sources/app/bun.lock') }}
-              restore-keys: ${{ runner.os }}-querymaster-app-node_modules-
+      - name: Node cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: node_modules_cache
+        with:
+          path: sources/app/node_modules
+          key: ${{ runner.os }}-querymaster-app-node_modules-${{ hashFiles('sources/app/bun.lock') }}
+          restore-keys: ${{ runner.os }}-querymaster-app-node_modules-
 
-          - name: Install dependencies, lint and test
-            run: |
-              bun install --frozen-lockfile
-              bun run lint
-              bun run test
+      - name: Install dependencies, lint and test
+        run: |
+          bun install --frozen-lockfile
+          bun run lint
+          bun run test
 
-          - name: Build tauri app
-            uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
-            env:
-              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-              TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-              SQLX_OFFLINE: true
-              # "About QueryMaster" shows the same number as the installer.
-              APP_VERSION: ${{ needs.prepare.outputs.app_version }}
-            with:
-              projectPath: sources/app
-              tauriScript: bun run tauri
-              tagName: ${{ needs.prepare.outputs.app_version }}
-              # Updater artifacts only here: a local `bun run app:build` needs no signing key.
-              args: '-c ''{"version": "${{ needs.prepare.outputs.app_version }}", "bundle": {"createUpdaterArtifacts": true}}'''
-              releaseName: QueryMaster ${{ needs.prepare.outputs.app_version }}
-              releaseBody: See the assets to download and install this version.
+      - name: Build tauri app
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          SQLX_OFFLINE: true
+          # "About QueryMaster" shows the same number as the installer.
+          APP_VERSION: ${{ needs.prepare.outputs.app_version }}
+        with:
+          projectPath: sources/app
+          tauriScript: bun run tauri
+          tagName: ${{ needs.prepare.outputs.app_version }}
+          # Updater artifacts only here: a local `bun run app:build` needs no signing key.
+          args: '-c ''{"version": "${{ needs.prepare.outputs.app_version }}", "bundle": {"createUpdaterArtifacts": true}}'''
+          releaseName: QueryMaster ${{ needs.prepare.outputs.app_version }}
+          releaseBody: See the assets to download and install this version.
