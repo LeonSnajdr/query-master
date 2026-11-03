@@ -275,6 +275,7 @@ function closeLarge() {
         @dblclick.stop
         @focusout="onFocusOut"
         @keydown.capture="onShiftEnter"
+        @keydown.enter.exact.stop
         @keydown.esc="onEscape"
         :style="room"
         class="relative flex items-center min-w-0 bg-surface-variant"
