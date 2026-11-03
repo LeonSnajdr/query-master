@@ -4,7 +4,7 @@ import ChoiceInput from "./choice/ChoiceInput.vue";
 import ChoiceSelect from "./choice/ChoiceSelect.vue";
 
 /**
- * Every choice of the app, drawn: a field with a chevron, below
+ * Every choice of the app, drawn as a select: a field with a chevron, below
  * it a list as wide as the field, the current entry marked. Fixed (`free` off) allows only the
  * entries; free allows any text and suggests the entries containing it. Attributes go to the
  * field itself (the button, or the input when free).

@@ -53,7 +53,7 @@ function at(value: Json | undefined, segments: string[]): Json | undefined {
 
 const levels = computed(() => props.rows.map(row => ({ index: row.index, value: at(row.item, stack.value) })));
 
-/** Sorting by a column *Sort asc/desc*: the documents of the page, not the query. */
+/** Sorting by a column (*Sort asc/desc*): the documents of the page, not the query. */
 const sortBy = shallowRef<{ column: string; descending: boolean }>();
 /** Order of values of different types: missing last, then numbers, text, dates, the rest as text. */
 function sortKey(value: Json | undefined): [number, number | string] {
@@ -126,7 +126,7 @@ function typeLabel(column: string): string {
     const value = values[0];
     if (value === undefined) return "";
     const type = typeOf(value);
-    //: values of different types make the column `mixed` (null aside).
+    // Values of different types make the column `mixed` (null aside).
     if (values.some(item => typeOf(item) !== type && typeOf(item) !== "null")) return t("result.type.mixed");
     return type === "date" ? t("result.type.datetime") : t(`result.type.${type}`);
 }

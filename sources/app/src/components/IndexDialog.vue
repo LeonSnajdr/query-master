@@ -284,7 +284,7 @@ async function save() {
                             </div>
                         </TabsPanel>
 
-                        <!--: the options of a text index; grey without a text field. -->
+                        <!-- The options of a text index; grey without a text field. -->
                         <TabsPanel value="text">
                             <div
                                 :class="hasText ? '' : 'opacity-50 pointer-events-none'"

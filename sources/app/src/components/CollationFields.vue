@@ -6,7 +6,7 @@ import { COLLATION_CHOICES, COLLATION_LOCALES, COLLATION_OPTIONS, optionApplies 
 import type { CollationForm, CollationOption } from "@/shell/collation";
 
 /**
- * the collation form, for collections, views and indexes: the locale (one of MongoDB's
+ * The collation form, for collections, views and indexes: the locale (one of MongoDB's
  * or typed) and every option, each with "default" to leave it to the server. Without a locale, or
  * with `simple`, the options are greyed: the server takes none then.
  */

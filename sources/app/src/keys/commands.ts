@@ -105,7 +105,7 @@ const LIST = [
     command({ id: "script.save", label: "script.save", group: "editor", scope: "global", keys: ["ctrl+s"] }),
     command({ id: "script.saveAs", label: "script.saveAs", group: "editor", scope: "global", keys: ["ctrl+shift+s"] }),
     command({ id: "script.open", label: "script.open", group: "editor", scope: "global", keys: ["ctrl+o"] }),
-    //: stops a running query or script of the tab in front, also in the editor.
+    // Stops a running query or script of the tab in front, also in the editor.
     command({ id: "query.stop", label: "query.stop", group: "editor", scope: "global", keys: ["shift+f5"] }),
     // As in VS Code; through the editor's keymap, so the editor with the focus is formatted.
     command({ id: "editor.format", label: "shortcut.format", group: "editor", scope: "editor", keys: ["alt+shift+f"] }),
@@ -125,7 +125,7 @@ const LIST = [
     // Outside text fields only: in an editor Ctrl+F is its own search.
     command({ id: "result.search", label: "result.search.focus", group: "results", scope: "results", keys: ["ctrl+f"], inputs: false }),
     command({ id: "result.importClipboard", label: "result.importClipboard", group: "results", scope: "results", keys: ["ctrl+shift+v"], inputs: false }),
-    // The field dialogs, with the keys.
+    // The field dialogs, with their keys.
     command({ id: "field.add", label: "field.title.add", group: "results", scope: "resultTree", keys: ["ctrl+shift+n"] }),
     command({ id: "field.edit", label: "field.title.edit", group: "results", scope: "resultTree", keys: ["ctrl+shift+e"] }),
     command({ id: "field.rename", label: "field.title.rename", group: "results", scope: "resultTree", keys: ["ctrl+alt+e"] }),
@@ -143,7 +143,7 @@ const LIST = [
     command({ id: "table.hide", label: "table.hide", group: "table", scope: "table", keys: ["ctrl+k"] }),
     command({ id: "table.hideOthers", label: "table.hideOthers", group: "table", scope: "table", keys: ["ctrl+alt+k"] }),
     command({ id: "table.showAll", label: "table.showAll", group: "table", scope: "table", keys: ["ctrl+shift+k"] }),
-    // Sorting, moving and sizing columns, with the keys.
+    // Sorting, moving and sizing columns, with their keys.
     command({ id: "table.sortAsc", label: "table.sortAsc", group: "table", scope: "table", keys: ["ctrl+["] }),
     command({ id: "table.sortDesc", label: "table.sortDesc", group: "table", scope: "table", keys: ["ctrl+]"] }),
     command({ id: "table.moveLeft", label: "table.moveLeft", group: "table", scope: "table", keys: ["ctrl+alt+arrowleft"] }),
@@ -151,7 +151,7 @@ const LIST = [
     command({ id: "table.autosize", label: "table.autosize", group: "table", scope: "table", keys: ["ctrl+'"] }),
     command({ id: "table.autosizeAll", label: "table.autosizeAll", group: "table", scope: "table", keys: ["ctrl+shift+'"] }),
 
-    // The stage rows, with the keys (its Ctrl+Enter "change stage" stays "run").
+    // The stage rows, with their keys (Ctrl+Enter stays "run", not "change stage").
     command({ id: "stage.add", label: "stage.add", group: "stages", scope: "stages", keys: ["ctrl+b"] }),
     command({ id: "stage.remove", label: "stage.remove", group: "stages", scope: "stages", keys: ["ctrl+delete"] }),
     command({ id: "stage.up", label: "stage.up", group: "stages", scope: "stages", keys: ["ctrl+arrowup"] }),

@@ -53,7 +53,7 @@ impl<W: Write> CsvWriter<W> {
         let writer = csv::WriterBuilder::new()
             .delimiter(u8::try_from(options.delimiter).unwrap_or(b','))
             .quote(u8::try_from(options.quote).unwrap_or(b'"'))
-            // CRLF and Excel expect.
+            // CRLF, as Excel expects.
             .terminator(csv::Terminator::CRLF)
             .from_writer(file);
         let chosen = columns.as_ref().is_some_and(|columns| !columns.is_empty());
@@ -173,7 +173,7 @@ fn cell(value: &Bson) -> String {
         Bson::String(text) => text.clone(),
         Bson::Int32(number) => number.to_string(),
         Bson::Int64(number) => number.to_string(),
-        // `inf` is Rust's spelling; the shell write `Infinity`.
+        // `inf` is Rust's spelling; the shell writes `Infinity`.
         Bson::Double(number) if number.is_infinite() => if number.is_sign_positive() {
             "Infinity"
         } else {

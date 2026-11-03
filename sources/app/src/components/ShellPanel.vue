@@ -77,7 +77,7 @@ const shownTab = computed<number | "text">({
 });
 const hasTabs = computed(() => tab.value.output !== undefined || (tab.value.results?.length ?? 0) > 1);
 
-/** The output on the whole tab *Maximize*; again: both halves. */
+/** The output on the whole tab (*Maximize*); again: both halves. */
 function toggleMaximized() {
     layout.value = layout.value === "results" ? "default" : "results";
 }

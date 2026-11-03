@@ -194,7 +194,7 @@ impl SqlWriter {
         }
         if self.options.create_table && !columns.is_empty() {
             let dialect = self.options.dialect;
-            //: `_id` is the key of the table, not null.
+            // `_id` is the key of the table, not null.
             let keyed = columns.iter().position(|column| column == "_id");
             let mut lines = columns
                 .iter()

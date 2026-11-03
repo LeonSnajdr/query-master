@@ -29,7 +29,7 @@ const open = computed({ get: () => wizard.open, set: value => !value && close() 
 const state = computed(() => wizard.state);
 const running = computed(() => wizard.runId !== undefined);
 
-/** The tiles, with symbols. */
+/** The tiles, with their symbols. */
 const TILES: { format: ExportFormat; icon: string }[] = [
     { format: "json", icon: "i-lucide-braces" },
     { format: "csv", icon: "i-lucide-sheet" },
@@ -87,7 +87,7 @@ const quote = computed({ get: () => state.value.csv.quote, set: (value: CsvSetti
 const selected = shallowRef<number>();
 /** The rows selected (Ctrl and Shift add to them): remove acts on all. */
 const marked = shallowRef(new Set<number>());
-//: the first row is selected once the rows are there, so edit and remove work at once.
+// The first row is selected once the rows are there, so edit and remove work at once.
 watch(() => wizard.loading, (loading) => {
     if (loading) return;
     selected.value = state.value.rows.length > 0 ? 0 : undefined;
@@ -181,7 +181,7 @@ function next() {
 const columns = computed(() => ["database", "collection", "output", "filter", ...(state.value.format === "database" ? ["target"] : [])]);
 const targetModes = computed(() => (["append", "replace"] as const).map(value => ({ value, label: t(`export.target.mode.${value}`) })));
 
-/** *Replace* or *Append* for a row; for all selected rows when it is one of them (as the "Do same for others"). */
+/** *Replace* or *Append* for a row; for all selected rows when it is one of them ("Do same for others"). */
 function setReplace(index: number, replace: boolean) {
     const rows = marked.value.has(index) ? marked.value : new Set([index]);
     state.value.rows = state.value.rows.map((row, position) => (rows.has(position) ? { ...row, replace } : row));
@@ -353,7 +353,7 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                         />
                     </div>
 
-                    <!-- "Add collection" and editing a row, in place of the small dialog. -->
+                    <!-- "Add collection" and editing a row, in place rather than in a small dialog. -->
                     <div
                         v-if="form"
                         class="grid grid-cols-[1fr_1fr_1fr_1.4fr_auto] gap-2 items-center p-2 rounded-sm border border-divider"
@@ -410,7 +410,7 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                         </div>
                     </div>
 
-                    <!-- Del removes the selected rows Remove. -->
+                    <!-- Del removes the selected rows, as Remove does. -->
                     <div
                         @click="rowSpace.onClick"
                         @contextmenu="rowSpace.onContextMenu"
@@ -474,7 +474,7 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                                             />
                                         </div>
                                     </td>
-                                    <!-- Into a database paste: add to the target, or replace it. -->
+                                    <!-- Into a database, as a paste: add to the target, or replace it. -->
                                     <td
                                         v-if="state.format === 'database'"
                                         class="px-1 py-0.5 border-t border-divider w-36"
@@ -488,7 +488,7 @@ watch(() => wizard.runId, () => (failure.value = undefined));
                                         />
                                     </td>
                                 </tr>
-                                <!-- While the collections are read; with none, a note saying so. -->
+                                <!-- While the collections are read; with none, that there is nothing to export. -->
                                 <tr v-if="wizard.loading || state.rows.length === 0">
                                     <td
                                         :colspan="columns.length"

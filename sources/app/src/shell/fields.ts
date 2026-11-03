@@ -1,7 +1,7 @@
 import type { Doc, Json } from "./ejson";
 
 /**
- * Changing a field in more than one document field dialogs do: where the change
+ * Changing a field in more than one document, as the field dialogs do: where the change
  * goes (`scope`), and for setting a value in many documents, in which of them (`condition`).
  */
 export const FIELD_SCOPES = ["single", "selected", "query", "collection"] as const;
@@ -10,7 +10,7 @@ export type FieldScope = typeof FIELD_SCOPES[number];
 export const FIELD_CONDITIONS = ["always", "exists", "missing"] as const;
 export type FieldCondition = typeof FIELD_CONDITIONS[number];
 
-/** `push` appends an element to an array (the *Add element to array*). */
+/** `push` appends an element to an array (*Add element to array*). */
 export type FieldChange = { kind: "set"; path: string; value: Json } | { kind: "rename"; path: string; to: string } | { kind: "unset"; path: string } | { kind: "push"; path: string; value: Json };
 
 /** The documents a scope stands for: the one, the selected ones, the query's filter, or all. */

@@ -16,7 +16,7 @@ export interface IndexField {
     kind: IndexKind;
 }
 
-/** The options of a text index tab *Text*; empty leaves one out. */
+/** The options of a text index, as the tab *Text* sets them; empty leaves one out. */
 export interface TextOptions {
     defaultLanguage: string;
     languageOverride: string;
@@ -26,7 +26,7 @@ export interface TextOptions {
     weights: string;
 }
 
-/** The options of a geo index tab *Geo*: bounds and bits of 2d, the 2dsphere version. */
+/** The options of a geo index, as the tab *Geo* sets them: bounds and bits of 2d, the 2dsphere version. */
 export interface GeoOptions {
     min: string;
     max: string;

@@ -1,4 +1,4 @@
-//! JSON export writes it: each document over several lines, indented with
+//! JSON as the export writes it: each document over several lines, indented with
 //! tabs, keys in quotes, lines ending in CRLF. Values in one of three notations: the shell's
 //! (`ObjectId("…")`, `ISODate("…")` – what "Mongo Shell" gives), relaxed Extended JSON (what
 //! `mongoexport` gives) or canonical Extended JSON (every type kept exactly).
@@ -160,7 +160,7 @@ fn scalar_text(value: &Bson, notation: Notation) -> String {
     }
 }
 
-/// A date: always with milliseconds and `+00:00`.
+/// A date as the export writes it: always with milliseconds and `+00:00`.
 fn iso_date(millis: i64) -> Option<String> {
     let date = chrono::DateTime::<chrono::Utc>::from_timestamp_millis(millis)?;
     Some(date.format("%Y-%m-%dT%H:%M:%S%.3f+00:00").to_string())
@@ -195,12 +195,12 @@ fn uuid_text(bytes: &[u8]) -> String {
     )
 }
 
-/// One value in the shell's notation export writes it (`toShell` in
+/// One value in the shell's notation, as the export writes it (`toShell` in
 /// `src/shell/ejson.ts` shows an int32 bare, as mongosh does).
 fn shell_scalar(value: &Bson) -> String {
     match value {
         Bson::String(text) => quoted(text),
-        //: the type stays, so the shell read it back as it was.
+        // The type stays, so the shell reads it back as it was.
         Bson::Symbol(text) => format!("Symbol({})", quoted(text)),
         Bson::Int32(number) => format!("NumberInt({number})"),
         Bson::Int64(number) => format!("NumberLong({number})"),

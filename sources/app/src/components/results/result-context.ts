@@ -85,7 +85,7 @@ export function displayText(value: Json): string {
 }
 
 /**
- * A value as the display settings want it (the preferences): dates in their zone and
+ * A value as the display settings want it: dates in their zone and
  * format, numbers with thousands separators, binary subtype 3 as the UUID of a driver.
  * `undefined` where the settings change nothing, so the caller shows the value as before.
  */

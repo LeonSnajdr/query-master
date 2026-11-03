@@ -690,7 +690,7 @@ mod tests {
         );
     }
 
-    /// Lines of an export (`querymaster_test.export_types`, 18.10.2026).
+    /// Lines of an export in shell notation (`querymaster_test.export_types`).
     #[test]
     fn reads_an_export_in_shell_notation() {
         let text = "{

@@ -554,7 +554,7 @@ function extensions(): Extension[] {
         history(),
         indentOnInput(),
         ...(preferences.autoClose ? [closeBrackets()] : []),
-        //: several cursors (Ctrl+Alt+Up/Down, Alt+click), block selection
+        // Several cursors (Ctrl+Alt+Up/Down, Alt+click), block selection
         // (Alt+drag), the other places of the selected text marked; find and replace on top.
         EditorState.allowMultipleSelections.of(true),
         rectangularSelection(),

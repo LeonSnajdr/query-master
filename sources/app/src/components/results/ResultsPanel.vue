@@ -369,7 +369,7 @@ async function commit(target: ResultTarget, text: string) {
     wrote(await tabs.setField(tab.value, document._id!, target.path, parsed.value));
 }
 
-/** The field dialog (add, edit, rename, delete, append) *Fields* menu. */
+/** The field dialog (add, edit, rename, delete, append), as the *Fields* menu offers it. */
 const fieldRequest = shallowRef<FieldRequest>();
 const fieldOpen = shallowRef(false);
 
@@ -518,7 +518,7 @@ async function importDocuments() {
     await importWizard.openImport({ connectionId: tab.value.connectionId, database: tab.value.plan?.database ?? tab.value.database, collection: target });
 }
 
-//: Ctrl+S exports what the tab shows, Ctrl+O imports into its collection,
+// Ctrl+S exports what the tab shows, Ctrl+O imports into its collection,
 // Ctrl+Shift+V inserts documents from the clipboard. Only for the tab in front.
 const inFront = computed(() => tabs.activeId === tab.value.id);
 
@@ -597,7 +597,7 @@ async function lastPage() {
 }
 
 /**
- * Whether the clipboard holds documents, read as the menu opens:, *Import from
+ * Whether the clipboard holds documents, read as the menu opens: *Import from
  * clipboard* is grey without them. A clipboard that can not be read leaves the entry on.
  */
 async function clipboardHasDocuments(): Promise<boolean> {
@@ -713,7 +713,7 @@ function showMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[], p
             label: t("menu.fields"),
             icon: "i-lucide-list-tree",
             children: [
-                //: adding works on any row; the rest needs a field (not `_id`).
+                // Adding works on any row; the rest needs a field (not `_id`).
                 { label: `${t("field.title.add")} …`, icon: "i-lucide-list-plus", command: "field.add", action: () => openField("add", target), disabled: !document || !editable.value },
                 { label: `${t("field.title.edit")} …`, icon: "i-lucide-pencil", command: "field.edit", action: () => openField("edit", target), disabled: !field || !editable.value || target.path === "_id" },
                 { label: `${t("field.title.rename")} …`, command: "field.rename", action: () => openField("rename", target), disabled: !field || !editable.value || target.path === "_id" || /\.\d+(\.|$)/.test(target.path) },
@@ -730,7 +730,7 @@ function showMenu(event: MouseEvent, target: ResultTarget, extra: MenuEntry[], p
             label: t("menu.copy"),
             icon: "i-lucide-copy",
             children: [
-                //: the value as text (no quotes), as the shell writes it, the field with its name.
+                // The value as text (no quotes), as the shell writes it, the field with its name.
                 { label: t("copy.text"), icon: "i-lucide-copy", action: () => void copy(displayText(target.value)) },
                 { label: t("copy.value"), action: () => void copy(toShell(target.value)) },
                 { label: t("copy.field"), action: () => void copy(`${keyText(target.path.split(".").at(-1) ?? "")}: ${toShell(target.value)}`), disabled: !field },

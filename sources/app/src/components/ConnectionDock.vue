@@ -95,7 +95,7 @@ function readonlyEntry(rows: TreeSelection[]): MenuEntry {
     };
 }
 
-/** Comment, read-only and color of a row, for its context menu, in the order. */
+/** Comment, read-only and color of a row, for its context menu, in this order. */
 function noteEntries(at: TreeSelection): MenuEntry[] {
     const place = { connectionId: at.connectionId, database: at.database, collection: at.collection };
     const note = notes.noteOf(place);
@@ -128,7 +128,7 @@ function noteEntries(at: TreeSelection): MenuEntry[] {
 const listOpen = shallowRef(false);
 const searching = shallowRef(false);
 const search = shallowRef("");
-/** Connections in the tree: open ones, and, those being opened or that failed. */
+/** Connections in the tree: open ones, and those being opened or that failed. */
 const connected = computed(() => connections.profiles.filter(profile => connections.inTree(profile.id)));
 
 /** The color noted for a connection, shown as a bar along its rows. */
@@ -197,7 +197,7 @@ function openFolderMenu(event: MouseEvent, profile: Profile, database: DatabaseN
         .filter(other => !folderWithin(other, folder) && other !== parent)
         .map(other => ({ label: t("folder.moveFolderTo", { name: other }), icon: "i-lucide-folder-input", action: () => void actions.moveFolder(at, folder, other) }));
     if (parent !== undefined) targets.push({ label: t("folder.moveFolderOut"), icon: "i-lucide-folder-output", action: () => void actions.moveFolder(at, folder, undefined) });
-    //: what lies in the folder (and the folders in it) goes into the export at once.
+    // What lies in the folder (and the folders in it) goes into the export at once.
     const inFolder = (place: TreeSelection) => {
         const own = notes.noteOf(place)?.folder;
         return typeof own === "string" && folderWithin(own, folder);
@@ -259,7 +259,7 @@ function bucketAt(database: DatabaseNode, collection: string): string | undefine
     return bucketOf(collection, database.collections ?? []);
 }
 
-/** What a double click opens on a collection *Default tab* in the settings. */
+/** What a double click opens on a collection: the *Default tab* in the settings. */
 function openWithDefault(at: TreeSelection) {
     switch (preferences.defaultTab) {
         case "shell": return actions.openShell(at);
@@ -287,7 +287,7 @@ function select(at: TreeSelection) {
 
 /**
  * A click on a folder opens or closes it and selects the level it belongs to (its connection or
- * database): toolbar, menus and keys no longer act on a row
+ * database), so toolbar, menus and keys no longer act on a row
  * chosen before.
  */
 function clickFolder(at: TreeSelection, folder: string) {
@@ -1037,7 +1037,7 @@ function openMenu(event: MouseEvent, at: TreeSelection) {
     ];
     let entries: MenuEntry[];
     if (!connections.sessions[at.connectionId]) {
-        // Failed or still being opened:, only its settings and the way out.
+        // Failed or still being opened: only its settings and the way out.
         entries = [
             ...(connections.isTransient(at.connectionId)
                 ? []
@@ -1180,7 +1180,7 @@ defineExpose({
                     {{ $t("connection.connect") }}
                     <span class="i-lucide-chevron-down size-3.5" />
                 </PopoverActivator>
-                <!-- Resizable at its corner, like the window. -->
+                <!-- Resizable at its corner, like a window. -->
                 <PopoverContent
                     class="menu-panel w-[340px] h-[530px] min-w-64 min-h-48 max-w-[90vw] max-h-[85vh] resize overflow-hidden flex-col [&:popover-open]:flex"
                     data-testid="connection-panel"

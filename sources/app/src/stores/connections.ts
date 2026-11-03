@@ -74,7 +74,7 @@ export const useConnectionsStore = defineStore("connections", () => {
     /** Connections being opened. */
     const connecting = reactive(new Set<string>());
     /**
-     * Connections that could not be opened, with the reason. they stay in the
+     * Connections that could not be opened, with the reason. They stay in the
      * tree (with a red mark) until they are connected again or closed.
      */
     const failed = reactive(new Map<string, unknown>());

@@ -23,7 +23,7 @@ export interface FieldRequest {
 }
 
 /**
- * the field dialogs in one: *Add field*, *Edit value*, *Rename field*, *Delete field*
+ * The field dialogs in one: *Add field*, *Edit value*, *Rename field*, *Delete field*
  * and *Add element to array*, each with *Where* (one document, the selected ones, all of the query,
  * all of the collection) and for setting a value in many documents a condition on the field.
  * `submit` sends the change; what it returns is shown and the dialog stays open.

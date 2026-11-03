@@ -7,7 +7,7 @@ import type { NotePlace } from "@/stores/notes";
 
 /**
  * The icon of a row (connection, database, collection) with its read-only mark over the lower left,
- * Draws it: a filled lock when the row is marked read-only, faint when it takes
+ * drawn as a lock: a filled lock when the row is marked read-only, faint when it takes
  * read-only from a row above, an open lock when it is marked writable below a read-only row.
  */
 const props = defineProps<{

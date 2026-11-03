@@ -38,7 +38,7 @@ const LISTED = 1000;
 /** What to do when the bucket has a file of the name already. */
 type Duplicates = "keep" | "replace" | "skip";
 
-/** A file chosen for upload, before it goes: the form of the *Upload file*. */
+/** A file chosen for upload, before it goes: the form of *Upload file*. */
 interface UploadDraft {
     path: string;
     name: string;
@@ -63,7 +63,7 @@ const task = useTask();
 const tabs = useTabsStore();
 
 const files = shallowRef<Doc[]>([]);
-/** The query of the list filter, sort, skip and limit above it. */
+/** The query of the list: filter, sort, skip and limit above it. */
 const query = ref({ filter: "{}", sort: "{ uploadDate: -1 }", skip: 0, limit: LISTED });
 /** A filter or sort that does not read: said beside the fields, the list stays. */
 const queryError = shallowRef<string>();
@@ -274,7 +274,7 @@ const fileSpace = useFreeSpace(() => (selected.value = undefined), {
     }
 });
 
-/** The whole entry of the file in `.files` *File info*. */
+/** The whole entry of the file in `.files` (*File info*). */
 const details = computed(() => (current.value ? toShell(current.value) : undefined));
 
 async function download() {

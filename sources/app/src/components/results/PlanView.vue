@@ -158,7 +158,7 @@ const verbosity = computed({
     }
 });
 
-/** The whole reply of the server beside the drawing. */
+/** The whole reply of the server, shown beside the drawing. */
 const showRaw = shallowRef(false);
 const raw = computed(() => (showRaw.value && explain.value ? toShell(explain.value.reply) : undefined));
 

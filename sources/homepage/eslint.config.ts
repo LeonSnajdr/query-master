@@ -6,8 +6,7 @@ export default defineConfigWithVueTs(
     {
         ignores: [
             "**/dist/**",
-            "**/node_modules/**",
-            "docs/**"
+            "**/node_modules/**"
         ]
     },
     pluginVue.configs["flat/recommended"],

@@ -17,7 +17,7 @@ export interface MemberRow {
     self?: boolean;
 }
 
-/** The form to add a member *Add member*. */
+/** The form to add a member (*Add member*). */
 export interface MemberForm {
     host: string;
     priority: number;

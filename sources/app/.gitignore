@@ -10,7 +10,3 @@
 /src-tauri/dev.db*
 !/src-tauri/.env
 *.pdb
-
-# Captures taken with tools/observe: they show real data
-/tools/observe/out
-*.capture.png

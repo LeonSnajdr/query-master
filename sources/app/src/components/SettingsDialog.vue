@@ -48,7 +48,7 @@ const startup = computed({
     }
 });
 /**
- * A choice of the tab *Display*, in the preferences: the setting it changes, its
+ * A choice of the tab *Display*: the setting it changes, its
  * values (labels from `settings.<key>.<value>`) and a model for its field.
  */
 function displayChoice(key: DisplaySetting, values: readonly (string | number | boolean)[]) {

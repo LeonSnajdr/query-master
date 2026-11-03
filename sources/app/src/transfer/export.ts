@@ -13,7 +13,7 @@ export type FileTarget = typeof FILE_TARGETS[number];
 
 export type JsonNotation = "shell" | "relaxed" | "canonical";
 export type JsonLayout = "lines" | "comma" | "array";
-/** How documents go into a collection; paste: overwrite, always a new `_id`, a new one only when taken, or leave out what is taken. */
+/** How documents go into a collection: overwrite, always a new `_id`, a new one only when taken, or leave out what is taken. */
 export const INSERT_MODES = ["overwrite", "newId", "newIdOnConflict", "skipExisting"] as const;
 export type InsertMode = typeof INSERT_MODES[number];
 
@@ -41,7 +41,7 @@ export interface SqlSettings {
     dropTable: boolean;
 }
 
-//: CREATE and DROP TABLE both on.
+// CREATE and DROP TABLE both on.
 export const DEFAULT_SQL: SqlSettings = { dialect: "mySql", schema: "", createTable: true, dropTable: true };
 
 /** The formats whose columns are chosen on the schema page. */

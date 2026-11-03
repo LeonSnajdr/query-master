@@ -5,6 +5,9 @@ enabled: true
 files:
   - i18n/locales/de/de.json
   - i18n/locales/en/en.json
+  # Everything else in the repository is English: the docs are checked as English.
+  - docs/**/*.md
+  - ../../README.md
 
 dictionaryDefinitions:
   - name: custom.de
@@ -22,6 +25,10 @@ patterns:
     pattern: "/{.*?}/"
 
 overrides:
+  - filename: "**/*.md"
+    language: en
+    dictionaries: [custom.en, softwareTerms, typescript, node, rust, bash, powershell, html, css]
+
   - filename: i18n/locales/en/en.json
     language: en
     dictionaries: [custom.en, softwareTerms, typescript, node]

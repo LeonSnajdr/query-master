@@ -27,7 +27,7 @@ const props = defineProps<{
 const { t } = useI18n();
 const { say } = useMessages();
 
-/** Documents read to learn the fields: many more than the editor's sample Refresh. */
+/** Documents read to learn the fields: many more than the editor's sample (Refresh). */
 const SAMPLE = 1000;
 
 /** The collections of the rows, each once, with the filter of its first row. */

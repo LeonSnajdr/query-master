@@ -72,7 +72,7 @@ export default defineConfig({
         "field-invalid": "border-error! focus:border-error!",
         // The same on a choice field or editor inside a wrapper.
         "within-invalid": "[&_input]:border-error!",
-        // Label and field side by side connection dialog.
+        // Label and field side by side, as in the connection dialog.
         "form-grid": "grid grid-cols-[9.5rem_1fr] items-center gap-x-4 gap-y-2",
         "switch-track": "w-8 h-4.5 flex items-center px-0.5 rounded-full bg-on-surface/20 data-[state=checked]:bg-primary/70",
         "switch-thumb": "size-3.5 rounded-full bg-on-surface-strong transition-transform data-[state=checked]:translate-x-3.5",

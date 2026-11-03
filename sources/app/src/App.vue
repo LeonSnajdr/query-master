@@ -112,7 +112,7 @@ function tabColor(tab: WorkTab): string | undefined {
     return tab.kind === "start" ? undefined : notes.noteOf({ connectionId: tab.connectionId })?.color ?? undefined;
 }
 
-/** The field chosen in the result of the tab in front at the bottom. */
+/** The field chosen in the result of the tab in front, shown at the bottom. */
 const fieldPath = computed(() => (isQueryTab(tabs.active) ? tabs.active.fieldPath : undefined));
 const seconds = computed(() => ((tabs.active?.result?.milliseconds ?? 0) / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 }));
 
@@ -262,7 +262,7 @@ onMounted(async () => {
             class="grow min-h-0"
             orientation="horizontal"
         >
-            <!-- As wide (about 320 of 1280 pixels): the toolbar of the dock fits. -->
+            <!-- About a quarter of the window (320 of 1280 pixels): the toolbar of the dock fits. -->
             <SplitterPanel
                 :defaultSize="25"
                 :maxSize="50"

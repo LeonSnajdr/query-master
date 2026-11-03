@@ -15,7 +15,7 @@ const LEGACY_KEYS = { theme: "querymaster:theme", language: "querymaster:languag
 /** The views a result can start in, and the page sizes offered (as in the results toolbar). */
 export const RESULT_VIEWS = ["tree", "table", "json"] as const;
 export type StartView = typeof RESULT_VIEWS[number];
-/** Choices of the display settings, in the preferences. */
+/** Choices of the display settings. */
 export const DEFAULT_TABS = ["browse", "shell", "aggregate", "sql"] as const;
 export const TIME_ZONES = ["local", "utc"] as const;
 export const DATE_FORMATS = ["local", "iso", "dmy", "mdy"] as const;

@@ -14,7 +14,7 @@ pub fn write_text_file(path: String, text: String) -> Result<()> {
     Ok(fs::write(path, text)?)
 }
 
-/// A file as Base64, for a binary value of a document (the *Open file* in the editor).
+/// A file as Base64, for a binary value of a document (*Open file* in the editor).
 #[tauri::command]
 pub fn read_base64_file(path: String) -> Result<String> {
     use base64::Engine as _;

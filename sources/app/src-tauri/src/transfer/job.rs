@@ -300,7 +300,7 @@ async fn export_text(
         (FileFormat::Json { notation, layout }, Some(folder)) => {
             check_output(&item.output)?;
             let mut file = BufWriter::new(File::create(folder.join(&item.output))?);
-            //: UTF-8 with a byte order mark.
+            // UTF-8 with a byte order mark.
             file.write_all(BOM)?;
             let mut sink = Sink::File(file);
             let done = write_json(&mut cursor, &mut sink, notation, layout, stop, progress).await?;

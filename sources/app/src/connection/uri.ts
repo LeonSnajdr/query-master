@@ -191,7 +191,7 @@ export function withoutPassword(uri: string): string {
 }
 
 /**
- * A string to show, first without its password (as the *Include passwords*, off at
+ * A string to show, first without its password (*Include passwords*, off at
  * first); with one, the full string as the second variant. `say` gives the labels their text.
  */
 export function uriVariants(uri: string, say: (key: string) => string): { label: string; text: string }[] | undefined {

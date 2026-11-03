@@ -357,7 +357,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
         assert.equal(await panel.locator("[data-testid=result-range]").innerText(), "1 – 3");
         const text = await panel.locator("[data-testid=query-result]").innerText();
         assert.match(text, /NumberLong\(9007199254740993\)/);
-        // Dates show in the machine's locale and time zone, as in the table.
+        // Dates show in the machine's locale and time zone as in the table.
         assert.match(text, /\nat\n:\n[^\n]*2024[^\n]*\ndate\n/);
         // Without a filter the count comes from the collection itself.
         await panel.locator("[data-testid=result-count]").click();
@@ -553,7 +553,7 @@ docs.find({}).sort({ n: -1 }).limit(2)`;
             return page.locator(`[data-testid=${testid}-progress-count]`).innerText();
         };
 
-        // Into a folder: JSON in the shell's notation, then CSV, each a file named.
+        // Into a folder: JSON in the shell's notation, then CSV, each a file named `<database>.<collection>.<format>`.
         for (const format of ["json", "csv"]) {
             await row.click({ button: "right" });
             await chooseMenu("Export...");

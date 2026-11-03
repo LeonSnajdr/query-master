@@ -309,7 +309,7 @@ function closeLarge() {
             class="grow min-w-0 h-full bg-transparent outline-none"
             spellcheck="false"
         />
-        <!--: a calendar for a date, open and save a file for binary data. -->
+        <!-- A calendar for a date, open and save a file for binary data. -->
         <template v-if="draft.type === 'date'">
             <ButtonRoot
                 @click="openCalendar"

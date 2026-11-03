@@ -134,7 +134,7 @@ export function useActions() {
 
     /** The export wizard with the rows of the selection: the server's, a database's, one collection or several. */
     async function exportWizard(at: TreeSelection | TreeSelection[] | undefined = target.value, filter?: string, format?: ExportFormat) {
-        // Without a selection: the first open connection.
+        // Without a selection: the first open connection, so one is always chosen.
         const chosen = at ?? firstOpen();
         if (chosen) await wizardOf.openExport(chosen, filter, format);
     }
@@ -525,7 +525,7 @@ export function useActions() {
         await connections.reconnect(at.connectionId).catch(report);
     }
 
-    /** Connects with a string that is typed in and not saved "Connect from URI". */
+    /** Connects with a string that is typed in and not saved ("Connect from URI"). */
     async function connectFromUri() {
         const uri = await dialogs.ask({ title: t("connection.fromUri.title"), label: t("connection.fromUri.label"), value: "mongodb://", action: t("connection.connect"), code: true });
         if (!uri) return;

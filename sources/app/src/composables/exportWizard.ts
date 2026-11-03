@@ -58,7 +58,7 @@ export function useExportWizard() {
 
     /**
      * The collections a selection stands for: of the connection, the database, or the one. The
-     * server's own `system.*` collections come along (`admin.system.users` and
+     * server's own `system.*` collections come along too (`admin.system.users` and
      * `roles` belong to a full backup); they can be removed from the rows. Into a database they
      * cannot be written: the tile Database leaves them out (`withoutSystem`).
      */

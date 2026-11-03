@@ -2,7 +2,7 @@ import { isDoc, toNumber } from "./ejson";
 import type { Doc, Json } from "./ejson";
 
 /**
- * A collation form edits it, for collections, views and indexes: the locale
+ * A collation as the collation form edits it, for collections, views and indexes: the locale
  * and every option MongoDB knows. An empty choice leaves the option out (the server's default).
  */
 

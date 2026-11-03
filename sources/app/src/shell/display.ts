@@ -1,5 +1,5 @@
 /**
- * How values are shown in the results, in the preferences set it: dates in a time zone
+ * How values are shown in the results, as the display settings set it: dates in a time zone
  * and format, numbers with or without thousands separators, binary subtype 3 as the UUID of a
  * driver. Without Vue; `src/components/results/result-context.ts` applies the chosen settings.
  */

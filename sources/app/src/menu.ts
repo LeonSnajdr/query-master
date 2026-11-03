@@ -17,7 +17,7 @@ export interface MenuItem {
     danger?: boolean;
 }
 
-/** A row of color dots for rows of the tree; `null` takes the color away. */
+/** A row of color dots, as for rows of the tree; `null` takes the color away. */
 export interface MenuSwatches {
     /** Accessible name of the row. */
     label: string;

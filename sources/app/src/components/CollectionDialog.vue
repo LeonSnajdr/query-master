@@ -18,8 +18,8 @@ import { replyError } from "@/shell/plan";
 import { useConnectionsStore } from "@/stores/connections";
 
 /**
- * Creates a collection or a view, or changes the validator of a collection; laid out as a
- * "Create collection" dialog, with time series added (MongoDB 5.0 and later).
+ * Creates a collection or a view, or changes the validator of a collection, with
+ * time series (MongoDB 5.0 and later).
  */
 const props = defineProps<{
     request?: CollectionRequest;

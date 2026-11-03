@@ -138,11 +138,12 @@ cargo test --manifest-path src-tauri/Cargo.toml -- --include-ignored
   (`src-tauri/src/script`). Rebuild and commit the bundle after changing the runtime or `plan.ts`.
 - `src-tauri/src` – the two commands that run a database command (`mongo.rs`), the local SQLite
   database (`db`, tables in `src-tauri/migrations`, rules in
-  [`docs/roadmap/11-ablage.md`](sources/app/docs/roadmap/11-ablage.md)) and the saved connections in it
+  [`docs/storage.md`](sources/app/docs/storage.md)) and the saved connections in it
   (`connection`; their connection strings live in the keychain of the operating system).
 - `i18n/locales` – every text of the interface, English and German, as flat keys, added with
   `bun tools/locale.ts`. `i18n/locales.test.ts` keeps both languages and the catalog in step.
-- `docs/roadmap` – the plans per stage and what is still open.
+- `docs` – [what is still open](sources/app/docs/roadmap.md) and the
+  [conventions](sources/app/docs/conventions.md) every change follows.
 
 ---
 
@@ -189,6 +190,10 @@ private key and its password into the repository secrets `TAURI_SIGNING_PRIVATE_
 
 Contributions are welcome! Feel free to open an issue or submit a pull request. I appreciate all feedback
 and suggestions to improve the project.
+
+Everything in this repository is written in English: code, comments, docs, plans, commit messages, branch
+names and pull requests. The only exception is the German translation of the interface. Changes follow the
+[conventions](sources/app/docs/conventions.md).
 
 ---
 

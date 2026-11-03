@@ -14,7 +14,7 @@ const emit = defineEmits<{
     addFiles: [];
 }>();
 /**
- * The files of the import: Database, Collection, Mode, From file.
+ * The files of the import, in columns: Database, Collection, Mode, From file.
  * Beyond it: rows are selected as in the result table (click, Ctrl, Shift, the boxes), a double
  * click or the edit button edits a row in place, a click on a column header sets that column for
  * the selected rows (or all), and the mode chosen in a selected row goes to every selected row.

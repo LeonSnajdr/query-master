@@ -11,7 +11,7 @@ export interface RoleRef {
 /** Letters, digits and signs a typed password can hold without trouble in a URI or a shell. */
 const PASSWORD_SIGNS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789-_.~!*";
 
-/** A new password of `length` signs from the random source of the system *Generate*. */
+/** A new password of `length` signs from the random source of the system (*Generate*). */
 export function generatePassword(length = 20): string {
     const bytes = crypto.getRandomValues(new Uint8Array(length * 2));
     const limit = 256 - (256 % PASSWORD_SIGNS.length);

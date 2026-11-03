@@ -52,7 +52,7 @@ struct Handler;
 impl client::Handler for Handler {
     type Error = russh::Error;
 
-    // Every host key is taken; the server is the one the user typed.
+    // Every host key is taken (it is not verified yet); the server is the one the user typed.
     async fn check_server_key(
         &mut self,
         _key: &PublicKeyOrCertificate,

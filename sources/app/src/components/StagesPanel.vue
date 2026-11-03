@@ -148,7 +148,7 @@ function changeStage(stage: PipelineStage, operator: string) {
     stage.operator = operator;
 }
 
-/** The Json mode of a row (as the "Mongo JSON mode"): the text is written anew in the other notation. */
+/** The Json mode of a row ("Mongo JSON mode"): the text is written anew in the other notation. */
 function toggleJson(stage: PipelineStage) {
     try {
         stage.text = convertQueryText(stage.text, !stage.json);
@@ -197,7 +197,7 @@ function move(by: -1 | 1) {
     tab.value.pipeline = moveItem(stages.value, index, target);
 }
 
-/** Stages shown on one line, by id *Collapse editor*; the text stays. */
+/** Stages shown on one line, by id (*Collapse editor*); the text stays. */
 const collapsed = reactive(new Set<number>());
 
 function toggleCollapsed(stage: PipelineStage) {

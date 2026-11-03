@@ -146,7 +146,7 @@ pub async fn set_environment(
     repository::set_environment(pool, id, checked_environment(environment)?.as_deref()).await
 }
 
-/// Puts a connection into a group of the list (empty: none), as moving it there.
+/// Puts a connection into a group of the list (empty: none).
 pub async fn set_group(pool: &SqlitePool, id: Uuid, group: &str) -> Result<()> {
     repository::set_group(pool, id, group.trim()).await
 }

@@ -241,7 +241,7 @@ async function save(connect = false) {
                             class="w-56 shrink-0"
                             data-testid="connection-environment"
                         />
-                        <!--: the group of the connection list it is shown in; a new name makes one. -->
+                        <!-- The group of the connection list it is shown in; a new name makes one. -->
                         <span class="text-[13px] text-on-surface">{{ $t("connection.group") }}:</span>
                         <ChoiceField
                             v-model="groupName"
@@ -406,7 +406,7 @@ async function save(connect = false) {
                                     spellcheck="false"
                                 />
                             </template>
-                            <!--: for a user who may not list the databases. -->
+                            <!-- For a user who may not list the databases. -->
                             <span>{{ $t("connection.visibleDatabases") }}:</span>
                             <input
                                 v-model="visibleDatabases"

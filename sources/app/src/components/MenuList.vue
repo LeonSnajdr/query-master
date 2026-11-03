@@ -130,7 +130,7 @@ function childDone() {
                 class="h-7 px-2.5 flex items-center gap-2"
                 role="group"
             >
-                <!--: the current color larger, the others lighter, "none" last. -->
+                <!-- The current color larger, the others lighter, "none" last. -->
                 <ButtonRoot
                     v-for="color in entry.swatches"
                     :key="color"
