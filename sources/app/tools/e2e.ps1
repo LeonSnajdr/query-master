@@ -1,6 +1,6 @@
 # Starts the app with the web view's debugging port open, runs e2e/app.mjs against it and stops the
 # app again. Needs QUERYMASTER_TEST_URI (or .env.local) and a free port 1420.
-# With -Release it runs against the built program of `bun run app:build` instead of the dev server:
+# With -Release it runs against the built program of `bun run build` instead of the dev server:
 # the same walk-through, with the release CSP and the app's real data folder.
 param([int]$Port = 9222, [int]$StartTimeoutSeconds = 600, [int]$RunTimeoutSeconds = 240, [string]$Script = "e2e/app.mjs", [switch]$Release)
 
@@ -18,7 +18,7 @@ $env:QUERYMASTER_DEBUG_PORT = "$Port"
 $log = Join-Path $env:TEMP "querymaster-e2e-app.log"
 if ($Release) {
     $exe = Join-Path $root "src-tauri\target\release\query-master.exe"
-    if (-not (Test-Path $exe)) { "No release build at ${exe}: run bun run app:build first"; exit 1 }
+    if (-not (Test-Path $exe)) { "No release build at ${exe}: run bun run build first"; exit 1 }
     $app = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $log -RedirectStandardError "$log.err"
     # The built app is served from tauri.localhost, the dev server from localhost:1420.
     $pageUrl = "tauri\.localhost"

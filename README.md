@@ -97,10 +97,10 @@ To get your development environment set up, follow these steps:
 4. **Run QueryMaster**
 
     ```bash
-    bun run app:dev
+    bun run dev
     ```
 
-    `bun run dev` alone opens the interface in a browser with made-up data (`src/api.mock.ts`):
+    `bun run dev:vite` alone opens the interface in a browser with made-up data (`src/api.mock.ts`):
     `http://localhost:1420/?demo` opens a collection of it right away, `?session` starts with a last
     session to restore.
 
@@ -118,7 +118,7 @@ All commands run in `sources/app`.
 | Rust tests | `bun run rust:test` |
 | Migrate, prepare, format, lint and test the Rust side | `pwsh tools/check-rust.ps1` |
 | The app against a real server | `bun run e2e` (`e2e:release` for the built program) |
-| Installers without updater artifacts | `bun run app:build` |
+| Installers without updater artifacts | `bun run build` |
 
 The tests against a real server use the server in `QUERYMASTER_TEST_URI` (from `.env.local`, default
 `mongodb://localhost:27017`); they write only into the database `querymaster_test`:
@@ -159,7 +159,7 @@ bun run dev
 
 `bun run build` writes the site to `dist`; it uses relative paths and runs from any folder of a web
 server. The screenshots in `public/screenshots` are also those of this README. They are taken from the
-browser preview of the app with its made-up data: run `bun run dev` in `sources/app`, then
+browser preview of the app with its made-up data: run `bun run dev:vite` in `sources/app`, then
 `node tools/screenshots.mjs` there (it needs Microsoft Edge).
 
 ---

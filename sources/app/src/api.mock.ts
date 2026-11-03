@@ -5,7 +5,7 @@ import { isDoc, toNumber } from "./shell/ejson";
 import type { Doc, Json } from "./shell/ejson";
 
 /**
- * Made-up data for work on the interface in a browser (`bun run dev` without Tauri). Filters are
+ * Made-up data for work on the interface in a browser (`bun run dev:vite` without Tauri). Filters are
  * not evaluated: every query returns the same documents, cut by skip, limit and `$skip`.
  */
 const profiles: Profile[] = [

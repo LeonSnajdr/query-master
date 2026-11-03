@@ -5,11 +5,11 @@
     "version": "0.0.0",
     "license": "SEE LICENSE IN ../../LICENSE.md",
     "scripts": {
-        "dev": "vite",
-        "build": "vue-tsc --build --force && bun run build:runtime && vite build",
+        "dev": "tauri dev",
+        "dev:vite": "vite",
+        "build": "tauri build",
+        "build:vite": "vue-tsc --build --force && bun run build:runtime && vite build",
         "build:runtime": "vite build --config vite.runtime.config.ts",
-        "build-only": "vite build",
-        "preview": "vite preview",
         "type-check": "vue-tsc --build --force",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
@@ -19,9 +19,7 @@
         "rust:test": "cargo test --manifest-path src-tauri/Cargo.toml",
         "e2e": "pwsh -File tools/e2e.ps1",
         "e2e:release": "pwsh -File tools/e2e.ps1 -Release",
-        "tauri": "tauri",
-        "app:dev": "tauri dev",
-        "app:build": "tauri build"
+        "tauri": "tauri"
     },
     "dependencies": {
         "@codemirror/autocomplete": "^6.20.3",

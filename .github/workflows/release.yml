@@ -90,7 +90,7 @@ jobs:
           projectPath: sources/app
           tauriScript: bun run tauri
           tagName: ${{ needs.prepare.outputs.app_version }}
-          # Updater artifacts only here: a local `bun run app:build` needs no signing key.
+          # Updater artifacts only here: a local `bun run build` needs no signing key.
           args: '-c ''{"version": "${{ needs.prepare.outputs.app_version }}", "bundle": {"createUpdaterArtifacts": true}}'''
           releaseName: QueryMaster ${{ needs.prepare.outputs.app_version }}
           releaseBody: See the assets to download and install this version.

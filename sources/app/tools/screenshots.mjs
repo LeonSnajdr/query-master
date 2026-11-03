@@ -1,5 +1,5 @@
 // Takes the screenshots of the README and the homepage (sources/homepage/public/screenshots) from the browser preview with its made-up data
-// (`bun run dev` must be running). Needs Microsoft Edge; `node tools/screenshots.mjs [name]` takes one.
+// (`bun run dev:vite` must be running). Needs Microsoft Edge; `node tools/screenshots.mjs [name]` takes one.
 import { chromium } from "playwright-core";
 
 const out = new URL("../../homepage/public/screenshots/", import.meta.url).pathname.replace(/^\/(\w:)/, "$1");
