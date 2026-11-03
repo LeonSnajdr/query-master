@@ -3,7 +3,14 @@ on:
   push:
     branches:
       - main
+      # A release branch builds the same, as a draft: the workflow is tried before it reaches main.
+      - release/**
   workflow_dispatch:
+    inputs:
+      draft:
+        description: Create the release as a draft (to try the workflow without publishing)
+        type: boolean
+        default: true
 
 jobs:
   prepare:
@@ -94,3 +101,4 @@ jobs:
           args: '-c ''{"version": "${{ needs.prepare.outputs.app_version }}", "bundle": {"createUpdaterArtifacts": true}}'''
           releaseName: QueryMaster ${{ needs.prepare.outputs.app_version }}
           releaseBody: See the assets to download and install this version.
+          releaseDraft: ${{ github.ref != 'refs/heads/main' || inputs.draft == true }}
